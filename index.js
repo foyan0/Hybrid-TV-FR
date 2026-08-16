@@ -7,6 +7,7 @@ app.use(cors());
 
 let isUpdating = true;
 
+// --- LES SOURCES ---
 const ADDON_PROVIDERS = [
     { id: 'vavoo', base: 'https://tvvoo.hayd.uk/cfg-fr', label: 'Vavoo', isPriority: true },
     { id: 'mio', base: 'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiLCJCRV9GUiJdLCJjYXRlZ29yaWVzIjp7IkZSIjpbIkdlbmVyYWwg8J+7oiIsIlNwb3J0cyDimq3igIsiLCJEb2N1bWVudGFpcmVzIPCfijrQuiIsIkZpbG1zIPCfjqwiLCJJbmZvcm1hdGlvbnMg8J+7oiIsIkVuZmFudHMgv5G2IiwiTXVzaWMg8J+OtSJdfSwiZW5hYmxlU2VhcmNoIjpmYWxzZX0', label: 'Mio', isPriority: false }
@@ -19,6 +20,7 @@ const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-
 function normalizeChannelName(rawName) {
     let clean = rawName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
     
+    clean = clean.replace(/\s*\([Tt][Vv]\)\s*/g, '');
     clean = clean.replace(/^(?:FR|BE|CH|CA|VIP)\s*[:|/-]+\s*/, '');
     clean = clean.replace(/^FR\s+/, '');
     clean = clean.replace(/\+/g, ' PLUS '); 
@@ -225,7 +227,7 @@ function getEpgForChannel(channelName) {
     if (!epgData) return null;
     const target = channelName.toUpperCase().trim();
     if (epgData[target]) return epgData[target];
-    const foundKey = Object.keys(epgData).find(k => k.includes(target) || target.includes(k));
+    const foundKey = Object.keys(epgData).find(k => k === target || k.includes(target) || target.includes(k));
     return foundKey ? epgData[foundKey] : null;
 }
 
@@ -359,24 +361,24 @@ async function updateStreams() {
 
 app.get('/', (req, res) => {
     if (isUpdating) {
-        res.send(`<h1>Hybrid TV FR (v32.1)</h1><p>⏳ Chargement en cours...</p>`);
+        res.send(`<h1>Hybrid TV FR (v33.0)</h1><p>⏳ Chargement en cours...</p>`);
     } else {
-        res.send(`<h1>Hybrid TV FR (v32.1) est en ligne !</h1><p>Chaînes actives : <strong>${channelsData.length}</strong></p>`);
+        res.send(`<h1>Hybrid TV FR (v33.0) est en ligne !</h1><p>Chaînes actives : <strong>${channelsData.length}</strong></p>`);
     }
 });
 
 app.get('/manifest.json', (req, res) => {
     res.json({
-        id: 'org.hybridproxy.fr.live.v321', 
-        version: '32.1.0',
+        id: 'org.hybridproxy.fr.live.v330', 
+        version: '33.0.0',
         name: 'Hybrid TV FR',
         description: 'TNT, Information, Jeunesse, Découverte, Cinéma, Musique, Bouquet Canal, Sports et EPG en direct.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
-            { type: 'tv', id: 'vavoo_tnt', name: '📺 TNT Française' },
+            { type: 'tv', id: 'vavoo_tnt', name: '📺 TNT' },
             { type: 'tv', id: 'vavoo_info', name: '📰 Information' },
-            { type: 'tv', id: 'vavoo_jeunesse', name: '👶 Jeunesse (Disney & CN)' },
+            { type: 'tv', id: 'vavoo_jeunesse', name: '👶 Jeunesse' },
             { type: 'tv', id: 'vavoo_decouverte', name: '🔬 Découverte & Docu' },
             { type: 'tv', id: 'vavoo_cinema', name: '🍿 Cinéma & Séries' },
             { type: 'tv', id: 'vavoo_musique', name: '🎵 Musique' },
@@ -417,13 +419,16 @@ app.get('/meta/tv/:id.json', async (req, res) => {
     const channel = channelsData.find(c => c.id === req.params.id || c.id === cleanId);
     if (!channel) return res.json({ meta: {} });
     
-    let desc = "🔴 EN DIRECT :\nProgramme TV non disponible actuellement.";
+    let currentTitle = "Programme TV non disponible";
+    let currentDesc = "";
+    
     const epgList = getEpgForChannel(channel.name);
     if (epgList) {
         const now = Date.now();
         const currentProg = epgList.find(p => now >= p.start && now <= p.stop);
         if (currentProg) {
-            desc = `🔴 EN DIRECT : ${currentProg.title}\n\n${currentProg.desc || 'Aucun détail supplémentaire.'}`.trim();
+            currentTitle = currentProg.title;
+            currentDesc = currentProg.desc || '';
         }
     }
 
@@ -434,7 +439,9 @@ app.get('/meta/tv/:id.json', async (req, res) => {
             name: channel.name,
             poster: channel.poster,
             posterShape: 'square',
-            description: desc
+            // EN DIRECT dans les sous-titres / releaseInfo / description selon compatibilité Stremio
+            releaseInfo: `🔴 ${currentTitle}`,
+            description: `🔴 EN DIRECT : ${currentTitle}\n\n${currentDesc}`.trim()
         }
     });
 });
