@@ -5,7 +5,8 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 
-const VAVOO_URL = 'http://vavoo.to/playlist.m3u';
+// Utilisation de la nouvelle source de contournement
+const VAVOO_URL = 'https://tvvoo.hayd.uk/cfg-fr';
 let channelsData = {};
 
 function parseM3U(content) {
@@ -31,21 +32,15 @@ function parseM3U(content) {
 
 async function updateStreams() {
     try {
-        console.log('[Vavoo] Téléchargement de la playlist...');
+        console.log('[Vavoo] Téléchargement de la nouvelle playlist via le proxy...');
         const response = await axios.get(VAVOO_URL, {
-            headers: {
-                'User-Agent': 'VAVOO/2.6'
-            },
             timeout: 15000
         });
 
         const playlist = parseM3U(response.data);
-        const frenchStreams = playlist.filter(media => 
-            media.title.toLowerCase().includes('fr') || media.title.toLowerCase().includes('france')
-        );
 
         const channels = {};
-        frenchStreams.forEach(stream => {
+        playlist.forEach(stream => {
             const cleanName = stream.title.replace(/\s*\(.*?\)\s*/g, '').trim();
             const id = 'vavoo_fr_' + cleanName.toLowerCase().replace(/[^a-z0-9]/g, '_');
             
@@ -56,7 +51,7 @@ async function updateStreams() {
         });
 
         channelsData = channels;
-        console.log(`[Vavoo] Succès : ${Object.keys(channelsData).length} chaînes chargées.`);
+        console.log(`[Vavoo] Succès : ${Object.keys(channelsData).length} chaînes chargées avec la nouvelle méthode.`);
     } catch (err) {
         console.error('[Vavoo] Erreur lors de la récupération des flux :', err.message);
     }
@@ -65,9 +60,9 @@ async function updateStreams() {
 app.get('/manifest.json', (req, res) => {
     res.json({
         id: 'org.vavoo.fr.live',
-        version: '1.0.1',
+        version: '1.0.2',
         name: 'Vavoo FR Live',
-        description: 'Flux TV français issus de Vavoo',
+        description: 'Flux TV français',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -90,7 +85,6 @@ app.get('/catalog/tv/vavoo_fr_catalog.json', (req, res) => {
     res.json({ metas });
 });
 
-// NOUVELLE ROUTE : Permet à Nuvio de lire les infos de la chaîne avant de lancer le flux
 app.get('/meta/tv/:id.json', (req, res) => {
     const channel = channelsData[req.params.id];
     if (!channel) return res.json({ meta: {} });
