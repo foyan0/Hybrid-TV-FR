@@ -5,14 +5,16 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 
-// --- SOURCES ---
-const TV_LEGAL_BASE = 'https://tvlegal.beluchon.top/eyJjYXRhbG9ncyI6WyJ0ZjEtaW5mb3MiXSwibGl2ZSI6dHJ1ZSwidG1kYktleSI6ImE4ZjQxNjI1ODc4N2Y3MGFjYzY0YTBlMmE0ODU1ZDdjIn0=';
-const VAVOO_M3U_URL = 'http://vavoo.to/playlist.m3u';
+// --- TES FOURNISSEURS INDÉPENDANTS ---
+// Si un jour Vavoo change, il suffit de remplacer le lien de `base` ici par un autre Add-on !
+const PROVIDERS = [
+    { id: 'legal', base: 'https://tvlegal.beluchon.top/eyJjYXRhbG9ncyI6WyJ0ZjEtaW5mb3MiXSwibGl2ZSI6dHJ1ZSwidG1kYktleSI6ImE4ZjQxNjI1ODc4N2Y3MGFjYzY0YTBlMmE0ODU1ZDdjIn0=', label: 'Légal', isPriority: true },
+    { id: 'vavoo', base: 'https://tvvoo.hayd.uk/cfg-fr', label: 'Vavoo', isPriority: false }
+];
 
 let channelsData = []; 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
-// --- FONCTIONS DE NETTOYAGE ET ORGANISATION ---
 function normalizeChannelName(rawName) {
     let clean = rawName.toUpperCase();
 
@@ -32,7 +34,7 @@ function normalizeChannelName(rawName) {
     if (displayName.includes('EQUIPE')) return "L'Équipe"; 
     if (displayName.includes('DISNEY')) return 'Disney Channel'; 
 
-    // BLINDAGE CANAL+
+    // BLINDAGE DE CANAL+ POUR QU'IL RESTE DANS LE PREMIUM
     if (displayName === 'CANAL' || displayName === 'CANAL PLUS' || displayName === 'CANAL LIVE') return 'Canal+';
     if (displayName.startsWith('CANAL+')) {
         let suffix = displayName.replace('CANAL+', '').trim();
@@ -104,7 +106,7 @@ function getChannelMeta(channelName) {
     if (n === 'LCI') return { index: 26, category: 'vavoo_tnt' };
     if (n.includes('FRANCE INFO')) return { index: 27, category: 'vavoo_tnt' };
 
-    // --- PREMIUM (Vérification stricte de Canal+) ---
+    // --- PREMIUM (Vérification stricte pour forcer Canal+ ici) ---
     if (n.startsWith('CANAL+')) return { index: 40, category: 'vavoo_premium' }; 
     if (n.startsWith('CINE+')) return { index: 45, category: 'vavoo_premium' };
     if (n.startsWith('OCS')) return { index: 46, category: 'vavoo_premium' };
@@ -124,113 +126,82 @@ function getChannelMeta(channelName) {
     return { index: 999, category: 'vavoo_autres' };
 }
 
-// --- GÉNÉRATEUR NÉCROMANCIEN DE CLÉS VAVOO (Natif) ---
-async function generateVavooToken() {
+async function fetchAddonCatalog(provider) {
+    let allMetas = [];
     try {
-        const res = await axios.post('https://www.vavoo.tv/api/box/guest', {
-            app: '1',
-            brand: 'VAVOO',
-            model: 'VAVOO',
-            os: 'Android',
-            uuid: 'd2d1421b-640a-4286-8a71-f9eb79f42c16' // Simulation appareil Android
-        });
-        return res.data.signed; // Voici la clé secrète !
-    } catch (err) {
-        console.error('Erreur génération clé Vavoo:', err.message);
-        return null;
-    }
-}
-
-// --- ASPIRATEURS ---
-
-// 1. Aspirateur Légal (Add-on Stremio)
-async function fetchLegalStreams() {
-    let metas = [];
-    try {
-        console.log(`[Proxy] Aspiration du réseau Légal...`);
-        const manifestRes = await axios.get(`${TV_LEGAL_BASE}/manifest.json`, { timeout: 10000 });
+        console.log(`[Proxy] Aspiration du fournisseur : ${provider.label}...`);
+        const manifestRes = await axios.get(`${provider.base}/manifest.json`, { timeout: 10000 });
+        
         for (const catalog of manifestRes.data.catalogs) {
+            const catalogId = catalog.id;
+            const catalogType = catalog.type;
+            
             try {
-                let baseRes = await axios.get(`${TV_LEGAL_BASE}/catalog/${catalog.type}/${catalog.id}.json`, { timeout: 10000 });
-                if (baseRes.data && baseRes.data.metas) metas = metas.concat(baseRes.data.metas);
-            } catch (err) { }
-        }
-    } catch (err) {
-        console.error(`[Proxy] Erreur Légal :`, err.message);
-    }
-    return metas;
-}
-
-// 2. Aspirateur Vavoo Brut (Indépendant)
-async function fetchVavooNative() {
-    let metas = [];
-    try {
-        console.log(`[Proxy] Aspiration du réseau Vavoo (Fichier brut)...`);
-        const response = await axios.get(VAVOO_M3U_URL, {
-            headers: { 'User-Agent': 'VAVOO/2.6' },
-            timeout: 15000
-        });
-
-        const lines = response.data.split('\n');
-        let currentName = '';
-
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (line.startsWith('#EXTINF:')) {
-                const parts = line.split(',');
-                currentName = parts.length > 1 ? parts.slice(1).join(',').trim() : '';
-            } else if (line && !line.startsWith('#') && currentName) {
-                // On ne garde que les chaînes taggées "France" ou "FR" pour éviter la saturation
-                if (currentName.toUpperCase().includes('FR') || currentName.toUpperCase().includes('FRANCE')) {
-                    metas.push({
-                        id: 'vavoo_raw_' + Buffer.from(line).toString('base64').substring(0, 15), // ID unique basé sur l'URL
-                        name: currentName,
-                        poster: DEFAULT_POSTER,
-                        _rawUrl: line // On stocke l'URL brute, on la décryptera plus tard
-                    });
+                let baseRes = await axios.get(`${provider.base}/catalog/${catalogType}/${catalogId}.json`, { timeout: 10000 });
+                if (baseRes.data && baseRes.data.metas) {
+                    allMetas = allMetas.concat(baseRes.data.metas);
                 }
-                currentName = '';
+
+                const genreExtra = (catalog.extra || []).find(e => e.name === 'genre');
+                if (genreExtra && genreExtra.options) {
+                    for (const genre of genreExtra.options) {
+                        let genreRes = await axios.get(`${provider.base}/catalog/${catalogType}/${catalogId}/genre=${encodeURIComponent(genre)}.json`, { timeout: 10000 });
+                        if (genreRes.data && genreRes.data.metas) {
+                            allMetas = allMetas.concat(genreRes.data.metas);
+                        }
+                    }
+                }
+            } catch (err) {
+                // Silencieux si une catégorie échoue
             }
         }
     } catch (err) {
-        console.error(`[Proxy] Erreur Vavoo Brut :`, err.message);
+        console.error(`[Proxy] Erreur avec ${provider.label} :`, err.message);
     }
-    return metas;
+    return allMetas;
 }
 
-// Construction de la base de données
 async function updateStreams() {
     try {
         let channelsMap = {};
 
-        // 1. Chargement Légal
-        const legalMetas = await fetchLegalStreams();
-        legalMetas.forEach(meta => {
-            let dName = normalizeChannelName(meta.name);
-            if (!dName || dName.length < 2) return;
-            const id = 'hyb_id_' + dName.replace(/[^a-zA-Z0-9+]/g, '_').toLowerCase();
-            const metaInfo = getChannelMeta(dName); 
+        for (const provider of PROVIDERS) {
+            const metas = await fetchAddonCatalog(provider);
+            
+            metas.forEach(meta => {
+                if (!meta.name) return;
+                
+                let displayName = normalizeChannelName(meta.name);
+                if (!displayName || displayName.length < 2) return; 
 
-            if (!channelsMap[id]) {
-                channelsMap[id] = { id, name: dName, sources: [], poster: meta.poster || DEFAULT_POSTER, sortIndex: metaInfo.index, category: metaInfo.category };
-            }
-            channelsMap[id].sources.push({ type: 'legal', metaId: meta.id });
-            if (meta.poster && channelsMap[id].poster === DEFAULT_POSTER) channelsMap[id].poster = meta.poster;
-        });
+                const id = 'hyb_id_' + displayName.replace(/[^a-zA-Z0-9+]/g, '_').toLowerCase();
+                const metaInfo = getChannelMeta(displayName); 
 
-        // 2. Chargement Vavoo
-        const vavooMetas = await fetchVavooNative();
-        vavooMetas.forEach(meta => {
-            let dName = normalizeChannelName(meta.name);
-            if (!dName || dName.length < 2) return;
-            const id = 'hyb_id_' + dName.replace(/[^a-zA-Z0-9+]/g, '_').toLowerCase();
-            const metaInfo = getChannelMeta(dName); 
+                if (!channelsMap[id]) {
+                    channelsMap[id] = {
+                        id: id,
+                        name: displayName,
+                        sources: [], 
+                        poster: meta.poster || DEFAULT_POSTER,
+                        sortIndex: metaInfo.index,
+                        category: metaInfo.category 
+                    };
+                }
 
-            if (!channelsMap[id]) {
-                channelsMap[id] = { id, name: dName, sources: [], poster: meta.poster || DEFAULT_POSTER, sortIndex: metaInfo.index, category: metaInfo.category };
-            }
-            channelsMap[id].sources.push({ type: 'vavoo', url: meta._rawUrl });
-        });
+                // Associe la source au bon fournisseur (Légal ou Vavoo)
+                const sourceExists = channelsMap[id].sources.find(s => s.metaId === meta.id && s.provider.id === provider.id);
+                if (!sourceExists) {
+                    channelsMap[id].sources.push({
+                        metaId: meta.id,
+                        provider: provider
+                    });
+                }
+                
+                if (meta.poster && channelsMap[id].poster === DEFAULT_POSTER) {
+                    channelsMap[id].poster = meta.poster;
+                }
+            });
+        }
 
         channelsData = Object.values(channelsMap);
         channelsData.sort((a, b) => {
@@ -238,24 +209,31 @@ async function updateStreams() {
             return a.name.localeCompare(b.name);
         });
 
-        console.log(`[Proxy] Fusion réussie. ${channelsData.length} chaînes prêtes.`);
+        console.log(`[Proxy] Fusion réussie. ${channelsData.length} chaînes uniques construites.`);
     } catch (err) {
         console.error('[Proxy] Erreur globale :', err.message);
     }
 }
 
-// --- SERVEUR ADDON ---
+function getStreamScore(title) {
+    const t = (title || '').toUpperCase();
+    if (t.includes('4K') || t.includes('2160') || t.includes('UHD')) return 4;
+    if (t.includes('FHD') || t.includes('1080')) return 3;
+    if (t.includes('HD') || t.includes('720')) return 2;
+    if (t.includes('SD')) return 0;
+    return 1;
+}
 
 app.get('/', (req, res) => {
-    res.send(`<h1>Hybrid TV FR (v13.0 - Indépendance Totale) est en ligne !</h1><p>Chaînes totales : <strong>${channelsData.length}</strong></p>`);
+    res.send(`<h1>Hybrid TV FR (v14.0 - Légal + TvVoo) est en ligne !</h1><p>Chaînes totales : <strong>${channelsData.length}</strong></p>`);
 });
 
 app.get('/manifest.json', (req, res) => {
     res.json({
         id: 'org.hybridproxy.fr.live',
-        version: '13.0.0',
+        version: '14.0.0',
         name: 'Super TV Box',
-        description: 'Flux Légaux + Vavoo (Génération de clés Native).',
+        description: 'Flux Légaux prioritaires + Secours Vavoo (TvVoo).',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -269,8 +247,11 @@ app.get('/manifest.json', (req, res) => {
 
 const handleCatalog = (req, res) => {
     const requestedCatalog = req.params.id; 
+    
     const validCatalogs = ['vavoo_tnt', 'vavoo_sports', 'vavoo_premium', 'vavoo_autres'];
-    if (!validCatalogs.includes(requestedCatalog)) return res.json({ metas: [] });
+    if (!validCatalogs.includes(requestedCatalog)) {
+        return res.json({ metas: [] });
+    }
 
     let skip = 0;
     if (req.params.extra) {
@@ -279,6 +260,7 @@ const handleCatalog = (req, res) => {
     }
 
     const filteredChannels = channelsData.filter(ch => ch.category === requestedCatalog);
+
     const paginatedMetas = filteredChannels.slice(skip, skip + 100).map(ch => ({
         id: ch.id,
         type: 'tv',
@@ -296,6 +278,7 @@ app.get('/catalog/tv/:id/:extra', handleCatalog);
 app.get('/meta/tv/:id.json', (req, res) => {
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ meta: {} });
+
     res.json({
         meta: {
             id: channel.id,
@@ -303,75 +286,50 @@ app.get('/meta/tv/:id.json', (req, res) => {
             name: channel.name,
             poster: channel.poster,
             posterShape: 'square',
-            description: `Système Autonome : Flux Officiels + Backups générés en temps réel.`
+            description: `Système Hybride : ${channel.sources.length} réseaux analysés pour garantir la diffusion.`
         }
     });
 });
-
-function getStreamScore(title) {
-    const t = (title || '').toUpperCase();
-    if (t.includes('4K') || t.includes('2160') || t.includes('UHD')) return 4;
-    if (t.includes('FHD') || t.includes('1080')) return 3;
-    if (t.includes('HD') || t.includes('720')) return 2;
-    if (t.includes('SD')) return 0;
-    return 1;
-}
 
 app.get('/stream/tv/:id.json', async (req, res) => {
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ streams: [] });
 
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
     try {
         let allStreams = [];
         
-        // 1. Récupération des flux Légaux (Rapide)
-        const legalSources = channel.sources.filter(s => s.type === 'legal');
-        for (const source of legalSources) {
+        // Requête simultanée aux différents fournisseurs pour la chaîne
+        for (const source of channel.sources) {
             try {
-                const streamRes = await axios.get(`${TV_LEGAL_BASE}/stream/tv/${source.metaId}.json`, { timeout: 5000 });
+                const streamRes = await axios.get(`${source.provider.base}/stream/tv/${source.metaId}.json`, {
+                    headers: { 'X-Forwarded-For': clientIp },
+                    timeout: 5000
+                });
+                
                 if (streamRes.data && streamRes.data.streams) {
                     const mappedStreams = streamRes.data.streams.map(s => ({
                         ...s,
                         _score: getStreamScore(s.title),
-                        _label: 'Légal',
-                        _isPriority: true
+                        _label: source.provider.label, // Affichera "Légal" ou "Vavoo"
+                        _isPriority: source.provider.isPriority
                     }));
                     allStreams = allStreams.concat(mappedStreams);
                 }
-            } catch (err) {}
-        }
-
-        // 2. Déchiffrement à la volée des flux Vavoo (Génération du Token)
-        const vavooSources = channel.sources.filter(s => s.type === 'vavoo');
-        if (vavooSources.length > 0) {
-            const token = await generateVavooToken(); // On crée la clé de sécurité
-            
-            vavooSources.forEach((source, index) => {
-                let finalUrl = source.url;
-                
-                // Si Vavoo exige un token, on l'ajoute à l'URL finale
-                if (token && finalUrl.includes('.ts')) {
-                    finalUrl = `${finalUrl}?n=1&b=5&vavoo_auth=${token}`;
-                }
-                
-                allStreams.push({
-                    url: finalUrl,
-                    title: `Flux de Secours ${index + 1}`,
-                    _score: 1, // Score moyen
-                    _label: 'Vavoo',
-                    _isPriority: false
-                });
-            });
+            } catch (err) {
+                // Si Vavoo tombe en panne, le Légal continue de fonctionner en silence !
+            }
         }
         
-        // 3. Tri (Légal prioritaire, puis par Qualité)
+        // Tri : Les flux "Légal" (Priority) se mettent automatiquement tout en haut de la liste
         allStreams.sort((a, b) => {
             if (a._isPriority && !b._isPriority) return -1;
             if (!a._isPriority && b._isPriority) return 1;
             return b._score - a._score;
         });
 
-        // 4. Formatage final des étiquettes
+        // Formatage du texte affiché dans l'application
         const finalStreams = allStreams.map((s, idx) => ({
             url: s.url,
             title: `[${s._label}] Choix ${idx + 1} | ${s.title.replace(/\[.*?\]\s*/g, '') || 'Auto'}`
