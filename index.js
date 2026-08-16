@@ -36,9 +36,8 @@ function normalizeChannelName(rawName) {
 
     if (displayName.includes('EQUIPE')) return "L'Équipe"; 
 
-    // UNIVERS DISNEY STRICT (Suppression de Disney+ vide)
     if (displayName.includes('DISNEY')) {
-        if (displayName.includes('+') || displayName.includes('PLUS')) return ''; // Ignore les faux flux Disney+ vides
+        if (displayName.includes('+') || displayName.includes('PLUS')) return ''; 
         if (displayName.includes('XD')) return 'Disney XD';
         if (displayName.includes('JUNIOR') || displayName.includes('JR')) return 'Disney Junior';
         if (displayName.includes('CINEMA')) return 'Disney Cinéma';
@@ -102,7 +101,6 @@ function getChannelMeta(channelName) {
     const n = channelName.toUpperCase();
     if (!n) return null;
     
-    // --- CATALOGUE 1 : TNT ---
     if (n === 'TF1') return { index: 1, category: 'vavoo_tnt' };
     if (n === 'FRANCE 2') return { index: 2, category: 'vavoo_tnt' };
     if (n === 'FRANCE 3') return { index: 3, category: 'vavoo_tnt' };
@@ -129,7 +127,6 @@ function getChannelMeta(channelName) {
     if (n === 'LCI') return { index: 26, category: 'vavoo_tnt' };
     if (n.includes('FRANCE INFO')) return { index: 27, category: 'vavoo_tnt' };
 
-    // --- CATALOGUE 2 : JEUNESSE ---
     if (n === 'DISNEY CHANNEL') return { index: 1, category: 'vavoo_jeunesse' };
     if (n === 'CARTOON NETWORK') return { index: 2, category: 'vavoo_jeunesse' };
     if (n.includes('DISNEY')) return { index: 3, category: 'vavoo_jeunesse' }; 
@@ -137,7 +134,6 @@ function getChannelMeta(channelName) {
         return { index: 10, category: 'vavoo_jeunesse' };
     }
 
-    // --- CATALOGUE 3 : PREMIUM ---
     if (n === 'CANAL+') return { index: 40, category: 'vavoo_premium' }; 
     if (n.startsWith('CANAL+')) return { index: 45, category: 'vavoo_premium' }; 
     if (n.startsWith('CINE+')) return { index: 46, category: 'vavoo_premium' };
@@ -145,7 +141,6 @@ function getChannelMeta(channelName) {
     if (n.startsWith('OCS')) return { index: 90, category: 'vavoo_premium' }; 
     if (n.includes('BOX OFFICE')) return { index: 91, category: 'vavoo_premium' };
 
-    // --- CATALOGUE 4 : SPORTS ---
     if (n.startsWith('BEIN SPORTS')) return { index: 100, category: 'vavoo_sports' };
     if (n.startsWith('RMC SPORT')) return { index: 110, category: 'vavoo_sports' };
     if (n.startsWith('EUROSPORT')) return { index: 120, category: 'vavoo_sports' };
@@ -248,7 +243,7 @@ async function updateStreams() {
                 let dName = normalizeChannelName(meta.name);
                 if (!dName || dName.length < 2) return; 
                 const metaInfo = getChannelMeta(dName); 
-                if (!metaInfo) return; // Ignore les chaînes non désirées (ex: Disney+)
+                if (!metaInfo) return; 
 
                 const id = 'hyb_id_' + dName.replace(/[^a-zA-Z0-9+]/g, '_').toLowerCase();
 
@@ -278,17 +273,16 @@ async function updateStreams() {
 
 app.get('/', (req, res) => {
     if (isUpdating) {
-        res.send(`<h1>Hybrid TV FR (v22.0)</h1><p>⏳ Chargement en cours...</p>`);
+        res.send(`<h1>Hybrid TV FR (v24.0)</h1><p>⏳ Chargement en cours...</p>`);
     } else {
-        res.send(`<h1>Hybrid TV FR (v22.0) est en ligne !</h1><p>Chaînes : <strong>${channelsData.length}</strong> | Matchs Live : <strong>${sportsEventsData.length}</strong></p>`);
+        res.send(`<h1>Hybrid TV FR (v24.0) est en ligne !</h1><p>Chaînes : <strong>${channelsData.length}</strong> | Matchs Live : <strong>${sportsEventsData.length}</strong></p>`);
     }
 });
 
-// MANIFEST AVEC EMOJIS HARMONISÉS SUR TOUS LES CATALOGUES
 app.get('/manifest.json', (req, res) => {
     res.json({
-        id: 'org.hybridproxy.fr.live.v22', 
-        version: '22.0.0',
+        id: 'org.hybridproxy.fr.live.v24', 
+        version: '24.0.0',
         name: 'Hybrid TV FR',
         description: 'TNT, Jeunesse, Sports, Chaînes Payantes et EPG.',
         resources: ['catalog', 'meta', 'stream'],
@@ -362,7 +356,6 @@ app.get('/meta/tv/:id.json', async (req, res) => {
     const channel = channelsData.find(c => c.id === id);
     if (!channel) return res.json({ meta: {} });
     
-    // DESCRIPTION PROPRE (Sans la ligne technique moche)
     let desc = "";
     if (epgData[channel.name]) {
         const now = Date.now();
@@ -399,12 +392,15 @@ function getStreamScore(title) {
 
 app.get('/stream/tv/:id.json', async (req, res) => {
     const id = req.params.id;
-    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    
+    // CORRECTION CRITIQUE DU BUG IP (Extraction de la première IP valide de Render)
+    const rawIp = req.headers['x-forwarded-for'];
+    const clientIp = rawIp ? rawIp.split(',')[0].trim() : req.socket.remoteAddress;
 
     if (id.startsWith('sport_ev_')) {
         const originalId = id.replace('sport_ev_', '');
         try {
-            const streamRes = await axios.get(`${SPORTS_FEED_BASE}/stream/sports/${originalId}.json`, { timeout: 8000 });
+            const streamRes = await axios.get(`${SPORTS_FEED_BASE}/stream/sports/${originalId}.json`, { timeout: 10000 });
             return res.json(streamRes.data);
         } catch (err) {
             return res.json({ streams: [] });
@@ -420,7 +416,7 @@ app.get('/stream/tv/:id.json', async (req, res) => {
             if (source.type === 'addon') {
                 try {
                     const streamRes = await axios.get(`${source.provider.base}/stream/tv/${source.metaId}.json`, {
-                        headers: { 'X-Forwarded-For': clientIp }, timeout: 5000
+                        headers: { 'X-Forwarded-For': clientIp }, timeout: 10000 
                     });
                     if (streamRes.data && streamRes.data.streams) {
                         const mappedStreams = streamRes.data.streams.map(s => ({
@@ -431,7 +427,9 @@ app.get('/stream/tv/:id.json', async (req, res) => {
                         }));
                         allStreams = allStreams.concat(mappedStreams);
                     }
-                } catch (err) {}
+                } catch (err) {
+                    console.error(`[Stream Error] Échec de récupération pour ${channel.name} sur ${source.provider.label}:`, err.message);
+                }
             }
         }
         
@@ -446,7 +444,6 @@ app.get('/stream/tv/:id.json', async (req, res) => {
             title: `[${s._label}] Choix ${idx + 1} | ${s.title.replace(/\[.*?\]\s*/g, '') || 'Auto'}`
         }));
         
-        // CORRECTION ANTI-CRASH : Si aucun flux n'est dispo, renvoie un tableau vide propre au lieu de planter
         res.json({ streams: finalStreams });
     } catch (err) {
         res.json({ streams: [] });
