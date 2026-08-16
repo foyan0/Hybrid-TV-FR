@@ -5,15 +5,17 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 
+let isUpdating = true; // Permet de savoir si le serveur a fini de s'allumer
+
 // --- 1. LES TROIS PILIERS DE TON RÉSEAU ---
-const IPTV_ORG_URL = 'https://iptv-org.github.io/iptv/countries/fr.m3u'; // Source Légale Native
+const IPTV_ORG_URL = 'https://iptv-org.github.io/iptv/countries/fr.m3u'; 
 const ADDON_PROVIDERS = [
     { id: 'vavoo', base: 'https://tvvoo.hayd.uk/cfg-fr', label: 'Vavoo', isPriority: false },
     { id: 'mio', base: 'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiXSwiY2F0ZWdvcmllcyI6eyJGUiI6WyJHZW5lcmFsIPCfk7oiLCJTcG9ydHMg4pq9IiwiRG9jdW1lbnRhaXJlcyDwn4yNIiwiRmlsbXMg8J+OrCIsIkluZm9ybWF0aW9ucyDwn5OwIiwiRW5mYW50cyDwn5G2IiwiTXVzaWMg8J+OtSJdfSwiZW5hYmxlU2VhcmNoIjpmYWxzZX0', label: 'Mio', isPriority: false }
 ];
 
 let channelsData = [];
-let epgData = {}; // Base de données du Programme TV
+let epgData = {}; 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
 const FALLBACK_POSTERS = {
@@ -98,7 +100,6 @@ function normalizeChannelName(rawName) {
 function getChannelMeta(channelName) {
     const n = channelName.toUpperCase();
     
-    // TNT
     if (n === 'TF1') return { index: 1, category: 'vavoo_tnt' };
     if (n === 'FRANCE 2') return { index: 2, category: 'vavoo_tnt' };
     if (n === 'FRANCE 3') return { index: 3, category: 'vavoo_tnt' };
@@ -125,14 +126,12 @@ function getChannelMeta(channelName) {
     if (n === 'LCI') return { index: 26, category: 'vavoo_tnt' };
     if (n.includes('FRANCE INFO')) return { index: 27, category: 'vavoo_tnt' };
 
-    // Premium
     if (n.startsWith('CANAL+')) return { index: 40, category: 'vavoo_premium' }; 
     if (n.includes('DISNEY')) return { index: 41, category: 'vavoo_premium' };
     if (n.startsWith('CINE+')) return { index: 45, category: 'vavoo_premium' };
     if (n === 'PARIS PREMIERE' || n.includes('RTL 9') || n === 'RTL9') return { index: 47, category: 'vavoo_premium' };
     if (n.startsWith('OCS')) return { index: 90, category: 'vavoo_premium' };
 
-    // Sports
     if (n.startsWith('BEIN SPORTS')) return { index: 100, category: 'vavoo_sports' };
     if (n.startsWith('RMC SPORT')) return { index: 110, category: 'vavoo_sports' };
     if (n.startsWith('EUROSPORT')) return { index: 120, category: 'vavoo_sports' };
@@ -146,12 +145,10 @@ function getChannelMeta(channelName) {
 }
 
 // --- 3. ASPIRATEURS ET PROGRAMME TV ---
-
-// Moteur EPG (Programme TV)
 async function updateEPG() {
     try {
         console.log('[EPG] Téléchargement du programme TV...');
-        const res = await axios.get('https://xmltv.ch/xmltv/xmltv-tnt.xml', { timeout: 15000 });
+        const res = await axios.get('https://xmltv.ch/xmltv/xmltv-tnt.xml', { timeout: 8000 });
         const xml = res.data;
         
         let epgChannels = {};
@@ -168,7 +165,6 @@ async function updateEPG() {
             const chName = epgChannels[match[15]];
             if (!chName) continue;
             
-            // Format ISO 8601 pour analyser la date avec certitude
             const startStr = `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}${match[7]}`;
             const stopStr = `${match[8]}-${match[9]}-${match[10]}T${match[11]}:${match[12]}:${match[13]}${match[14]}`;
             
@@ -176,26 +172,19 @@ async function updateEPG() {
             const stopTs = new Date(stopStr).getTime();
             
             if (!newEpgData[chName]) newEpgData[chName] = [];
-            newEpgData[chName].push({
-                start: startTs,
-                stop: stopTs,
-                title: match[16].trim(),
-                desc: match[17] ? match[17].trim() : ''
-            });
+            newEpgData[chName].push({ start: startTs, stop: stopTs, title: match[16].trim(), desc: match[17] ? match[17].trim() : '' });
         }
         epgData = newEpgData;
-        console.log(`[EPG] Programme TV mis à jour pour ${Object.keys(epgData).length} chaînes.`);
+        console.log(`[EPG] Programme TV OK.`);
     } catch (err) {
-        console.error('[EPG] Erreur lors de la maj du programme :', err.message);
+        console.error('[EPG] Échec EPG, on continue sans.');
     }
 }
 
-// Aspirateur Légal Brut (IPTV-ORG)
 async function fetchIptvOrg() {
     let metas = [];
     try {
-        console.log(`[Proxy] Aspiration du réseau Légal natif (IPTV-ORG)...`);
-        const response = await axios.get(IPTV_ORG_URL, { timeout: 10000 });
+        const response = await axios.get(IPTV_ORG_URL, { timeout: 8000 });
         const lines = response.data.split('\n');
         let currentName = '';
 
@@ -209,52 +198,64 @@ async function fetchIptvOrg() {
                 currentName = '';
             }
         }
-    } catch (err) {
-        console.error(`[Proxy] Erreur IPTV-ORG :`, err.message);
-    }
+    } catch (err) {}
     return metas;
 }
 
-// Aspirateur Addons (Avec correction de la Pagination pour ne rater aucune source)
 async function fetchAddonCatalog(provider) {
     let allMetas = [];
     try {
         console.log(`[Proxy] Aspiration de ${provider.label}...`);
-        const manifestRes = await axios.get(`${provider.base}/manifest.json`, { timeout: 10000 });
+        const manifestRes = await axios.get(`${provider.base}/manifest.json`, { timeout: 8000 });
         
         for (const catalog of manifestRes.data.catalogs) {
             let skip = 0;
             let hasMore = true;
+            let maxPages = 15; // GARDE FOU : 15 pages maximum (1500 chaînes)
+            let pageCount = 0;
+            let seenIds = new Set(); // Mémoire des chaînes déjà vues
             
-            // LA BOUCLE MAGIQUE : Tourne les pages tant qu'il y a des chaînes !
-            while (hasMore) {
+            while (hasMore && pageCount < maxPages) {
+                pageCount++;
                 try {
                     let url = `${provider.base}/catalog/${catalog.type}/${catalog.id}.json`;
                     if (skip > 0) url = `${provider.base}/catalog/${catalog.type}/${catalog.id}/skip=${skip}.json`;
                     
-                    let res = await axios.get(url, { timeout: 10000 });
+                    let res = await axios.get(url, { timeout: 8000 });
                     if (res.data && res.data.metas && res.data.metas.length > 0) {
-                        allMetas = allMetas.concat(res.data.metas);
-                        skip += res.data.metas.length; 
+                        let newAdded = 0;
+                        res.data.metas.forEach(m => {
+                            // Le filtre magique : si on connaît déjà l'ID, on l'ignore !
+                            if (!seenIds.has(m.id)) {
+                                seenIds.add(m.id);
+                                allMetas.push(m);
+                                newAdded++;
+                            }
+                        });
+                        
+                        // Si la page ne nous donne AUCUNE nouvelle chaîne, c'est que TvVoo boucle à l'infini !
+                        if (newAdded === 0) {
+                            hasMore = false; // On stoppe la boucle !
+                        } else {
+                            skip += res.data.metas.length; 
+                        }
                     } else {
-                        hasMore = false; // Fin du catalogue atteint
+                        hasMore = false;
                     }
                 } catch (e) {
                     hasMore = false;
                 }
             }
         }
-    } catch (err) {
-        console.error(`[Proxy] Erreur avec ${provider.label} :`, err.message);
-    }
+    } catch (err) { }
     return allMetas;
 }
 
 async function updateStreams() {
+    isUpdating = true; // On met le statut sur "Chargement"
     try {
         let channelsMap = {};
 
-        // 1. Chaînes Légales
         const legalMetas = await fetchIptvOrg();
         legalMetas.forEach(meta => {
             let dName = normalizeChannelName(meta.name);
@@ -268,7 +269,6 @@ async function updateStreams() {
             channelsMap[id].sources.push({ type: 'direct', url: meta.url, provider: { label: 'Légal', isPriority: true } });
         });
 
-        // 2. Add-ons (Vavoo et Mio)
         for (const provider of ADDON_PROVIDERS) {
             const metas = await fetchAddonCatalog(provider);
             metas.forEach(meta => {
@@ -282,12 +282,9 @@ async function updateStreams() {
                 }
                 
                 const sourceExists = channelsMap[id].sources.find(s => s.metaId === meta.id && s.provider && s.provider.id === provider.id);
-                if (!sourceExists) {
-                    channelsMap[id].sources.push({ type: 'addon', metaId: meta.id, provider: provider });
-                }
-                if (meta.poster && channelsMap[id].poster === DEFAULT_POSTER) {
-                    channelsMap[id].poster = meta.poster;
-                }
+                if (!sourceExists) channelsMap[id].sources.push({ type: 'addon', metaId: meta.id, provider: provider });
+                
+                if (meta.poster && channelsMap[id].poster === DEFAULT_POSTER) channelsMap[id].poster = meta.poster;
             });
         }
 
@@ -297,18 +294,24 @@ async function updateStreams() {
             return a.name.localeCompare(b.name);
         });
 
-        console.log(`[Proxy] Fusion réussie. ${channelsData.length} chaînes construites.`);
     } catch (err) {}
+    isUpdating = false; // Chargement terminé !
 }
 
-app.get('/', (req, res) => res.send(`<h1>Hybrid TV FR (v16.0 - L'Ultime) est en ligne !</h1>`));
+app.get('/', (req, res) => {
+    if (isUpdating) {
+        res.send(`<h1>Hybrid TV FR (v16.1)</h1><p>⏳ Démarrage et aspiration en cours, veuillez patienter quelques secondes puis rafraîchir...</p>`);
+    } else {
+        res.send(`<h1>Hybrid TV FR (v16.1 - L'Ultime) est en ligne !</h1><p>Chaînes totales construites : <strong>${channelsData.length}</strong></p>`);
+    }
+});
 
 app.get('/manifest.json', (req, res) => {
     res.json({
         id: 'org.hybridproxy.fr.live',
-        version: '16.0.0',
+        version: '16.1.0',
         name: 'Mio Box Pro',
-        description: 'Programme TV en direct, M3U Natif et Sécurité multi-sources.',
+        description: 'Programme TV en direct, M3U Natif et Sécurité anti-boucle.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -345,14 +348,12 @@ const handleCatalog = (req, res) => {
 app.get('/catalog/tv/:id.json', handleCatalog);
 app.get('/catalog/tv/:id/:extra', handleCatalog);
 
-// Route META : C'est ici qu'on injecte le Programme TV !
 app.get('/meta/tv/:id.json', (req, res) => {
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ meta: {} });
     
     let desc = `${channel.sources.length} sources analysées (Légal, Vavoo, Mio).`;
     
-    // Ajout du programme TV en cours
     if (epgData[channel.name]) {
         const now = Date.now();
         const currentProg = epgData[channel.name].find(p => now >= p.start && now <= p.stop);
@@ -411,11 +412,10 @@ app.get('/stream/tv/:id.json', async (req, res) => {
             }
         }
         
-        // Tri : Légal d'abord, puis Vavoo, puis Mio.
         allStreams.sort((a, b) => {
             if (a._isPriority && !b._isPriority) return -1;
             if (!a._isPriority && b._isPriority) return 1;
-            if (a._label === 'Vavoo' && b._label === 'Mio') return -1; // Vavoo passe avant Mio
+            if (a._label === 'Vavoo' && b._label === 'Mio') return -1; 
             if (a._label === 'Mio' && b._label === 'Vavoo') return 1;
             return b._score - a._score;
         });
@@ -433,7 +433,7 @@ app.get('/stream/tv/:id.json', async (req, res) => {
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, async () => {
     console.log(`Serveur démarré sur le port ${PORT}`);
-    await updateEPG(); // Charge le programme TV au démarrage
+    await updateEPG(); 
     await updateStreams();
-    setInterval(updateEPG, 3600000); // Mise à jour du programme TV toutes les heures
+    setInterval(updateEPG, 3600000); 
 });
