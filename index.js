@@ -7,7 +7,6 @@ app.use(cors());
 
 let isUpdating = true;
 
-// --- LES SOURCES ---
 const ADDON_PROVIDERS = [
     { id: 'vavoo', base: 'https://tvvoo.hayd.uk/cfg-fr', label: 'Vavoo', isPriority: true },
     { id: 'mio', base: 'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiLCJCRV9GUiJdLCJjYXRlZ29yaWVzIjp7IkZSIjpbIkdlbmVyYWwg8J+7oiIsIlNwb3J0cyDimq3igIsiLCJEb2N1bWVudGFpcmVzIPCfijrQuiIsIkZpbG1zIPCfjqwiLCJJbmZvcm1hdGlvbnMg8J+7oiIsIkVuZmFudHMgv5G2IiwiTXVzaWMg8J+OtSJdfSwiZW5hYmxlU2VhcmNoIjpmYWxzZX0', label: 'Mio', isPriority: false }
@@ -119,6 +118,7 @@ function getChannelMeta(channelName) {
         return { index: infoIndex, category: 'vavoo_info' };
     }
 
+    // Ordre Jeunesse exact demandé
     if (n === 'CARTOON NETWORK') return { index: 1, category: 'vavoo_jeunesse' };
     if (n === 'DISNEY CHANNEL') return { index: 2, category: 'vavoo_jeunesse' };
     if (n === 'GULLI') return { index: 3, category: 'vavoo_jeunesse' };
@@ -126,11 +126,12 @@ function getChannelMeta(channelName) {
     if (n.includes('DISNEY XD')) return { index: 5, category: 'vavoo_jeunesse' };
     if (n === 'BOOMERANG') return { index: 6, category: 'vavoo_jeunesse' };
     if (n === 'CANAL J') return { index: 7, category: 'vavoo_jeunesse' };
-    if (n.includes('DISNEY JUNIOR') || n.includes('DISNEY JR')) return { index: 8, category: 'vavoo_jeunesse' };
-    if (n.includes('NICKELODEON') && !n.includes('+1') && !n.includes('14')) return { index: 9, category: 'vavoo_jeunesse' };
+    if (n === 'CANAL+ KIDS') return { index: 8, category: 'vavoo_jeunesse' };
+    if (n.includes('DISNEY JUNIOR') || n.includes('DISNEY JR')) return { index: 9, category: 'vavoo_jeunesse' };
+    if (n.includes('NICKELODEON') && !n.includes('+1') && !n.includes('14')) return { index: 10, category: 'vavoo_jeunesse' };
     if (n === 'DISNEY CHANNEL +1') return { index: 50, category: 'vavoo_jeunesse' };
     if (n.includes('NICKELODEON +1') || n.includes('NICKELODEON 14')) return { index: 51, category: 'vavoo_jeunesse' };
-    if (n.includes('DISNEY') || n.includes('CARTOON') || n.includes('BOOMERANG') || n.includes('NICKELODEON') || n.includes('TIJI') || n.includes('CANAL J') || n.includes('TELETOON') || n.includes('PIWI')) {
+    if (n.includes('DISNEY') || n.includes('CARTOON') || n.includes('BOOMERANG') || n.includes('NICKELODEON') || n.includes('TIJI') || n.includes('CANAL J') || n.includes('TELETOON') || n.includes('PIWI') || n.includes('KIDS')) {
         return { index: 20, category: 'vavoo_jeunesse' };
     }
 
@@ -242,21 +243,42 @@ async function updateEPG() {
             epgChannels[match[1]] = normalizeChannelName(match[2]);
         }
 
-        const progRegex = /<programme start="(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s?([^"]*)" stop="(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s?([^"]*)" channel="([^"]+)">.*?<title[^>]*>([^<]+)<\/title>(?:.*?<desc[^>]*>([^<]+)<\/desc>)?/gs;
+        // Parseur XMLTV robuste et indépendant de l'ordre des attributs
+        const progBlocks = xml.match(/<programme[\s\S]*?<\/programme>/g) || [];
         let newEpgData = {};
-        while ((match = progRegex.exec(xml)) !== null) {
-            const rawChName = epgChannels[match[15]];
-            if (!rawChName) continue;
-            const chName = normalizeChannelName(rawChName);
-            const startStr = `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}+02:00`;
-            const stopStr = `${match[8]}-${match[9]}-${match[10]}T${match[11]}:${match[12]}:${match[13]}+02:00`;
-            const startTs = new Date(startStr).getTime();
-            const stopTs = new Date(stopStr).getTime();
-            if (!newEpgData[chName]) newEpgData[chName] = [];
-            newEpgData[chName].push({ start: startTs, stop: stopTs, title: match[16].trim(), desc: match[17] ? match[17].trim() : '' });
+
+        for (let block of progBlocks) {
+            const startMatch = block.match(/start="(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s?([^"]*)"/);
+            const stopMatch = block.match(/stop="(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s?([^"]*)"/);
+            const chanMatch = block.match(/channel="([^"]+)"/);
+            const titleMatch = block.match(/<title[^>]*>([^<]+)<\/title>/);
+            const descMatch = block.match(/<desc[^>]*>([^<]+)<\/desc>/);
+
+            if (startMatch && stopMatch && chanMatch && titleMatch) {
+                const rawChName = epgChannels[chanMatch[1]];
+                if (!rawChName) continue;
+                const chName = normalizeChannelName(rawChName);
+
+                const startStr = `${startMatch[1]}-${startMatch[2]}-${startMatch[3]}T${startMatch[4]}:${startMatch[5]}:${startMatch[6]}+02:00`;
+                const stopStr = `${stopMatch[1]}-${stopMatch[2]}-${stopMatch[3]}T${stopMatch[4]}:${stopMatch[5]}:${stopMatch[6]}+02:00`;
+                
+                const startTs = new Date(startStr).getTime();
+                const stopTs = new Date(stopStr).getTime();
+
+                if (!newEpgData[chName]) newEpgData[chName] = [];
+                newEpgData[chName].push({
+                    start: startTs,
+                    stop: stopTs,
+                    title: titleMatch[1].trim(),
+                    desc: descMatch ? descMatch[1].trim() : ''
+                });
+            }
         }
         epgData = newEpgData;
-    } catch (err) {}
+        console.log(`[EPG] Succès : ${Object.keys(epgData).length} chaînes synchronisées.`);
+    } catch (err) {
+        console.error('[EPG Error]', err.message);
+    }
 }
 
 async function fetchAddonCatalog(provider) {
@@ -361,16 +383,16 @@ async function updateStreams() {
 
 app.get('/', (req, res) => {
     if (isUpdating) {
-        res.send(`<h1>Hybrid TV FR (v33.0)</h1><p>⏳ Chargement en cours...</p>`);
+        res.send(`<h1>Hybrid TV FR (v33.1)</h1><p>⏳ Chargement en cours...</p>`);
     } else {
-        res.send(`<h1>Hybrid TV FR (v33.0) est en ligne !</h1><p>Chaînes actives : <strong>${channelsData.length}</strong></p>`);
+        res.send(`<h1>Hybrid TV FR (v33.1) est en ligne !</h1><p>Chaînes actives : <strong>${channelsData.length}</strong></p>`);
     }
 });
 
 app.get('/manifest.json', (req, res) => {
     res.json({
-        id: 'org.hybridproxy.fr.live.v330', 
-        version: '33.0.0',
+        id: 'org.hybridproxy.fr.live.v331', 
+        version: '33.1.0',
         name: 'Hybrid TV FR',
         description: 'TNT, Information, Jeunesse, Découverte, Cinéma, Musique, Bouquet Canal, Sports et EPG en direct.',
         resources: ['catalog', 'meta', 'stream'],
@@ -439,7 +461,6 @@ app.get('/meta/tv/:id.json', async (req, res) => {
             name: channel.name,
             poster: channel.poster,
             posterShape: 'square',
-            // EN DIRECT dans les sous-titres / releaseInfo / description selon compatibilité Stremio
             releaseInfo: `🔴 ${currentTitle}`,
             description: `🔴 EN DIRECT : ${currentTitle}\n\n${currentDesc}`.trim()
         }
