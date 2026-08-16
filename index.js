@@ -6,42 +6,56 @@ const app = express();
 app.use(cors());
 
 const TVVOO_BASE = 'https://tvvoo.hayd.uk/cfg-fr';
-let channelsData = []; // On utilise un tableau maintenant pour gérer l'ordre
+let channelsData = []; 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
-// Le dictionnaire strict pour forcer l'ordre et le regroupement
-const MASTER_CHANNELS = [
-    { id: 'tnt_01', name: 'TF1', match: (n) => n.includes('TF1') && !n.includes('SERIES') && !n.includes('FILM') },
-    { id: 'tnt_02', name: 'France 2', match: (n) => n.includes('FRANCE 2') || n.includes('FRANCE2') || n.includes('FR 2') },
-    { id: 'tnt_03', name: 'France 3', match: (n) => n.includes('FRANCE 3') || n.includes('FRANCE3') || n.includes('FR 3') },
-    { id: 'tnt_04', name: 'Canal+', match: (n) => (n.includes('CANAL+') || n.includes('CANAL PLUS')) && !n.includes('SPORT') && !n.includes('CINEMA') && !n.includes('SERIES') && !n.includes('DOC') },
-    { id: 'tnt_05', name: 'France 5', match: (n) => n.includes('FRANCE 5') || n.includes('FRANCE5') || n.includes('FR 5') },
-    { id: 'tnt_06', name: 'M6', match: (n) => (n.includes('M6') || n.includes('M 6')) && !n.includes('MUSIC') },
-    { id: 'tnt_07', name: 'Arte', match: (n) => n.includes('ARTE') },
-    { id: 'tnt_08', name: 'C8', match: (n) => n.includes('C8') || n.includes('C 8') },
-    { id: 'tnt_09', name: 'W9', match: (n) => n.includes('W9') || n.includes('W 9') },
-    { id: 'tnt_10', name: 'TMC', match: (n) => n.includes('TMC') },
-    { id: 'tnt_11', name: 'TFX', match: (n) => n.includes('TFX') },
-    { id: 'tnt_12', name: 'NRJ 12', match: (n) => n.includes('NRJ') && n.includes('12') },
-    { id: 'tnt_13', name: 'LCP / Public Sénat', match: (n) => n.includes('LCP') || n.includes('SENAT') },
-    { id: 'tnt_14', name: 'France 4', match: (n) => n.includes('FRANCE 4') || n.includes('FRANCE4') || n.includes('FR 4') },
-    { id: 'tnt_15', name: 'BFMTV', match: (n) => n.includes('BFM') && n.includes('TV') },
-    { id: 'tnt_16', name: 'CNEWS', match: (n) => n.includes('CNEWS') || n.includes('C NEWS') },
-    { id: 'tnt_17', name: 'CSTAR', match: (n) => n.includes('CSTAR') || n.includes('C STAR') },
-    { id: 'tnt_18', name: 'Gulli', match: (n) => n.includes('GULLI') },
-    { id: 'tnt_20', name: 'TF1 Séries Films', match: (n) => n.includes('TF1') && (n.includes('SERIES') || n.includes('FILM')) },
-    { id: 'tnt_21', name: 'L\'Équipe', match: (n) => n.includes('EQUIPE') },
-    { id: 'tnt_22', name: '6ter', match: (n) => n.includes('6TER') || n.includes('6 TER') },
-    { id: 'tnt_23', name: 'RMC Story', match: (n) => n.includes('RMC') && n.includes('STORY') },
-    { id: 'tnt_24', name: 'RMC Découverte', match: (n) => n.includes('RMC') && n.includes('DECOUVERTE') },
-    { id: 'tnt_25', name: 'Chérie 25', match: (n) => n.includes('CHERIE') && n.includes('25') },
-    { id: 'tnt_26', name: 'LCI', match: (n) => n.includes('LCI') },
-    { id: 'tnt_27', name: 'France Info', match: (n) => (n.includes('FRANCE') && n.includes('INFO')) || n.includes('FRANCEINFO') }
-];
+// Fonction pour attribuer une priorité d'affichage aux chaînes importantes
+function getSortIndex(channelName) {
+    const n = channelName.toUpperCase();
+    
+    // TNT Officielle
+    if (n === 'TF1') return 1;
+    if (n === 'FRANCE 2') return 2;
+    if (n === 'FRANCE 3') return 3;
+    if (n === 'CANAL+') return 4;
+    if (n === 'FRANCE 5') return 5;
+    if (n === 'M6') return 6;
+    if (n === 'ARTE') return 7;
+    if (n === 'C8') return 8;
+    if (n === 'W9') return 9;
+    if (n === 'TMC') return 10;
+    if (n === 'TFX') return 11;
+    if (n === 'NRJ 12' || n === 'NRJ12') return 12;
+    if (n.includes('LCP') || n.includes('SENAT')) return 13;
+    if (n === 'FRANCE 4') return 14;
+    if (n.includes('BFM')) return 15;
+    if (n.includes('CNEWS')) return 16;
+    if (n.includes('CSTAR')) return 17;
+    if (n === 'GULLI') return 18;
+    if (n.includes('TF1 SERIES')) return 20;
+    if (n.includes('EQUIPE')) return 21;
+    if (n === '6TER') return 22;
+    if (n.includes('RMC STORY')) return 23;
+    if (n.includes('RMC DECOUVERTE')) return 24;
+    if (n.includes('CHERIE 25')) return 25;
+    if (n === 'LCI') return 26;
+    if (n.includes('FRANCE INFO')) return 27;
+
+    // Bouquets Premium populaires (mis juste après la TNT)
+    if (n.startsWith('CANAL+')) return 30;
+    if (n.startsWith('BEIN SPORT')) return 40;
+    if (n.startsWith('EUROSPORT')) return 50;
+    if (n.startsWith('RMC SPORT')) return 60;
+    if (n.startsWith('CINE+')) return 70;
+    if (n.startsWith('OCS')) return 80;
+
+    // Le reste des chaînes ira à la fin
+    return 999;
+}
 
 async function updateStreams() {
     try {
-        console.log('[TvVoo Proxy] Début de la récupération (Mode Ordre Strict)...');
+        console.log('[TvVoo Proxy] Récupération et regroupement dynamique de TOUTES les chaînes...');
         const manifestRes = await axios.get(`${TVVOO_BASE}/manifest.json`, { timeout: 10000 });
         const catalogId = manifestRes.data.catalogs[0].id;
         const catalogRes = await axios.get(`${TVVOO_BASE}/catalog/tv/${catalogId}.json`, { timeout: 15000 });
@@ -49,78 +63,64 @@ async function updateStreams() {
         
         let channelsMap = {};
 
-        // 1. On initialise notre carte avec l'ordre parfait de la TNT
-        MASTER_CHANNELS.forEach((mc, index) => {
-            channelsMap[mc.id] = {
-                id: mc.id,
-                name: mc.name,
-                originalIds: [],
-                poster: DEFAULT_POSTER,
-                sortIndex: index // Permet de garder l'ordre de 1 à 27
-            };
-        });
-
-        // 2. On trie chaque flux reçu dans la bonne case
         metas.forEach(meta => {
             let rawName = (meta.name || "").toUpperCase();
-            let matched = false;
+            
+            // 1. Nettoyage intelligent du nom
+            let clean = rawName;
+            clean = clean.replace(/^(FRANCE|FR|BE|CH|CA|VIP)\s*[:|/-]?\s*/, ''); // Enlève préfixes
+            clean = clean.replace(/\+/g, ' PLUS '); // Protège le +
+            clean = clean.replace(/\[.*?\]|\(.*?\)/g, ' '); // Enlève les parenthèses
+            
+            // Mots à supprimer pour fusionner les doublons
+            const badWords = ['FHD', 'HD', 'SD', '4K', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'VAVOO', 'TV', 'DIRECT', 'RAW'];
+            badWords.forEach(w => {
+                clean = clean.replace(new RegExp(`\\b${w}\\b`, 'g'), ' ');
+            });
 
-            // Essaye de ranger dans une des cases TNT
-            for (let mc of MASTER_CHANNELS) {
-                if (mc.match(rawName)) {
-                    if (!channelsMap[mc.id].originalIds.includes(meta.id)) {
-                        channelsMap[mc.id].originalIds.push(meta.id);
-                        if (meta.poster && channelsMap[mc.id].poster === DEFAULT_POSTER) {
-                            channelsMap[mc.id].poster = meta.poster; // Garde le premier logo trouvé
-                        }
-                    }
-                    matched = true;
-                    break;
-                }
+            // On ne garde que lettres et chiffres pour l'identifiant
+            clean = clean.replace(/[^A-Z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+            if (!clean) return;
+
+            // Création de l'identifiant unique
+            const id = 'vavoo_all_' + clean.replace(/\s+/g, '_').toLowerCase();
+            
+            // Nom propre pour l'affichage visuel (restaure le +)
+            let displayName = clean.replace(/PLUS/g, '+');
+
+            // 2. Ajout dans le dictionnaire
+            if (!channelsMap[id]) {
+                channelsMap[id] = {
+                    id: id,
+                    name: displayName,
+                    originalIds: [],
+                    poster: meta.poster || DEFAULT_POSTER,
+                    sortIndex: getSortIndex(displayName)
+                };
             }
 
-            // Si c'est une autre chaîne (ex: RTL9, Paris Première), on la nettoie et on l'ajoute à la fin
-            if (!matched) {
-                let cleanName = meta.name
-                    .replace(/^(?:FR|FRANCE|BE|CH|CA|VIP)\s*[:|/-]\s*/i, '')
-                    .replace(/\[.*?\]|\(.*?\)/g, ' ')
-                    .replace(/\b(FHD|HD|SD|4K|1080P|720P|1080|720|HEVC|H265|VOD|BACKUP|SECOURS|VIP|VAVOO)\b/gi, '')
-                    .replace(/[^\p{L}\p{N}+]/gu, ' ').replace(/\s+/g, ' ').trim();
-
-                if (cleanName) {
-                    let fallbackId = 'other_fr_' + cleanName.toUpperCase().replace(/[^A-Z0-9]/g, '');
-                    if (!channelsMap[fallbackId]) {
-                        channelsMap[fallbackId] = {
-                            id: fallbackId,
-                            name: cleanName,
-                            originalIds: [],
-                            poster: meta.poster || DEFAULT_POSTER,
-                            sortIndex: 999 // Sera mis tout à la fin
-                        };
-                    }
-                    if (!channelsMap[fallbackId].originalIds.includes(meta.id)) {
-                        channelsMap[fallbackId].originalIds.push(meta.id);
-                    }
-                }
+            if (!channelsMap[id].originalIds.includes(meta.id)) {
+                channelsMap[id].originalIds.push(meta.id);
+            }
+            // Mettre à jour l'image si on en trouve une meilleure que celle par défaut
+            if (meta.poster && channelsMap[id].poster === DEFAULT_POSTER) {
+                channelsMap[id].poster = meta.poster;
             }
         });
 
-        // 3. On convertit en tableau et on trie (TNT en premier de 1 à 27, puis le reste par ordre alphabétique)
-        channelsData = Object.values(channelsMap).filter(ch => ch.originalIds.length > 0);
+        // 3. Transformation en liste et tri (TNT en premier, puis Premium, puis ordre alphabétique)
+        channelsData = Object.values(channelsMap);
         channelsData.sort((a, b) => {
-            if (a.sortIndex !== b.sortIndex) {
-                return a.sortIndex - b.sortIndex;
-            }
+            if (a.sortIndex !== b.sortIndex) return a.sortIndex - b.sortIndex;
             return a.name.localeCompare(b.name);
         });
 
-        console.log(`[TvVoo Proxy] Succès : Catalogue trié. ${channelsData.length} chaînes uniques prêtes.`);
+        console.log(`[TvVoo Proxy] Succès : ${channelsData.length} chaînes uniques créées et triées.`);
     } catch (err) {
         console.error('[TvVoo Proxy] Erreur :', err.message);
     }
 }
 
-// Notation des flux pour mettre la meilleure qualité tout en haut du choix
 function getStreamScore(title) {
     const t = (title || '').toUpperCase();
     if (t.includes('4K') || t.includes('2160')) return 4;
@@ -131,28 +131,31 @@ function getStreamScore(title) {
 }
 
 app.get('/', (req, res) => {
-    res.send(`<h1>Vavoo FR (v4.0 - Bouquet TNT) est en ligne !</h1><p>Nombre total de chaînes : <strong>${channelsData.length}</strong></p>`);
+    res.send(`<h1>Vavoo FR (v5.0 - Toutes les chaînes + Tri) est en ligne !</h1><p>Nombre total de chaînes regroupées : <strong>${channelsData.length}</strong></p>`);
 });
 
 app.get('/manifest.json', (req, res) => {
     res.json({
         id: 'org.vavooproxy.fr.live',
-        version: '4.0.0',
-        name: 'Vavoo FR TNT',
-        description: 'Bouquet français officiel avec choix de flux',
+        version: '5.0.0',
+        name: 'Vavoo FR Complet',
+        description: 'Toutes les chaînes (TNT + Premium) regroupées avec choix des flux',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
             {
                 type: 'tv',
-                id: 'vavoo_fr_tnt',
+                id: 'vavoo_fr_all',
                 name: 'TV Française'
             }
         ]
     });
 });
 
-app.get('/catalog/tv/vavoo_fr_tnt.json', (req, res) => {
+// ROUTING CORRIGÉ POUR NUVIO/STREMIO (gère les paramètres additionnels comme skip=0)
+const handleCatalog = (req, res) => {
+    if (req.params.id !== 'vavoo_fr_all') return res.json({ metas: [] });
+
     const metas = channelsData.map(ch => ({
         id: ch.id,
         type: 'tv',
@@ -161,7 +164,9 @@ app.get('/catalog/tv/vavoo_fr_tnt.json', (req, res) => {
         posterShape: 'square'
     }));
     res.json({ metas });
-});
+};
+app.get('/catalog/:type/:id.json', handleCatalog);
+app.get('/catalog/:type/:id/:extra.json', handleCatalog);
 
 app.get('/meta/tv/:id.json', (req, res) => {
     const channel = channelsData.find(c => c.id === req.params.id);
@@ -174,7 +179,7 @@ app.get('/meta/tv/:id.json', (req, res) => {
             name: channel.name,
             poster: channel.poster,
             posterShape: 'square',
-            description: `${channel.originalIds.length} sources disponibles. Cliquez sur un flux pour lancer.`
+            description: `${channel.originalIds.length} sources regroupées pour ${channel.name}.`
         }
     });
 });
@@ -188,7 +193,6 @@ app.get('/stream/tv/:id.json', async (req, res) => {
     try {
         let allStreams = [];
         
-        // On récupère les flux de tous les doublons regroupés
         for (let i = 0; i < channel.originalIds.length; i++) {
             const originalId = channel.originalIds[i];
             const streamRes = await axios.get(`${TVVOO_BASE}/stream/tv/${originalId}.json`, {
@@ -200,7 +204,6 @@ app.get('/stream/tv/:id.json', async (req, res) => {
             }
         }
         
-        // On trie les flux du meilleur au moins bon (4K -> 1080p -> 720p)
         allStreams.sort((a, b) => getStreamScore(b.title) - getStreamScore(a.title));
 
         const finalStreams = allStreams.map((s, idx) => ({
