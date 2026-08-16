@@ -10,7 +10,7 @@ let isUpdating = true;
 // --- LES SOURCES ---
 const ADDON_PROVIDERS = [
     { id: 'vavoo', base: 'https://tvvoo.hayd.uk/cfg-fr', label: 'Vavoo', isPriority: true },
-    { id: 'mio', base: 'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiXSwiY2F0ZWdvcmllcyI6eyJGUiI6WyJHZW5lcmFsIPCfk7oiLCJTcG9ydHMg4pq9IiwiRG9jdW1lbnRhaXJlcyDwn4yNIiwiRmlsbXMg8J+OrCIsIkluZm9ybWF0aW9ucyDwn5OwIiwiRW5mYW50cyDwn5G2IiwiTXVzaWMg8J+OtSJdfSwiZW5hYmxlU2VhcmNoIjpmYWxzZX0', label: 'Mio', isPriority: false }
+    { id: 'mio', base: 'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiLCJCRV9GUiJdLCJjYXRlZ29yaWVzIjp7IkZSIjpbIkdlbmVyYWwg8J+7oiIsIlNwb3J0cyDimq3igIsiLCJEb2N1bWVudGFpcmVzIPCfijrQuiIsIkZpbG1zIPCfjqwiLCJJbmZvcm1hdGlvbnMg8J+7oiIsIkVuZmFudHMgv5G2IiwiTXVzaWMg8J+OtSJdfSwiZW5hYmxlU2VhcmNoIjpmYWxzZX0', label: 'Mio', isPriority: false }
 ];
 
 const SPORTS_FEED_BASE = 'https://sports.highfly.dev/eyJpbmNsdWRlU3BvcnRzIjpbImJhc2tldGJhbGwiLCJmb290YmFsbCIsImZpZ2h0Il19';
@@ -36,18 +36,17 @@ function normalizeChannelName(rawName) {
 
     if (displayName.includes('EQUIPE')) return "L'Équipe"; 
 
-    // UNIVERS DISNEY STRICT
+    // UNIVERS DISNEY STRICT (Suppression de Disney+ vide)
     if (displayName.includes('DISNEY')) {
+        if (displayName.includes('+') || displayName.includes('PLUS')) return ''; // Ignore les faux flux Disney+ vides
         if (displayName.includes('XD')) return 'Disney XD';
         if (displayName.includes('JUNIOR') || displayName.includes('JR')) return 'Disney Junior';
         if (displayName.includes('CINEMA')) return 'Disney Cinéma';
         if (displayName.includes('+ 1') || displayName.includes('PLUS 1')) return 'Disney Channel +1';
         if (displayName.includes('CHANNEL')) return 'Disney Channel';
-        if (displayName.includes('+') || displayName.includes('PLUS')) return 'Disney+';
         return 'Disney Channel';
     }
 
-    // CARTOON NETWORK
     if (displayName.includes('CARTOON') || displayName.includes('CN')) {
         return 'Cartoon Network';
     }
@@ -101,6 +100,7 @@ function normalizeChannelName(rawName) {
 
 function getChannelMeta(channelName) {
     const n = channelName.toUpperCase();
+    if (!n) return null;
     
     // --- CATALOGUE 1 : TNT ---
     if (n === 'TF1') return { index: 1, category: 'vavoo_tnt' };
@@ -129,15 +129,15 @@ function getChannelMeta(channelName) {
     if (n === 'LCI') return { index: 26, category: 'vavoo_tnt' };
     if (n.includes('FRANCE INFO')) return { index: 27, category: 'vavoo_tnt' };
 
-    // --- CATALOGUE 2 : JEUNESSE (Disney & Cartoon Network en premier !) ---
-    if (n === 'DISNEY CHANNEL' || n === 'DISNEY+') return { index: 1, category: 'vavoo_jeunesse' };
+    // --- CATALOGUE 2 : JEUNESSE ---
+    if (n === 'DISNEY CHANNEL') return { index: 1, category: 'vavoo_jeunesse' };
     if (n === 'CARTOON NETWORK') return { index: 2, category: 'vavoo_jeunesse' };
-    if (n.includes('DISNEY')) return { index: 3, category: 'vavoo_jeunesse' }; // Autres Disney (Junior, XD, etc.)
+    if (n.includes('DISNEY')) return { index: 3, category: 'vavoo_jeunesse' }; 
     if (n.includes('BOOMERANG') || n.includes('NICKELODEON') || n.includes('TIJI') || n.includes('CANAL J') || n.includes('TELETOON')) {
         return { index: 10, category: 'vavoo_jeunesse' };
     }
 
-    // --- CATALOGUE 3 : PREMIUM (Chaînes Payantes) ---
+    // --- CATALOGUE 3 : PREMIUM ---
     if (n === 'CANAL+') return { index: 40, category: 'vavoo_premium' }; 
     if (n.startsWith('CANAL+')) return { index: 45, category: 'vavoo_premium' }; 
     if (n.startsWith('CINE+')) return { index: 46, category: 'vavoo_premium' };
@@ -145,7 +145,7 @@ function getChannelMeta(channelName) {
     if (n.startsWith('OCS')) return { index: 90, category: 'vavoo_premium' }; 
     if (n.includes('BOX OFFICE')) return { index: 91, category: 'vavoo_premium' };
 
-    // --- CATALOGUE 4 : SPORTS CHAÎNES ---
+    // --- CATALOGUE 4 : SPORTS ---
     if (n.startsWith('BEIN SPORTS')) return { index: 100, category: 'vavoo_sports' };
     if (n.startsWith('RMC SPORT')) return { index: 110, category: 'vavoo_sports' };
     if (n.startsWith('EUROSPORT')) return { index: 120, category: 'vavoo_sports' };
@@ -186,7 +186,6 @@ async function updateEPG() {
     } catch (err) {}
 }
 
-// --- ASPIRATEURS ---
 async function fetchAddonCatalog(provider) {
     let allMetas = [];
     try {
@@ -248,8 +247,10 @@ async function updateStreams() {
             metas.forEach(meta => {
                 let dName = normalizeChannelName(meta.name);
                 if (!dName || dName.length < 2) return; 
-                const id = 'hyb_id_' + dName.replace(/[^a-zA-Z0-9+]/g, '_').toLowerCase();
                 const metaInfo = getChannelMeta(dName); 
+                if (!metaInfo) return; // Ignore les chaînes non désirées (ex: Disney+)
+
+                const id = 'hyb_id_' + dName.replace(/[^a-zA-Z0-9+]/g, '_').toLowerCase();
 
                 if (!channelsMap[id]) {
                     channelsMap[id] = { id, name: dName, sources: [], poster: meta.poster || DEFAULT_POSTER, sortIndex: metaInfo.index, category: metaInfo.category };
@@ -277,28 +278,28 @@ async function updateStreams() {
 
 app.get('/', (req, res) => {
     if (isUpdating) {
-        res.send(`<h1>Hybrid TV FR (v21.0)</h1><p>⏳ Chargement en cours...</p>`);
+        res.send(`<h1>Hybrid TV FR (v22.0)</h1><p>⏳ Chargement en cours...</p>`);
     } else {
-        res.send(`<h1>Hybrid TV FR (v21.0) est en ligne !</h1><p>Chaînes : <strong>${channelsData.length}</strong> | Matchs Live : <strong>${sportsEventsData.length}</strong></p>`);
+        res.send(`<h1>Hybrid TV FR (v22.0) est en ligne !</h1><p>Chaînes : <strong>${channelsData.length}</strong> | Matchs Live : <strong>${sportsEventsData.length}</strong></p>`);
     }
 });
 
-// MANIFEST AVEC TOUS LES CATALOGUES AU TYPE "TV" (Pour qu'ils apparaissent tous à coup sûr dans Nuvio)
+// MANIFEST AVEC EMOJIS HARMONISÉS SUR TOUS LES CATALOGUES
 app.get('/manifest.json', (req, res) => {
     res.json({
-        id: 'org.hybridproxy.fr.live.v21', 
-        version: '21.0.0',
+        id: 'org.hybridproxy.fr.live.v22', 
+        version: '22.0.0',
         name: 'Hybrid TV FR',
-        description: 'TNT, Jeunesse (Disney/CN), Sports Live, Chaînes Payantes et EPG.',
+        description: 'TNT, Jeunesse, Sports, Chaînes Payantes et EPG.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
-            { type: 'tv', id: 'vavoo_tnt', name: 'TNT Française' },
+            { type: 'tv', id: 'vavoo_tnt', name: '📺 TNT Française' },
             { type: 'tv', id: 'vavoo_jeunesse', name: '👶 Jeunesse (Disney & CN)' },
-            { type: 'tv', id: 'vavoo_sports', name: 'Sports (Chaînes)' },
-            { type: 'tv', id: 'sports_live', name: '⚽ Sports Live (Matchs)' },
-            { type: 'tv', id: 'vavoo_premium', name: 'Chaînes Payantes' },
-            { type: 'tv', id: 'vavoo_autres', name: 'Autres Chaînes' }
+            { type: 'tv', id: 'vavoo_sports', name: '⚽ Sports (Chaînes)' },
+            { type: 'tv', id: 'sports_live', name: '🔴 Sports Live (Matchs)' },
+            { type: 'tv', id: 'vavoo_premium', name: '💳 Chaînes Payantes' },
+            { type: 'tv', id: 'vavoo_autres', name: '📂 Autres Chaînes' }
         ]
     });
 });
@@ -361,13 +362,18 @@ app.get('/meta/tv/:id.json', async (req, res) => {
     const channel = channelsData.find(c => c.id === id);
     if (!channel) return res.json({ meta: {} });
     
-    let desc = `${channel.sources.length} sources disponibles (Vavoo / Mio).`;
+    // DESCRIPTION PROPRE (Sans la ligne technique moche)
+    let desc = "";
     if (epgData[channel.name]) {
         const now = Date.now();
         const currentProg = epgData[channel.name].find(p => now >= p.start && now <= p.stop);
         if (currentProg) {
-            desc = `🔴 EN DIRECT : ${currentProg.title}\n\n${currentProg.desc}\n\n---\n${desc}`;
+            desc = `🔴 EN DIRECT : ${currentProg.title}\n\n${currentProg.desc}`;
+        } else {
+            desc = `Programme TV indisponible actuellement.`;
         }
+    } else {
+        desc = `Programme TV indisponible actuellement.`;
     }
 
     res.json({
@@ -439,6 +445,8 @@ app.get('/stream/tv/:id.json', async (req, res) => {
             url: s.url,
             title: `[${s._label}] Choix ${idx + 1} | ${s.title.replace(/\[.*?\]\s*/g, '') || 'Auto'}`
         }));
+        
+        // CORRECTION ANTI-CRASH : Si aucun flux n'est dispo, renvoie un tableau vide propre au lieu de planter
         res.json({ streams: finalStreams });
     } catch (err) {
         res.json({ streams: [] });
