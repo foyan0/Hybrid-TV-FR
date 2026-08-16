@@ -8,7 +8,6 @@ app.use(cors());
 const VAVOO_URL = 'http://vavoo.to/playlist.m3u';
 let channelsData = {};
 
-// Parseur M3U natif
 function parseM3U(content) {
     const lines = content.split('\n');
     const items = [];
@@ -30,7 +29,6 @@ function parseM3U(content) {
     return items;
 }
 
-// Récupération des flux
 async function updateStreams() {
     try {
         console.log('[Vavoo] Téléchargement de la playlist...');
@@ -64,14 +62,13 @@ async function updateStreams() {
     }
 }
 
-// Routes Add-on
 app.get('/manifest.json', (req, res) => {
     res.json({
         id: 'org.vavoo.fr.live',
-        version: '1.0.0',
+        version: '1.0.1',
         name: 'Vavoo FR Live',
         description: 'Flux TV français issus de Vavoo',
-        resources: ['catalog', 'stream'],
+        resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
             {
@@ -91,6 +88,22 @@ app.get('/catalog/tv/vavoo_fr_catalog.json', (req, res) => {
         posterShape: 'square'
     }));
     res.json({ metas });
+});
+
+// NOUVELLE ROUTE : Permet à Nuvio de lire les infos de la chaîne avant de lancer le flux
+app.get('/meta/tv/:id.json', (req, res) => {
+    const channel = channelsData[req.params.id];
+    if (!channel) return res.json({ meta: {} });
+
+    res.json({
+        meta: {
+            id: channel.id,
+            type: 'tv',
+            name: channel.name,
+            posterShape: 'square',
+            description: `Regarder ${channel.name} en direct`
+        }
+    });
 });
 
 app.get('/stream/tv/:id.json', (req, res) => {
