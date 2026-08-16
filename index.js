@@ -19,7 +19,7 @@ let channelsData = [];
 let sportsEventsData = []; 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
-// --- NETTOYAGE ET ORGANISATION ---
+// --- NETTOYAGE SOUPLE (Pour ne rien rater) ---
 function normalizeChannelName(rawName) {
     let clean = rawName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
     
@@ -36,20 +36,23 @@ function normalizeChannelName(rawName) {
 
     if (displayName.includes('EQUIPE')) return "L'Équipe"; 
 
+    // DISNEY
     if (displayName.includes('DISNEY')) {
-        if (displayName.includes('+') || displayName.includes('PLUS')) return ''; 
         if (displayName.includes('XD')) return 'Disney XD';
         if (displayName.includes('JUNIOR') || displayName.includes('JR')) return 'Disney Junior';
         if (displayName.includes('CINEMA')) return 'Disney Cinéma';
         if (displayName.includes('+ 1') || displayName.includes('PLUS 1')) return 'Disney Channel +1';
         if (displayName.includes('CHANNEL')) return 'Disney Channel';
+        if (displayName.includes('+') || displayName.includes('PLUS')) return 'Disney+';
         return 'Disney Channel';
     }
 
+    // CARTOON NETWORK
     if (displayName.includes('CARTOON') || displayName.includes('CN')) {
         return 'Cartoon Network';
     }
 
+    // CANAL+
     if (displayName.includes('CANAL')) {
         let suffix = displayName.replace(/CANAL\s*\+*/g, '').replace(/PLUS/g, '').trim();
         if (!suffix || suffix === 'LIVE') return 'Canal+';
@@ -101,6 +104,7 @@ function getChannelMeta(channelName) {
     const n = channelName.toUpperCase();
     if (!n) return null;
     
+    // --- TNT ---
     if (n === 'TF1') return { index: 1, category: 'vavoo_tnt' };
     if (n === 'FRANCE 2') return { index: 2, category: 'vavoo_tnt' };
     if (n === 'FRANCE 3') return { index: 3, category: 'vavoo_tnt' };
@@ -127,20 +131,22 @@ function getChannelMeta(channelName) {
     if (n === 'LCI') return { index: 26, category: 'vavoo_tnt' };
     if (n.includes('FRANCE INFO')) return { index: 27, category: 'vavoo_tnt' };
 
-    if (n === 'DISNEY CHANNEL') return { index: 1, category: 'vavoo_jeunesse' };
+    // --- JEUNESSE ---
+    if (n === 'DISNEY CHANNEL' || n === 'DISNEY+') return { index: 1, category: 'vavoo_jeunesse' };
     if (n === 'CARTOON NETWORK') return { index: 2, category: 'vavoo_jeunesse' };
-    if (n.includes('DISNEY')) return { index: 3, category: 'vavoo_jeunesse' }; 
-    if (n.includes('BOOMERANG') || n.includes('NICKELODEON') || n.includes('TIJI') || n.includes('CANAL J') || n.includes('TELETOON')) {
+    if (n.includes('DISNEY') || n.includes('CARTOON') || n.includes('BOOMERANG') || n.includes('NICKELODEON') || n.includes('TIJI') || n.includes('CANAL J') || n.includes('TELETOON') || n.includes('PIWI') || n.includes('GULLI')) {
         return { index: 10, category: 'vavoo_jeunesse' };
     }
 
+    // --- PREMIUM ---
     if (n === 'CANAL+') return { index: 40, category: 'vavoo_premium' }; 
     if (n.startsWith('CANAL+')) return { index: 45, category: 'vavoo_premium' }; 
     if (n.startsWith('CINE+')) return { index: 46, category: 'vavoo_premium' };
     if (n === 'PARIS PREMIERE' || n.includes('RTL 9') || n === 'RTL9') return { index: 47, category: 'vavoo_premium' };
     if (n.startsWith('OCS')) return { index: 90, category: 'vavoo_premium' }; 
-    if (n.includes('BOX OFFICE')) return { index: 91, category: 'vavoo_premium' };
+    if (n.includes('BOX OFFICE') || n.includes('CINEMA')) return { index: 91, category: 'vavoo_premium' };
 
+    // --- SPORTS ---
     if (n.startsWith('BEIN SPORTS')) return { index: 100, category: 'vavoo_sports' };
     if (n.startsWith('RMC SPORT')) return { index: 110, category: 'vavoo_sports' };
     if (n.startsWith('EUROSPORT')) return { index: 120, category: 'vavoo_sports' };
@@ -242,8 +248,8 @@ async function updateStreams() {
             metas.forEach(meta => {
                 let dName = normalizeChannelName(meta.name);
                 if (!dName || dName.length < 2) return; 
-                const metaInfo = getChannelMeta(dName); 
-                if (!metaInfo) return; 
+                
+                const metaInfo = getChannelMeta(dName) || { index: 500, category: 'vavoo_autres' }; 
 
                 const id = 'hyb_id_' + dName.replace(/[^a-zA-Z0-9+]/g, '_').toLowerCase();
 
@@ -273,16 +279,16 @@ async function updateStreams() {
 
 app.get('/', (req, res) => {
     if (isUpdating) {
-        res.send(`<h1>Hybrid TV FR (v24.0)</h1><p>⏳ Chargement en cours...</p>`);
+        res.send(`<h1>Hybrid TV FR (v25.0)</h1><p>⏳ Chargement en cours...</p>`);
     } else {
-        res.send(`<h1>Hybrid TV FR (v24.0) est en ligne !</h1><p>Chaînes : <strong>${channelsData.length}</strong> | Matchs Live : <strong>${sportsEventsData.length}</strong></p>`);
+        res.send(`<h1>Hybrid TV FR (v25.0) est en ligne !</h1><p>Chaînes : <strong>${channelsData.length}</strong> | Matchs Live : <strong>${sportsEventsData.length}</strong></p>`);
     }
 });
 
 app.get('/manifest.json', (req, res) => {
     res.json({
-        id: 'org.hybridproxy.fr.live.v24', 
-        version: '24.0.0',
+        id: 'org.hybridproxy.fr.live.v25', 
+        version: '25.0.0',
         name: 'Hybrid TV FR',
         description: 'TNT, Jeunesse, Sports, Chaînes Payantes et EPG.',
         resources: ['catalog', 'meta', 'stream'],
@@ -392,8 +398,6 @@ function getStreamScore(title) {
 
 app.get('/stream/tv/:id.json', async (req, res) => {
     const id = req.params.id;
-    
-    // CORRECTION CRITIQUE DU BUG IP (Extraction de la première IP valide de Render)
     const rawIp = req.headers['x-forwarded-for'];
     const clientIp = rawIp ? rawIp.split(',')[0].trim() : req.socket.remoteAddress;
 
@@ -427,9 +431,7 @@ app.get('/stream/tv/:id.json', async (req, res) => {
                         }));
                         allStreams = allStreams.concat(mappedStreams);
                     }
-                } catch (err) {
-                    console.error(`[Stream Error] Échec de récupération pour ${channel.name} sur ${source.provider.label}:`, err.message);
-                }
+                } catch (err) {}
             }
         }
         
