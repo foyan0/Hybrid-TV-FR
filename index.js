@@ -9,11 +9,11 @@ const TVVOO_BASE = 'https://tvvoo.hayd.uk/cfg-fr';
 let channelsData = []; 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
-// Fonction pour attribuer une priorité d'affichage aux chaînes importantes
+// Ordre des chaînes (TNT -> Premium -> Sports -> Cinéma -> Reste)
 function getSortIndex(channelName) {
     const n = channelName.toUpperCase();
     
-    // TNT Officielle
+    // TNT 
     if (n === 'TF1') return 1;
     if (n === 'FRANCE 2') return 2;
     if (n === 'FRANCE 3') return 3;
@@ -41,21 +41,26 @@ function getSortIndex(channelName) {
     if (n === 'LCI') return 26;
     if (n.includes('FRANCE INFO')) return 27;
 
-    // Bouquets Premium populaires (mis juste après la TNT)
+    // Bouquets Premium & Sports
     if (n.startsWith('CANAL+')) return 30;
     if (n.startsWith('BEIN SPORT')) return 40;
-    if (n.startsWith('EUROSPORT')) return 50;
-    if (n.startsWith('RMC SPORT')) return 60;
-    if (n.startsWith('CINE+')) return 70;
-    if (n.startsWith('OCS')) return 80;
+    if (n.startsWith('DAZN')) return 41;
+    if (n.startsWith('EUROSPORT')) return 42;
+    if (n.startsWith('RMC SPORT')) return 43;
+    if (n.startsWith('AUTOMOTO')) return 44;
+    if (n.startsWith('GOLF+')) return 45;
+    if (n.includes('SPORT')) return 46; // Toutes les autres chaînes de sport
+    
+    // Cinéma
+    if (n.startsWith('CINE+')) return 50;
+    if (n.startsWith('OCS')) return 51;
 
-    // Le reste des chaînes ira à la fin
     return 999;
 }
 
 async function updateStreams() {
     try {
-        console.log('[TvVoo Proxy] Récupération et regroupement dynamique de TOUTES les chaînes...');
+        console.log('[TvVoo Proxy] Récupération du catalogue global...');
         const manifestRes = await axios.get(`${TVVOO_BASE}/manifest.json`, { timeout: 10000 });
         const catalogId = manifestRes.data.catalogs[0].id;
         const catalogRes = await axios.get(`${TVVOO_BASE}/catalog/tv/${catalogId}.json`, { timeout: 15000 });
@@ -66,29 +71,22 @@ async function updateStreams() {
         metas.forEach(meta => {
             let rawName = (meta.name || "").toUpperCase();
             
-            // 1. Nettoyage intelligent du nom
             let clean = rawName;
-            clean = clean.replace(/^(FRANCE|FR|BE|CH|CA|VIP)\s*[:|/-]?\s*/, ''); // Enlève préfixes
-            clean = clean.replace(/\+/g, ' PLUS '); // Protège le +
-            clean = clean.replace(/\[.*?\]|\(.*?\)/g, ' '); // Enlève les parenthèses
+            clean = clean.replace(/^(FRANCE|FR|BE|CH|CA|VIP)\s*[:|/-]?\s*/, ''); 
+            clean = clean.replace(/\+/g, ' PLUS '); 
+            clean = clean.replace(/\[.*?\]|\(.*?\)/g, ' '); 
             
-            // Mots à supprimer pour fusionner les doublons
             const badWords = ['FHD', 'HD', 'SD', '4K', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'VAVOO', 'TV', 'DIRECT', 'RAW'];
             badWords.forEach(w => {
                 clean = clean.replace(new RegExp(`\\b${w}\\b`, 'g'), ' ');
             });
 
-            // On ne garde que lettres et chiffres pour l'identifiant
             clean = clean.replace(/[^A-Z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
             if (!clean) return;
 
-            // Création de l'identifiant unique
             const id = 'vavoo_all_' + clean.replace(/\s+/g, '_').toLowerCase();
-            
-            // Nom propre pour l'affichage visuel (restaure le +)
             let displayName = clean.replace(/PLUS/g, '+');
 
-            // 2. Ajout dans le dictionnaire
             if (!channelsMap[id]) {
                 channelsMap[id] = {
                     id: id,
@@ -102,22 +100,35 @@ async function updateStreams() {
             if (!channelsMap[id].originalIds.includes(meta.id)) {
                 channelsMap[id].originalIds.push(meta.id);
             }
-            // Mettre à jour l'image si on en trouve une meilleure que celle par défaut
             if (meta.poster && channelsMap[id].poster === DEFAULT_POSTER) {
                 channelsMap[id].poster = meta.poster;
             }
         });
 
-        // 3. Transformation en liste et tri (TNT en premier, puis Premium, puis ordre alphabétique)
         channelsData = Object.values(channelsMap);
         channelsData.sort((a, b) => {
             if (a.sortIndex !== b.sortIndex) return a.sortIndex - b.sortIndex;
             return a.name.localeCompare(b.name);
         });
 
-        console.log(`[TvVoo Proxy] Succès : ${channelsData.length} chaînes uniques créées et triées.`);
+        console.log(`[TvVoo Proxy] Succès : ${channelsData.length} chaînes uniques triées.`);
     } catch (err) {
         console.error('[TvVoo Proxy] Erreur :', err.message);
+    }
+}
+
+// Fonction pour tester rapidement si un flux est mort (Ping de 1.5s max)
+async function checkStreamValid(url) {
+    try {
+        await axios.head(url, { timeout: 1500 });
+        return true;
+    } catch (e) {
+        // Si le serveur répond que le fichier n'existe pas (404) ou qu'il est planté (502/503), on l'élimine.
+        // Si c'est une erreur 403 (Forbidden), on le garde au cas où c'est juste Render qui est bloqué, pas toi.
+        if (e.response && (e.response.status === 404 || e.response.status === 502 || e.response.status === 503)) {
+            return false; 
+        }
+        return true; 
     }
 }
 
@@ -131,15 +142,15 @@ function getStreamScore(title) {
 }
 
 app.get('/', (req, res) => {
-    res.send(`<h1>Vavoo FR (v5.0 - Toutes les chaînes + Tri) est en ligne !</h1><p>Nombre total de chaînes regroupées : <strong>${channelsData.length}</strong></p>`);
+    res.send(`<h1>Vavoo FR (v6.0 - Pagination + Filtre Morts) est en ligne !</h1><p>Nombre total de chaînes regroupées : <strong>${channelsData.length}</strong></p>`);
 });
 
 app.get('/manifest.json', (req, res) => {
     res.json({
         id: 'org.vavooproxy.fr.live',
-        version: '5.0.0',
-        name: 'Vavoo FR Complet',
-        description: 'Toutes les chaînes (TNT + Premium) regroupées avec choix des flux',
+        version: '6.0.0',
+        name: 'Vavoo FR Ultime',
+        description: 'Toutes les chaînes triées, flux morts filtrés.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -152,21 +163,29 @@ app.get('/manifest.json', (req, res) => {
     });
 });
 
-// ROUTING CORRIGÉ POUR NUVIO/STREMIO (gère les paramètres additionnels comme skip=0)
+// ROUTING AVEC PAGINATION POUR ÉVITER LE CRASH DE NUVIO
 const handleCatalog = (req, res) => {
-    if (req.params.id !== 'vavoo_fr_all') return res.json({ metas: [] });
+    let skip = 0;
+    if (req.params.extra) {
+        const match = req.params.extra.match(/skip=(\d+)/);
+        if (match) skip = parseInt(match[1], 10);
+    }
 
-    const metas = channelsData.map(ch => ({
+    // On n'envoie que 100 chaînes à la fois à l'application
+    const paginatedMetas = channelsData.slice(skip, skip + 100).map(ch => ({
         id: ch.id,
         type: 'tv',
         name: ch.name,
         poster: ch.poster,
         posterShape: 'square'
     }));
-    res.json({ metas });
+    
+    res.json({ metas: paginatedMetas });
 };
-app.get('/catalog/:type/:id.json', handleCatalog);
-app.get('/catalog/:type/:id/:extra.json', handleCatalog);
+
+// Intercepte les demandes de catalogue normales et avec paramètres (pages)
+app.get('/catalog/tv/vavoo_fr_all.json', handleCatalog);
+app.get('/catalog/tv/vavoo_fr_all/:extra', handleCatalog);
 
 app.get('/meta/tv/:id.json', (req, res) => {
     const channel = channelsData.find(c => c.id === req.params.id);
@@ -179,7 +198,7 @@ app.get('/meta/tv/:id.json', (req, res) => {
             name: channel.name,
             poster: channel.poster,
             posterShape: 'square',
-            description: `${channel.originalIds.length} sources regroupées pour ${channel.name}.`
+            description: `${channel.originalIds.length} sources analysées. Choix par qualité.`
         }
     });
 });
@@ -204,9 +223,22 @@ app.get('/stream/tv/:id.json', async (req, res) => {
             }
         }
         
-        allStreams.sort((a, b) => getStreamScore(b.title) - getStreamScore(a.title));
+        // Test de validité sur chaque flux
+        const checkedStreams = await Promise.all(allStreams.map(async (s) => {
+            const isValid = await checkStreamValid(s.url);
+            return isValid ? s : null;
+        }));
+        
+        let validStreams = checkedStreams.filter(s => s !== null);
 
-        const finalStreams = allStreams.map((s, idx) => ({
+        // Filet de sécurité : si tout est filtré, c'est sûrement Render qui est bloqué, on renvoie tout.
+        if (validStreams.length === 0 && allStreams.length > 0) {
+            validStreams = allStreams;
+        }
+
+        validStreams.sort((a, b) => getStreamScore(b.title) - getStreamScore(a.title));
+
+        const finalStreams = validStreams.map((s, idx) => ({
             ...s,
             title: `Source ${idx + 1} | ${s.title || 'Flux Auto'}`
         }));
