@@ -120,14 +120,15 @@ function getChannelMeta(channelName) {
 
     if (n === 'CARTOON NETWORK') return { index: 1, category: 'vavoo_jeunesse' };
     if (n === 'DISNEY CHANNEL') return { index: 2, category: 'vavoo_jeunesse' };
-    if (n === 'DISNEY CHANNEL +1') return { index: 3, category: 'vavoo_jeunesse' };
-    if (n === 'GULLI') return { index: 4, category: 'vavoo_jeunesse' };
-    if (n === 'GAME ONE') return { index: 5, category: 'vavoo_jeunesse' };
-    if (n.includes('DISNEY XD')) return { index: 6, category: 'vavoo_jeunesse' };
-    if (n === 'BOOMERANG') return { index: 7, category: 'vavoo_jeunesse' };
-    if (n === 'CANAL J') return { index: 8, category: 'vavoo_jeunesse' };
-    if (n.includes('DISNEY JUNIOR') || n.includes('DISNEY JR')) return { index: 9, category: 'vavoo_jeunesse' };
-    if (n.includes('NICKELODEON') && !n.includes('+1') && !n.includes('14')) return { index: 10, category: 'vavoo_jeunesse' };
+    if (n === 'GULLI') return { index: 3, category: 'vavoo_jeunesse' };
+    if (n === 'GAME ONE') return { index: 4, category: 'vavoo_jeunesse' };
+    if (n.includes('DISNEY XD')) return { index: 5, category: 'vavoo_jeunesse' };
+    if (n === 'BOOMERANG') return { index: 6, category: 'vavoo_jeunesse' };
+    if (n === 'CANAL J') return { index: 7, category: 'vavoo_jeunesse' };
+    if (n.includes('DISNEY JUNIOR') || n.includes('DISNEY JR')) return { index: 8, category: 'vavoo_jeunesse' };
+    if (n.includes('NICKELODEON') && !n.includes('+1') && !n.includes('14')) return { index: 9, category: 'vavoo_jeunesse' };
+    if (n === 'DISNEY CHANNEL +1') return { index: 50, category: 'vavoo_jeunesse' };
+    if (n.includes('NICKELODEON +1') || n.includes('NICKELODEON 14')) return { index: 51, category: 'vavoo_jeunesse' };
     if (n.includes('DISNEY') || n.includes('CARTOON') || n.includes('BOOMERANG') || n.includes('NICKELODEON') || n.includes('TIJI') || n.includes('CANAL J') || n.includes('TELETOON') || n.includes('PIWI')) {
         return { index: 20, category: 'vavoo_jeunesse' };
     }
@@ -340,7 +341,7 @@ async function updateStreams() {
                     ...ch,
                     id: ch.id + '_jeunesse',
                     category: 'vavoo_jeunesse',
-                    sortIndex: 8
+                    sortIndex: 7
                 };
                 expandedChannelsMap[jeunesseCopy.id] = jeunesseCopy;
             }
@@ -359,16 +360,16 @@ async function updateStreams() {
 
 app.get('/', (req, res) => {
     if (isUpdating) {
-        res.send(`<h1>Hybrid TV FR (v31.0)</h1><p>⏳ Chargement en cours...</p>`);
+        res.send(`<h1>Hybrid TV FR (v32.0)</h1><p>⏳ Chargement en cours...</p>`);
     } else {
-        res.send(`<h1>Hybrid TV FR (v31.0) est en ligne !</h1><p>Chaînes actives : <strong>${channelsData.length}</strong></p>`);
+        res.send(`<h1>Hybrid TV FR (v32.0) est en ligne !</h1><p>Chaînes actives : <strong>${channelsData.length}</strong></p>`);
     }
 });
 
 app.get('/manifest.json', (req, res) => {
     res.json({
-        id: 'org.hybridproxy.fr.live.v310', 
-        version: '31.0.0',
+        id: 'org.hybridproxy.fr.live.v320', 
+        version: '32.0.0',
         name: 'Hybrid TV FR',
         description: 'TNT, Information, Jeunesse, Découverte, Cinéma, Musique, Bouquet Canal, Sports et EPG en direct.',
         resources: ['catalog', 'meta', 'stream'],
@@ -417,13 +418,13 @@ app.get('/meta/tv/:id.json', async (req, res) => {
     const channel = channelsData.find(c => c.id === req.params.id || c.id === cleanId);
     if (!channel) return res.json({ meta: {} });
     
-    let desc = "";
+    let desc = "🔴 EN DIRECT :\nProgramme TV non disponible actuellement.";
     const epgList = getEpgForChannel(channel.name);
     if (epgList) {
         const now = Date.now();
         const currentProg = epgList.find(p => now >= p.start && now <= p.stop);
         if (currentProg) {
-            desc = `🔴 EN DIRECT : ${currentProg.title}\n\n${currentProg.desc || ''}`.trim();
+            desc = `🔴 EN DIRECT : ${currentProg.title}\n\n${currentProg.desc || 'Aucun détail supplémentaire.'}`.trim();
         }
     }
 
@@ -496,7 +497,7 @@ app.get('/stream/tv/:id.json', async (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, async () => {
-    console.log(`Serveur démarré sur le port ${PORT}`);
+    console.log(`Serveur démarré sur le port `${PORT}`);
     await updateEPG(); 
     await updateStreams();
     setInterval(updateEPG, 3600000); 
