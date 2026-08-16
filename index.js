@@ -161,7 +161,7 @@ function getChannelMeta(channelName) {
     if (n === 'TF1') tntIndex = 1;
     else if (n === 'FRANCE 2') tntIndex = 2;
     else if (n === 'FRANCE 3') tntIndex = 3;
-    else if (n === 'CANAL+') tntIndex = 4;
+    else if (n === 'FRANCE 4') tntIndex = 4;
     else if (n === 'FRANCE 5') tntIndex = 5;
     else if (n === 'M6') tntIndex = 6;
     else if (n === 'ARTE') tntIndex = 7;
