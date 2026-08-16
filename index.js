@@ -122,13 +122,13 @@ function getChannelMeta(channelName) {
     if (n === 'DISNEY CHANNEL') return { index: 2, category: 'vavoo_jeunesse' };
     if (n === 'DISNEY CHANNEL +1') return { index: 3, category: 'vavoo_jeunesse' };
     if (n === 'GULLI') return { index: 4, category: 'vavoo_jeunesse' };
-    if (n.includes('NICKELODEON')) return { index: 5, category: 'vavoo_jeunesse' };
-    if (n === 'CANAL J') return { index: 6, category: 'vavoo_jeunesse' };
-    if (n === 'GAME ONE') return { index: 7, category: 'vavoo_jeunesse' };
-    if (n === 'BOOMERANG') return { index: 8, category: 'vavoo_jeunesse' };
+    if (n === 'GAME ONE') return { index: 5, category: 'vavoo_jeunesse' };
+    if (n.includes('DISNEY XD')) return { index: 6, category: 'vavoo_jeunesse' };
+    if (n === 'BOOMERANG') return { index: 7, category: 'vavoo_jeunesse' };
+    if (n === 'CANAL J') return { index: 8, category: 'vavoo_jeunesse' };
     if (n.includes('DISNEY JUNIOR') || n.includes('DISNEY JR')) return { index: 9, category: 'vavoo_jeunesse' };
-    if (n.includes('DISNEY XD')) return { index: 10, category: 'vavoo_jeunesse' };
-    if (n.includes('DISNEY') || n.includes('CARTOON') || n.includes('BOOMERANG') || n.includes('NICKELODEON') || n.includes('TIJI') || n.includes('CANAL J') || n.includes('TELETOON') || n.includes('PIWI') || n.includes('GAME ONE')) {
+    if (n.includes('NICKELODEON') && !n.includes('+1') && !n.includes('14')) return { index: 10, category: 'vavoo_jeunesse' };
+    if (n.includes('DISNEY') || n.includes('CARTOON') || n.includes('BOOMERANG') || n.includes('NICKELODEON') || n.includes('TIJI') || n.includes('CANAL J') || n.includes('TELETOON') || n.includes('PIWI')) {
         return { index: 20, category: 'vavoo_jeunesse' };
     }
 
@@ -340,7 +340,7 @@ async function updateStreams() {
                     ...ch,
                     id: ch.id + '_jeunesse',
                     category: 'vavoo_jeunesse',
-                    sortIndex: 6
+                    sortIndex: 8
                 };
                 expandedChannelsMap[jeunesseCopy.id] = jeunesseCopy;
             }
@@ -359,16 +359,16 @@ async function updateStreams() {
 
 app.get('/', (req, res) => {
     if (isUpdating) {
-        res.send(`<h1>Hybrid TV FR (v30.0)</h1><p>⏳ Chargement en cours...</p>`);
+        res.send(`<h1>Hybrid TV FR (v31.0)</h1><p>⏳ Chargement en cours...</p>`);
     } else {
-        res.send(`<h1>Hybrid TV FR (v30.0) est en ligne !</h1><p>Chaînes actives : <strong>${channelsData.length}</strong></p>`);
+        res.send(`<h1>Hybrid TV FR (v31.0) est en ligne !</h1><p>Chaînes actives : <strong>${channelsData.length}</strong></p>`);
     }
 });
 
 app.get('/manifest.json', (req, res) => {
     res.json({
-        id: 'org.hybridproxy.fr.live.v300', 
-        version: '30.0.0',
+        id: 'org.hybridproxy.fr.live.v310', 
+        version: '31.0.0',
         name: 'Hybrid TV FR',
         description: 'TNT, Information, Jeunesse, Découverte, Cinéma, Musique, Bouquet Canal, Sports et EPG en direct.',
         resources: ['catalog', 'meta', 'stream'],
