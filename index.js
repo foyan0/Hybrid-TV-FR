@@ -5,32 +5,44 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 
-// URL de base de l'add-on source TvVoo
 const TVVOO_BASE = 'https://tvvoo.hayd.uk/cfg-fr';
 let channelsData = {};
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
 async function updateStreams() {
     try {
-        console.log('[TvVoo Proxy] Connexion à TvVoo...');
-        
-        // 1. Découverte du catalogue
+        console.log('[TvVoo Proxy] Début de la récupération et du nettoyage...');
         const manifestRes = await axios.get(`${TVVOO_BASE}/manifest.json`, { timeout: 10000 });
         const catalogId = manifestRes.data.catalogs[0].id;
 
-        // 2. Récupération des chaînes
-        console.log(`[TvVoo Proxy] Récupération du catalogue...`);
         const catalogRes = await axios.get(`${TVVOO_BASE}/catalog/tv/${catalogId}.json`, { timeout: 15000 });
-        
         const metas = catalogRes.data.metas || [];
         const channels = {};
 
-        // 3. Regroupement intelligent
+        // 1. Regroupement agressif des doublons
         metas.forEach(meta => {
-            // Nettoyer les noms type "TF1 (FHD)" -> "TF1"
-            let cleanName = meta.name.replace(/\s*\(.*?\)\s*/g, '').replace(/\b(FHD|HD|SD|4K)\b/gi, '').trim();
-            const id = 'proxy_fr_' + cleanName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+            let rawName = meta.name || "";
             
+            // Création d'un ID de comparaison radical (ex: "FR : TF1 (FHD)" devient "TF1")
+            let normalizedId = rawName.toUpperCase()
+                .replace(/^(FR|FRANCE|BE|CH|CA)\s*[:|-]?\s*/i, '') // Retire les préfixes pays
+                .replace(/\s*\(.*?\)\s*/g, ' ') // Retire le texte entre parenthèses
+                .replace(/\b(FHD|HD|SD|4K|1080P|720P|HEVC|VOD|TV)\b/gi, '') // Retire les tags qualité
+                .replace(/[^A-Z0-9+]/g, ''); // Ne garde que lettres, chiffres et '+'
+
+            if (!normalizedId) return;
+
+            const id = 'proxy_fr_' + normalizedId.toLowerCase();
+            
+            // Nom propre pour l'affichage visuel dans Nuvio
+            let cleanName = rawName
+                .replace(/^(FR|FRANCE|BE|CH|CA)\s*[:|-]?\s*/i, '')
+                .replace(/\s*\(.*?\)\s*/g, '')
+                .replace(/\b(FHD|HD|SD|4K|1080P|720P|HEVC|VOD|TV)\b/gi, '')
+                .replace(/[-_]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+
             if (!channels[id]) {
                 channels[id] = { 
                     id, 
@@ -39,43 +51,54 @@ async function updateStreams() {
                     poster: meta.poster || DEFAULT_POSTER
                 };
             }
-            // On sauvegarde l'ID original de TvVoo pour demander le flux plus tard
-            channels[id].originalIds.push(meta.id);
+            
+            // Évite d'ajouter l'ID original s'il y est déjà
+            if (!channels[id].originalIds.includes(meta.id)) {
+                channels[id].originalIds.push(meta.id);
+            }
         });
 
         channelsData = channels;
-        console.log(`[TvVoo Proxy] Succès : ${Object.keys(channelsData).length} chaînes regroupées à partir de ${metas.length} sources.`);
+        console.log(`[TvVoo Proxy] Succès : Réduit à ${Object.keys(channelsData).length} chaînes uniques (depuis ${metas.length} sources).`);
     } catch (err) {
         console.error('[TvVoo Proxy] Erreur :', err.message);
     }
 }
 
-// Page de diagnostic web
+// Notation des flux pour le tri
+function getStreamScore(title) {
+    const t = (title || '').toUpperCase();
+    if (t.includes('4K') || t.includes('2160')) return 4;
+    if (t.includes('FHD') || t.includes('1080')) return 3;
+    if (t.includes('HD') || t.includes('720')) return 2;
+    if (t.includes('SD')) return 0;
+    return 1; // Qualité standard/inconnue
+}
+
 app.get('/', (req, res) => {
     const count = Object.keys(channelsData).length;
-    res.send(`<h1>L'Add-on Vavoo FR (Mode Proxy) est en ligne !</h1><p>Nombre de chaînes françaises regroupées : <strong>${count}</strong></p>`);
+    res.send(`<h1>Vavoo FR (v3 - Anti-Doublons) est en ligne !</h1><p>Nombre de chaînes uniques : <strong>${count}</strong></p>`);
 });
 
-// Manifest Stremio/Nuvio
 app.get('/manifest.json', (req, res) => {
     res.json({
         id: 'org.vavooproxy.fr.live',
-        version: '2.0.0',
-        name: 'Vavoo FR Groupé',
-        description: 'Chaînes françaises avec choix des sources',
+        version: '3.0.0',
+        name: 'Vavoo FR Opti',
+        description: 'Chaînes françaises uniques avec tri par qualité',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
             {
                 type: 'tv',
-                id: 'vavoo_fr_grouped',
+                id: 'vavoo_fr_opti',
                 name: 'TV Française'
             }
         ]
     });
 });
 
-app.get('/catalog/tv/vavoo_fr_grouped.json', (req, res) => {
+app.get('/catalog/tv/vavoo_fr_opti.json', (req, res) => {
     const metas = Object.values(channelsData).map(ch => ({
         id: ch.id,
         type: 'tv',
@@ -97,39 +120,42 @@ app.get('/meta/tv/:id.json', (req, res) => {
             name: channel.name,
             poster: channel.poster,
             posterShape: 'square',
-            description: `Regarder ${channel.name} en direct (${channel.originalIds.length} sources disponibles)`
+            description: `${channel.originalIds.length} sources trouvées pour cette chaîne.`
         }
     });
 });
 
-// Récupération des flux en temps réel lors du clic !
 app.get('/stream/tv/:id.json', async (req, res) => {
     const channel = channelsData[req.params.id];
     if (!channel) return res.json({ streams: [] });
 
-    // Transférer ton adresse IP à TvVoo pour éviter les blocages de sécurité
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
     try {
         let allStreams = [];
         
-        // On interroge l'add-on TvVoo pour chaque source trouvée
+        // Récupération de tous les flux
         for (let i = 0; i < channel.originalIds.length; i++) {
             const originalId = channel.originalIds[i];
             const streamRes = await axios.get(`${TVVOO_BASE}/stream/tv/${originalId}.json`, {
-                headers: { 'X-Forwarded-For': clientIp } // Envoi de l'IP du lecteur
+                headers: { 'X-Forwarded-For': clientIp }
             });
             
             if (streamRes.data && streamRes.data.streams) {
-                const streams = streamRes.data.streams.map(s => ({
-                    ...s,
-                    title: `Source ${i + 1} | ${s.title || 'Direct'}`
-                }));
-                allStreams = allStreams.concat(streams);
+                allStreams = allStreams.concat(streamRes.data.streams);
             }
         }
         
-        res.json({ streams: allStreams });
+        // 2. Tri automatique des flux (les meilleurs scores en premier)
+        allStreams.sort((a, b) => getStreamScore(b.title) - getStreamScore(a.title));
+
+        // 3. Renommage propre pour Nuvio
+        const finalStreams = allStreams.map((s, idx) => ({
+            ...s,
+            title: `Choix ${idx + 1} | ${s.title || 'Qualité Inconnue'}`
+        }));
+        
+        res.json({ streams: finalStreams });
     } catch (err) {
         console.error('Erreur flux:', err.message);
         res.json({ streams: [] });
@@ -139,5 +165,5 @@ app.get('/stream/tv/:id.json', async (req, res) => {
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, async () => {
     console.log(`Serveur démarré sur le port ${PORT}`);
-    await updateStreams(); // Charge le catalogue au démarrage
+    await updateStreams();
 });
