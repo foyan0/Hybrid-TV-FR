@@ -7,9 +7,14 @@ app.use(cors());
 
 let isUpdating = true;
 
-// --- LES 3 FOURNISSEURS OFFICIELS ---
+// --- LES FOURNISSEURS ---
+// 1. Les listes M3U Légales (Ton script les lit directement, sans add-on !)
+const NATIVE_M3U_SOURCES = [
+    { url: 'https://iptv-org.github.io/iptv/countries/fr.m3u', label: 'Légal (IPTV-org)', isPriority: true }
+];
+
+// 2. Les catalogues Premium de secours
 const ADDON_PROVIDERS = [
-    { id: 'legal', base: 'https://tvlegal.beluchon.top/eyJjYXRhbG9ncyI6WyJ0ZjEtaW5mb3MiXSwibGl2ZSI6dHJ1ZSwidG1kYktleSI6ImE4ZjQxNjI1ODc4N2Y3MGFjYzY0YTBlMmE0ODU1ZDdjIn0=', label: 'Légal', isPriority: true },
     { id: 'vavoo', base: 'https://tvvoo.hayd.uk/cfg-fr', label: 'Vavoo', isPriority: false },
     { id: 'mio', base: 'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiXSwiY2F0ZWdvcmllcyI6eyJGUiI6WyJHZW5lcmFsIPCfk7oiLCJTcG9ydHMg4pq9IiwiRG9jdW1lbnRhaXJlcyDwn4yNIiwiRmlsbXMg8J+OrCIsIkluZm9ybWF0aW9ucyDwn5OwIiwiRW5mYW50cyDwn5G2IiwiTXVzaWMg8J+OtSJdfSwiZW5hYmxlU2VhcmNoIjpmYWxzZX0', label: 'Mio', isPriority: false }
 ];
@@ -53,7 +58,6 @@ function normalizeChannelName(rawName) {
         return `Canal+ ${suffix.charAt(0).toUpperCase() + suffix.slice(1).toLowerCase()}`;
     }
 
-    // BEIN SPORTS
     if (displayName.includes('BEIN SPORT')) {
         let beinMatch = displayName.match(/BEIN SPORTS?\s*(\d+)/);
         if (beinMatch) return `beIN SPORTS ${beinMatch[1]}`;
@@ -61,7 +65,6 @@ function normalizeChannelName(rawName) {
         return 'beIN SPORTS 1'; 
     }
 
-    // RMC
     if (displayName.includes('RMC DECOUVERTE')) return 'RMC Découverte';
     if (displayName.includes('RMC STORY')) return 'RMC Story';
     if (displayName.includes('RMC SPORT')) {
@@ -148,51 +151,100 @@ function getChannelMeta(channelName) {
     return { index: 999, category: 'vavoo_autres' };
 }
 
-// --- LECTEUR EPG (PROGRAMME TV) ULTRA-STABLE ---
+// --- LECTEUR EPG (PROGRAMME TV) AMÉLIORÉ ---
 async function updateEPG() {
     try {
         console.log('[EPG] Téléchargement du programme TV...');
-        // Nouvelle source XMLTV très stable pour la France
-        const res = await axios.get('https://xmltv.fr/guide/tvguide.xml', { 
-            timeout: 20000,
-            headers: { 'User-Agent': 'Mozilla/5.0' }
-        });
+        const res = await axios.get('https://xmltv.ch/xmltv/xmltv-tnt.xml', { timeout: 15000 });
         const xml = res.data;
         
         let epgChannels = {};
         let match;
-        const chRegex = /<channel id="([^"]+)">\s*<display-name[^>]*>(.*?)<\/display-name>/g;
+        
+        // 1. Analyse des chaînes
+        const chRegex = /<channel id="([^"]+)">[\s\S]*?<display-name[^>]*>(.*?)<\/display-name>[\s\S]*?<\/channel>/g;
         while ((match = chRegex.exec(xml)) !== null) {
             epgChannels[match[1]] = normalizeChannelName(match[2]);
         }
 
-        const progRegex = /<programme start="(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s?([^"]*)" stop="(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s?([^"]*)" channel="([^"]+)">.*?<title[^>]*>([^<]+)<\/title>(?:.*?<desc[^>]*>([^<]+)<\/desc>)?/gs;
+        // 2. Analyse des programmes (Plus robuste aux sauts de ligne)
+        const progRegex = /<programme start="(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2}) [^"]*" stop="(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2}) [^"]*" channel="([^"]+)">([\s\S]*?)<\/programme>/g;
         
         let newEpgData = {};
         while ((match = progRegex.exec(xml)) !== null) {
-            const chName = epgChannels[match[15]];
+            const chName = epgChannels[match[13]];
             if (!chName) continue;
             
+            // Recomposition propre des dates
             const startStr = `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}+02:00`;
-            const stopStr = `${match[8]}-${match[9]}-${match[10]}T${match[11]}:${match[12]}:${match[13]}+02:00`;
+            const stopStr = `${match[7]}-${match[8]}-${match[9]}T${match[10]}:${match[11]}:${match[12]}+02:00`;
             
             const startTs = new Date(startStr).getTime();
             const stopTs = new Date(stopStr).getTime();
             
+            let title = "Programme TV";
+            let desc = "";
+            
+            const titleMatch = match[14].match(/<title[^>]*>([^<]+)<\/title>/);
+            if (titleMatch) title = titleMatch[1].trim();
+            
+            const descMatch = match[14].match(/<desc[^>]*>([^<]+)<\/desc>/);
+            if (descMatch) desc = descMatch[1].trim();
+            
             if (!newEpgData[chName]) newEpgData[chName] = [];
-            newEpgData[chName].push({ start: startTs, stop: stopTs, title: match[16].trim(), desc: match[17] ? match[17].trim() : '' });
+            newEpgData[chName].push({ start: startTs, stop: stopTs, title: title, desc: desc });
         }
         epgData = newEpgData;
-        console.log(`[EPG] Programme TV chargé avec succès !`);
+        console.log(`[EPG] Programme TV OK pour ${Object.keys(epgData).length} chaînes.`);
     } catch (err) {
         console.error('[EPG] Échec EPG, on continue sans.');
     }
 }
 
+// --- PARSEUR M3U NATIF (Gère correctement les Logos TVG-LOGO) ---
+async function fetchNativeM3U(source) {
+    let metas = [];
+    try {
+        console.log(`[Proxy] Aspiration M3U Natif : ${source.label}...`);
+        const response = await axios.get(source.url, { timeout: 10000 });
+        const lines = response.data.split('\n');
+        
+        let currentName = '';
+        let currentLogo = '';
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            
+            if (line.startsWith('#EXTINF:')) {
+                // EXCTRACTION DU LOGO !
+                const logoMatch = line.match(/tvg-logo="([^"]+)"/);
+                currentLogo = logoMatch ? logoMatch[1] : '';
+                
+                const parts = line.split(',');
+                currentName = parts.length > 1 ? parts.slice(1).join(',').trim() : '';
+            } else if (line && !line.startsWith('#') && currentName) {
+                metas.push({ 
+                    name: currentName, 
+                    poster: currentLogo, // On sauvegarde l'image !
+                    url: line,
+                    providerLabel: source.label,
+                    isPriority: source.isPriority
+                });
+                currentName = '';
+                currentLogo = '';
+            }
+        }
+    } catch (err) {
+        console.error(`[M3U] Erreur avec ${source.label}:`, err.message);
+    }
+    return metas;
+}
+
+// --- PARSEUR ADDON (POUR VAVOO / MIO) ---
 async function fetchAddonCatalog(provider) {
     let allMetas = [];
     try {
-        console.log(`[Proxy] Aspiration de ${provider.label}...`);
+        console.log(`[Proxy] Aspiration Add-on : ${provider.label}...`);
         const manifestRes = await axios.get(`${provider.base}/manifest.json`, { timeout: 10000 });
         
         for (const catalog of manifestRes.data.catalogs) {
@@ -238,7 +290,30 @@ async function updateStreams() {
     try {
         let channelsMap = {};
 
-        // On aspire les 3 fournisseurs (Beluchon Légal d'abord, puis Vavoo, puis Mio)
+        // 1. Intégration du M3U Natif Légal (avec Logos)
+        for (const source of NATIVE_M3U_SOURCES) {
+            const metas = await fetchNativeM3U(source);
+            metas.forEach(meta => {
+                let dName = normalizeChannelName(meta.name);
+                if (!dName || dName.length < 2) return; 
+                
+                const id = 'hyb_id_' + dName.replace(/[^a-zA-Z0-9+]/g, '_').toLowerCase();
+                const metaInfo = getChannelMeta(dName); 
+
+                if (!channelsMap[id]) {
+                    channelsMap[id] = { id, name: dName, sources: [], poster: meta.poster || DEFAULT_POSTER, sortIndex: metaInfo.index, category: metaInfo.category };
+                }
+                
+                channelsMap[id].sources.push({ type: 'direct', url: meta.url, provider: { label: meta.providerLabel, isPriority: meta.isPriority } });
+                
+                // Maintien du logo officiel (le plus beau en priorité)
+                if (meta.poster && channelsMap[id].poster === DEFAULT_POSTER) {
+                    channelsMap[id].poster = meta.poster;
+                }
+            });
+        }
+
+        // 2. Intégration des Backups Premium
         for (const provider of ADDON_PROVIDERS) {
             const metas = await fetchAddonCatalog(provider);
             metas.forEach(meta => {
@@ -254,7 +329,6 @@ async function updateStreams() {
                 const sourceExists = channelsMap[id].sources.find(s => s.metaId === meta.id && s.provider && s.provider.id === provider.id);
                 if (!sourceExists) channelsMap[id].sources.push({ type: 'addon', metaId: meta.id, provider: provider });
                 
-                // Maintien strict du plus beau poster (Le réseau légal donne toujours les meilleurs)
                 if (meta.poster && channelsMap[id].poster === DEFAULT_POSTER) {
                     channelsMap[id].poster = meta.poster;
                 }
@@ -273,19 +347,19 @@ async function updateStreams() {
 
 app.get('/', (req, res) => {
     if (isUpdating) {
-        res.send(`<h1>Hybrid TV FR (v18.0)</h1><p>⏳ Création du bouquet en cours...</p>`);
+        res.send(`<h1>Hybrid TV FR (v19.0)</h1><p>⏳ Création du bouquet en cours...</p>`);
     } else {
-        res.send(`<h1>Hybrid TV FR (v18.0) est en ligne !</h1><p>Chaînes totales construites : <strong>${channelsData.length}</strong></p>`);
+        res.send(`<h1>Hybrid TV FR (v19.0) est en ligne !</h1><p>Chaînes totales construites : <strong>${channelsData.length}</strong></p>`);
     }
 });
 
-// NOUVEL IDENTIFIANT POUR FORCER NUVIO À VIDER SON CACHE !
+// NOUVEL IDENTIFIANT : Obligatoire pour forcer Nuvio à rafraîchir l'EPG
 app.get('/manifest.json', (req, res) => {
     res.json({
-        id: 'org.hybridproxy.fr.live.v18', 
-        version: '18.0.0',
+        id: 'org.hybridproxy.fr.live.v19', 
+        version: '19.0.0',
         name: 'Hybrid TV FR',
-        description: 'Flux Légaux (Images HD), EPG en direct et Secours Premium.',
+        description: 'Flux Légaux Natifs, EPG réparé et Secours Premium.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -328,7 +402,6 @@ app.get('/meta/tv/:id.json', (req, res) => {
     
     let desc = `${channel.sources.length} sources analysées (Légal, Vavoo, Mio).`;
     
-    // INJECTION DU PROGRAMME TV
     if (epgData[channel.name]) {
         const now = Date.now();
         const currentProg = epgData[channel.name].find(p => now >= p.start && now <= p.stop);
@@ -367,7 +440,9 @@ app.get('/stream/tv/:id.json', async (req, res) => {
         let allStreams = [];
         
         for (const source of channel.sources) {
-            if (source.type === 'addon') {
+            if (source.type === 'direct') {
+                allStreams.push({ url: source.url, _score: 5, _label: source.provider.label, _isPriority: source.provider.isPriority, title: 'Direct M3U' });
+            } else if (source.type === 'addon') {
                 try {
                     const streamRes = await axios.get(`${source.provider.base}/stream/tv/${source.metaId}.json`, {
                         headers: { 'X-Forwarded-For': clientIp }, timeout: 5000
