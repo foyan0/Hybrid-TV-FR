@@ -10,7 +10,7 @@ let isUpdating = true;
 // --- LES SOURCES ---
 const ADDON_PROVIDERS = [
     { id: 'vavoo', base: 'https://tvvoo.hayd.uk/cfg-fr', label: 'Vavoo', isPriority: true },
-    { id: 'mio', base: 'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiLCJCRV9GUiJdLCJjYXRlZ29yaWVzIjp7IkZSIjpbIkdlbmVyYWwg8J+7oiIsIlNwb3J0cyDimq3igIsiLCJEb2N1bWVudGFpcmVzIPCfijrQuiIsIkZpbG1zIPCfjqwiLCJJbmZvcm1hdGlvbnMg8J+7oiIsIkVuZmFudHMgv5G2IiwiTXVzaWMg8J+OtSJdfSwiZW5hYmxlU2VhcmNoIjpmYWxzZX0', label: 'Mio', isPriority: false }
+    { id: 'mio', base: 'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiLCJCRV9GUiJdLCjjYXRlZ29yaWVzIjp7IkZSIjpbIkdlbmVyYWwg8J+7oiIsIlNwb3J0cyDimq3igIsiLCJEb2N1bWVudGFpcmVzIPCfijrQuiIsIkZpbG1zIPCfjqwiLCJJbmZvcm1hdGlvbnMg8J+7oiIsIkVuZmFudHMgv5G2IiwiTXVzaWMg8J+OtSJdfSwiZW5hYmxlU2VhcmNoIjpmYWxzZX0', label: 'Mio', isPriority: false }
 ];
 
 let channelsData = [];
@@ -119,7 +119,6 @@ function getChannelMeta(channelName) {
         return { index: infoIndex, category: 'vavoo_info' };
     }
 
-    // Ordre Jeunesse exact demandé
     if (n === 'CARTOON NETWORK') return { index: 1, category: 'vavoo_jeunesse' };
     if (n === 'DISNEY CHANNEL') return { index: 2, category: 'vavoo_jeunesse' };
     if (n === 'GULLI') return { index: 3, category: 'vavoo_jeunesse' };
@@ -221,10 +220,41 @@ function getChannelMeta(channelName) {
     return { index: 500, category: 'vavoo_autres' };
 }
 
+const EPG_MAPPING = {
+    "TF1": ["TF1", "TF1.FR", "TF1 HD"],
+    "FRANCE 2": ["FRANCE 2", "FRANCETV 2", "FRANCE 2 HD"],
+    "FRANCE 3": ["FRANCE 3", "FRANCE 3 REGIONS"],
+    "FRANCE 4": ["FRANCE 4"],
+    "FRANCE 5": ["FRANCE 5"],
+    "M6": ["M6", "M6.FR", "M6 HD"],
+    "ARTE": ["ARTE", "ARTE HD"],
+    "C8": ["C8"],
+    "W9": ["W9"],
+    "TMC": ["TMC"],
+    "TFX": ["TFX"],
+    "NRJ 12": ["NRJ 12", "NRJ12"],
+    "BFMTV": ["BFMTV", "BFM TV"],
+    "CNEWS": ["CNEWS"],
+    "LCI": ["LCI"],
+    "FRANCE INFO": ["FRANCE INFO", "FRANCEINFO"],
+    "CANAL+": ["CANAL+", "CANAL +"],
+    "CANAL J": ["CANAL J", "CANALJ"],
+    "CANAL+ KIDS": ["CANAL+ KIDS", "CANAL KIDS"]
+};
+
 function getEpgForChannel(channelName) {
     if (!epgData) return null;
     const target = channelName.toUpperCase().trim();
     if (epgData[target]) return epgData[target];
+
+    for (const [key, aliases] of Object.entries(EPG_MAPPING)) {
+        if (aliases.includes(target) || target === key) {
+            for (const alias of aliases) {
+                if (epgData[alias]) return epgData[alias];
+            }
+        }
+    }
+
     const foundKey = Object.keys(epgData).find(k => k === target || k.includes(target) || target.includes(k));
     return foundKey ? epgData[foundKey] : null;
 }
@@ -234,10 +264,10 @@ async function updateEPG() {
         const res = await axios.get('https://xmltv.ch/xmltv/xmltv-tnt.xml', { timeout: 15000 });
         const xml = res.data;
         let epgChannels = {};
-        let match;
         const chRegex = /<channel id="([^"]+)">\s*<display-name[^>]*>(.*?)<\/display-name>/g;
+        let match;
         while ((match = chRegex.exec(xml)) !== null) {
-            epgChannels[match[1]] = normalizeChannelName(match[2]);
+            epgChannels[match[1]] = match[2].toUpperCase().trim();
         }
 
         const progBlocks = xml.match(/<programme[\s\S]*?<\/programme>/g) || [];
@@ -255,8 +285,12 @@ async function updateEPG() {
                 if (!rawChName) continue;
                 const chName = normalizeChannelName(rawChName);
 
-                const startStr = `${startMatch[1]}-${startMatch[2]}-${startMatch[3]}T${startMatch[4]}:${startMatch[5]}:${startMatch[6]}+02:00`;
-                const stopStr = `${stopMatch[1]}-${stopMatch[2]}-${stopMatch[3]}T${stopMatch[4]}:${stopMatch[5]}:${stopMatch[6]}+02:00`;
+                // Extraction dynamique du décalage horaire exact (ex: +0200 -> +02:00) pour l'heure de Paris
+                const rawOffset = startMatch[7] || '+0200';
+                const formattedOffset = rawOffset.includes(':') ? rawOffset : rawOffset.slice(0, 3) + ':' + rawOffset.slice(3);
+
+                const startStr = `${startMatch[1]}-${startMatch[2]}-${startMatch[3]}T${startMatch[4]}:${startMatch[5]}:${startMatch[6]}${formattedOffset}`;
+                const stopStr = `${stopMatch[1]}-${stopMatch[2]}-${stopMatch[3]}T${stopMatch[4]}:${stopMatch[5]}:${stopMatch[6]}${formattedOffset}`;
                 
                 const startTs = new Date(startStr).getTime();
                 const stopTs = new Date(stopStr).getTime();
@@ -385,30 +419,30 @@ async function updateStreams() {
 
 app.get('/', (req, res) => {
     if (isUpdating) {
-        res.send(`<h1>Hybrid TV FR (v33.2)</h1><p>⏳ Chargement en cours...</p>`);
+        res.send(`<h1>Hybrid TV FR (v34.0)</h1><p>⏳ Chargement en cours...</p>`);
     } else {
-        res.send(`<h1>Hybrid TV FR (v33.2) est en ligne !</h1><p>Chaînes actives : <strong>${channelsData.length}</strong></p>`);
+        res.send(`<h1>Hybrid TV FR (v34.0) est en ligne !</h1><p>Chaînes actives : <strong>${channelsData.length}</strong></p>`);
     }
 });
 
 app.get('/manifest.json', (req, res) => {
     res.json({
-        id: 'org.hybridproxy.fr.live.v332', 
-        version: '33.2.0',
+        id: 'org.hybridproxy.fr.live.v340', 
+        version: '34.0.0',
         name: 'Hybrid TV FR',
         description: 'TNT, Information, Jeunesse, Découverte, Cinéma, Musique, Bouquet Canal, Sports et EPG en direct.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
-            { type: 'tv', id: 'vavoo_tnt', name: '📺 TNT' },
-            { type: 'tv', id: 'vavoo_info', name: '📰 Information' },
-            { type: 'tv', id: 'vavoo_jeunesse', name: '👶 Jeunesse' },
-            { type: 'tv', id: 'vavoo_decouverte', name: '🔬 Découverte & Docu' },
-            { type: 'tv', id: 'vavoo_cinema', name: '🍿 Cinéma & Séries' },
-            { type: 'tv', id: 'vavoo_musique', name: '🎵 Musique' },
-            { type: 'tv', id: 'vavoo_canal', name: '🎟️ Bouquet Canal' },
-            { type: 'tv', id: 'vavoo_sports', name: '⚽ Sports' },
-            { type: 'tv', id: 'vavoo_autres', name: '📂 Autres Chaînes' }
+            { type: 'tv', id: 'vavoo_tnt', name: 'TNT' },
+            { type: 'tv', id: 'vavoo_info', name: 'Information' },
+            { type: 'tv', id: 'vavoo_jeunesse', name: 'Jeunesse' },
+            { type: 'tv', id: 'vavoo_decouverte', name: 'Découverte & Docu' },
+            { type: 'tv', id: 'vavoo_cinema', name: 'Cinéma & Séries' },
+            { type: 'tv', id: 'vavoo_musique', name: 'Musique' },
+            { type: 'tv', id: 'vavoo_canal', name: 'Bouquet Canal' },
+            { type: 'tv', id: 'vavoo_sports', name: 'Sports' },
+            { type: 'tv', id: 'vavoo_autres', name: 'Autres Chaînes' }
         ]
     });
 });
@@ -443,13 +477,16 @@ app.get('/meta/tv/:id.json', async (req, res) => {
     const channel = channelsData.find(c => c.id === req.params.id || c.id === cleanId);
     if (!channel) return res.json({ meta: {} });
     
-    let progText = "";
+    let progTitle = "";
+    let progDesc = "";
+    
     const epgList = getEpgForChannel(channel.name);
     if (epgList) {
         const now = Date.now();
         const currentProg = epgList.find(p => now >= p.start && now <= p.stop);
         if (currentProg) {
-            progText = `${currentProg.title}${currentProg.desc ? ' - ' + currentProg.desc : ''}`;
+            progTitle = currentProg.title;
+            progDesc = currentProg.desc || '';
         }
     }
 
@@ -460,7 +497,7 @@ app.get('/meta/tv/:id.json', async (req, res) => {
             name: channel.name,
             poster: channel.poster,
             posterShape: 'square',
-            description: progText ? `EN COURS : ${progText}` : ''
+            description: progTitle ? `EN DIRECT : ${progTitle}\n\n${progDesc}`.trim() : ''
         }
     });
 });
@@ -509,7 +546,7 @@ app.get('/stream/tv/:id.json', async (req, res) => {
             return b._score - a._score;
         });
 
-        const finalStreams = allStreams.map((s, idx) => ({
+    const finalStreams = allStreams.map((s, idx) => ({
             url: s.url,
             title: `[${s._label}] Choix ${idx + 1} | ${s.title.replace(/\[.*?\]\s*/g, '') || 'Auto'}`
         }));
