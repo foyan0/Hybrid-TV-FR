@@ -13,12 +13,10 @@ const ADDON_PROVIDERS = [
     { id: 'mio', base: 'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiXSwiY2F0ZWdvcmllcyI6eyJGUiI6WyJHZW5lcmFsIPCfk7oiLCJTcG9ydHMg4pq9IiwiRG9jdW1lbnRhaXJlcyDwn4yNIiwiRmlsbXMg8J+OrCIsIkluZm9ybWF0aW9ucyDwn5OwIiwiRW5mYW50cyDwn5G2IiwiTXVzaWMg8J+OtSJdfSwiZW5hYmxlU2VhcmNoIjpmYWxzZX0', label: 'Mio', isPriority: false }
 ];
 
-// L'add-on Sport externe (Highfly) que tu m'as partagé
 const SPORTS_FEED_BASE = 'https://sports.highfly.dev/eyJpbmNsdWRlU3BvcnRzIjpbImJhc2tldGJhbGwiLCJmb290YmFsbCIsImZpZ2h0Il19';
 
 let channelsData = [];
-let sportsEventsData = []; // Pour stocker les matchs en direct
-let epgData = {}; 
+let sportsEventsData = []; 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
 // --- NETTOYAGE ET ORGANISATION ---
@@ -38,6 +36,7 @@ function normalizeChannelName(rawName) {
 
     if (displayName.includes('EQUIPE')) return "L'Équipe"; 
 
+    // UNIVERS DISNEY STRICT
     if (displayName.includes('DISNEY')) {
         if (displayName.includes('XD')) return 'Disney XD';
         if (displayName.includes('JUNIOR') || displayName.includes('JR')) return 'Disney Junior';
@@ -46,6 +45,11 @@ function normalizeChannelName(rawName) {
         if (displayName.includes('CHANNEL')) return 'Disney Channel';
         if (displayName.includes('+') || displayName.includes('PLUS')) return 'Disney+';
         return 'Disney Channel';
+    }
+
+    // CARTOON NETWORK
+    if (displayName.includes('CARTOON') || displayName.includes('CN')) {
+        return 'Cartoon Network';
     }
 
     if (displayName.includes('CANAL')) {
@@ -98,6 +102,7 @@ function normalizeChannelName(rawName) {
 function getChannelMeta(channelName) {
     const n = channelName.toUpperCase();
     
+    // --- CATALOGUE 1 : TNT ---
     if (n === 'TF1') return { index: 1, category: 'vavoo_tnt' };
     if (n === 'FRANCE 2') return { index: 2, category: 'vavoo_tnt' };
     if (n === 'FRANCE 3') return { index: 3, category: 'vavoo_tnt' };
@@ -124,14 +129,23 @@ function getChannelMeta(channelName) {
     if (n === 'LCI') return { index: 26, category: 'vavoo_tnt' };
     if (n.includes('FRANCE INFO')) return { index: 27, category: 'vavoo_tnt' };
 
+    // --- CATALOGUE 2 : JEUNESSE (Disney & Cartoon Network en premier !) ---
+    if (n === 'DISNEY CHANNEL' || n === 'DISNEY+') return { index: 1, category: 'vavoo_jeunesse' };
+    if (n === 'CARTOON NETWORK') return { index: 2, category: 'vavoo_jeunesse' };
+    if (n.includes('DISNEY')) return { index: 3, category: 'vavoo_jeunesse' }; // Autres Disney (Junior, XD, etc.)
+    if (n.includes('BOOMERANG') || n.includes('NICKELODEON') || n.includes('TIJI') || n.includes('CANAL J') || n.includes('TELETOON')) {
+        return { index: 10, category: 'vavoo_jeunesse' };
+    }
+
+    // --- CATALOGUE 3 : PREMIUM (Chaînes Payantes) ---
     if (n === 'CANAL+') return { index: 40, category: 'vavoo_premium' }; 
-    if (n.includes('DISNEY')) return { index: 41, category: 'vavoo_premium' }; 
     if (n.startsWith('CANAL+')) return { index: 45, category: 'vavoo_premium' }; 
     if (n.startsWith('CINE+')) return { index: 46, category: 'vavoo_premium' };
     if (n === 'PARIS PREMIERE' || n.includes('RTL 9') || n === 'RTL9') return { index: 47, category: 'vavoo_premium' };
     if (n.startsWith('OCS')) return { index: 90, category: 'vavoo_premium' }; 
     if (n.includes('BOX OFFICE')) return { index: 91, category: 'vavoo_premium' };
 
+    // --- CATALOGUE 4 : SPORTS CHAÎNES ---
     if (n.startsWith('BEIN SPORTS')) return { index: 100, category: 'vavoo_sports' };
     if (n.startsWith('RMC SPORT')) return { index: 110, category: 'vavoo_sports' };
     if (n.startsWith('EUROSPORT')) return { index: 120, category: 'vavoo_sports' };
@@ -144,7 +158,7 @@ function getChannelMeta(channelName) {
     return { index: 999, category: 'vavoo_autres' };
 }
 
-// --- EPG (PROGRAMME TV) ---
+// --- EPG ---
 async function updateEPG() {
     try {
         const res = await axios.get('https://xmltv.ch/xmltv/xmltv-tnt.xml', { timeout: 15000 });
@@ -172,7 +186,7 @@ async function updateEPG() {
     } catch (err) {}
 }
 
-// --- ASPIRATEUR ADDONS (VAVOO / MIO) ---
+// --- ASPIRATEURS ---
 async function fetchAddonCatalog(provider) {
     let allMetas = [];
     try {
@@ -208,11 +222,9 @@ async function fetchAddonCatalog(provider) {
     return allMetas;
 }
 
-// --- ASPIRATEUR SPORT LIVE (HIGHFLY) ---
 async function fetchSportsEvents() {
     let events = [];
     try {
-        console.log(`[Sports] Aspiration des matchs en direct...`);
         const manifestRes = await axios.get(`${SPORTS_FEED_BASE}/manifest.json`, { timeout: 10000 });
         if (manifestRes.data && manifestRes.data.catalogs) {
             for (const catalog of manifestRes.data.catalogs) {
@@ -222,10 +234,7 @@ async function fetchSportsEvents() {
                 }
             }
         }
-        console.log(`[Sports] ${events.length} événements sportifs récupérés.`);
-    } catch (err) {
-        console.error('[Sports] Erreur de chargement des flux sportifs');
-    }
+    } catch (err) {}
     sportsEventsData = events;
 }
 
@@ -234,7 +243,6 @@ async function updateStreams() {
     try {
         let channelsMap = {};
 
-        // 1. Aspiration TV (Vavoo en priorité, puis Mio)
         for (const provider of ADDON_PROVIDERS) {
             const metas = await fetchAddonCatalog(provider);
             metas.forEach(meta => {
@@ -262,34 +270,33 @@ async function updateStreams() {
             return a.name.localeCompare(b.name);
         });
 
-        // 2. Aspiration des Matchs Sportifs en direct
         await fetchSportsEvents();
-
     } catch (err) {}
     isUpdating = false; 
 }
 
 app.get('/', (req, res) => {
     if (isUpdating) {
-        res.send(`<h1>Hybrid TV FR (v20.0)</h1><p>⏳ Chargement des flux et des matchs en cours...</p>`);
+        res.send(`<h1>Hybrid TV FR (v21.0)</h1><p>⏳ Chargement en cours...</p>`);
     } else {
-        res.send(`<h1>Hybrid TV FR (v20.0) est en ligne !</h1><p>Chaînes : <strong>${channelsData.length}</strong> | Matchs Live : <strong>${sportsEventsData.length}</strong></p>`);
+        res.send(`<h1>Hybrid TV FR (v21.0) est en ligne !</h1><p>Chaînes : <strong>${channelsData.length}</strong> | Matchs Live : <strong>${sportsEventsData.length}</strong></p>`);
     }
 });
 
-// MANIFEST AVEC 5 CATALOGUES (TNT, Sports, Premium, Autres + Le nouveau "Sports Live")
+// MANIFEST AVEC TOUS LES CATALOGUES AU TYPE "TV" (Pour qu'ils apparaissent tous à coup sûr dans Nuvio)
 app.get('/manifest.json', (req, res) => {
     res.json({
-        id: 'org.hybridproxy.fr.live.v20', 
-        version: '20.0.0',
+        id: 'org.hybridproxy.fr.live.v21', 
+        version: '21.0.0',
         name: 'Hybrid TV FR',
-        description: 'Télé française, EPG en direct, Secours Vavoo/Mio et Matchs Live Sport.',
+        description: 'TNT, Jeunesse (Disney/CN), Sports Live, Chaînes Payantes et EPG.',
         resources: ['catalog', 'meta', 'stream'],
-        types: ['tv', 'sports'],
+        types: ['tv'],
         catalogs: [
             { type: 'tv', id: 'vavoo_tnt', name: 'TNT Française' },
+            { type: 'tv', id: 'vavoo_jeunesse', name: '👶 Jeunesse (Disney & CN)' },
             { type: 'tv', id: 'vavoo_sports', name: 'Sports (Chaînes)' },
-            { type: 'sports', id: 'sports_live', name: '⚽ Sports Live (Matchs)' },
+            { type: 'tv', id: 'sports_live', name: '⚽ Sports Live (Matchs)' },
             { type: 'tv', id: 'vavoo_premium', name: 'Chaînes Payantes' },
             { type: 'tv', id: 'vavoo_autres', name: 'Autres Chaînes' }
         ]
@@ -304,11 +311,10 @@ const handleCatalog = (req, res) => {
         if (match) skip = parseInt(match[1], 10);
     }
 
-    // Gestion du catalogue spécial Matchs Live Sport
     if (requestedCatalog === 'sports_live') {
         const paginatedSports = sportsEventsData.slice(skip, skip + 100).map(ev => ({
             id: 'sport_ev_' + ev.id,
-            type: 'sports',
+            type: 'tv',
             name: ev.name,
             poster: ev.poster || DEFAULT_POSTER,
             posterShape: 'landscape'
@@ -316,8 +322,7 @@ const handleCatalog = (req, res) => {
         return res.json({ metas: paginatedSports });
     }
 
-    // Gestion des catalogues TV classiques
-    const validCatalogs = ['vavoo_tnt', 'vavoo_sports', 'vavoo_premium', 'vavoo_autres'];
+    const validCatalogs = ['vavoo_tnt', 'vavoo_jeunesse', 'vavoo_sports', 'vavoo_premium', 'vavoo_autres'];
     if (!validCatalogs.includes(requestedCatalog)) return res.json({ metas: [] });
     
     const filteredChannels = channelsData.filter(ch => ch.category === requestedCatalog);
@@ -331,31 +336,28 @@ const handleCatalog = (req, res) => {
     res.json({ metas: paginatedMetas });
 };
 
-app.get('/catalog/:type/:id.json', handleCatalog);
-app.get('/catalog/:type/:id/:extra', handleCatalog);
+app.get('/catalog/tv/:id.json', handleCatalog);
+app.get('/catalog/tv/:id/:extra', handleCatalog);
 
-app.get('/meta/:type/:id.json', async (req, res) => {
-    const type = req.params.type;
+app.get('/meta/tv/:id.json', async (req, res) => {
     const id = req.params.id;
 
-    // Meta pour les matchs en direct sport
-    if (type === 'sports') {
+    if (id.startsWith('sport_ev_')) {
         const originalId = id.replace('sport_ev_', '');
         const event = sportsEventsData.find(e => e.id === originalId);
         if (!event) return res.json({ meta: {} });
         return res.json({
             meta: {
                 id: id,
-                type: 'sports',
+                type: 'tv',
                 name: event.name,
                 poster: event.poster || DEFAULT_POSTER,
                 posterShape: 'landscape',
-                description: `🔴 ÉVÉNEMENT SPORTIF EN DIRECT\n\nCliquez sur le lien ci-dessous pour lancer la diffusion du match.`
+                description: `🔴 ÉVÉNEMENT SPORTIF EN DIRECT\n\nCliquez pour lancer la diffusion.`
             }
         });
     }
 
-    // Meta pour les chaînes TV classiques
     const channel = channelsData.find(c => c.id === id);
     if (!channel) return res.json({ meta: {} });
     
@@ -389,13 +391,11 @@ function getStreamScore(title) {
     return 1;
 }
 
-app.get('/stream/:type/:id.json', async (req, res) => {
-    const type = req.params.type;
+app.get('/stream/tv/:id.json', async (req, res) => {
     const id = req.params.id;
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
-    // Streams pour les matchs en direct sport
-    if (type === 'sports') {
+    if (id.startsWith('sport_ev_')) {
         const originalId = id.replace('sport_ev_', '');
         try {
             const streamRes = await axios.get(`${SPORTS_FEED_BASE}/stream/sports/${originalId}.json`, { timeout: 8000 });
@@ -405,7 +405,6 @@ app.get('/stream/:type/:id.json', async (req, res) => {
         }
     }
 
-    // Streams pour les chaînes TV classiques (Vavoo prioritaire, Mio en secours)
     const channel = channelsData.find(c => c.id === id);
     if (!channel) return res.json({ streams: [] });
     
@@ -430,7 +429,6 @@ app.get('/stream/:type/:id.json', async (req, res) => {
             }
         }
         
-        // Tri : Vavoo d'abord, Mio ensuite
         allStreams.sort((a, b) => {
             if (a._label === 'Vavoo' && b._label === 'Mio') return -1; 
             if (a._label === 'Mio' && b._label === 'Vavoo') return 1;
