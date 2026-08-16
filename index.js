@@ -10,7 +10,7 @@ let isUpdating = true;
 // --- LES SOURCES ---
 const ADDON_PROVIDERS = [
     { id: 'vavoo', base: 'https://tvvoo.hayd.uk/cfg-fr', label: 'Vavoo', isPriority: true },
-    { id: 'mio', base: 'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiLCJCRV9GUiJdLCjjYXRlZ29yaWVzIjp7IkZSIjpbIkdlbmVyYWwg8J+7oiIsIlNwb3J0cyDimq3igIsiLCJEb2N1bWVudGFpcmVzIPCfijrQuiIsIkZpbG1zIPCfjqwiLCJJbmZvcm1hdGlvbnMg8J+7oiIsIkVuZmFudHMgv5G2IiwiTXVzaWMg8J+OtSJdfSwiZW5hYmxlU2VhcmNoIjpmYWxzZX0', label: 'Mio', isPriority: false }
+    { id: 'mio', base: 'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiLCJCRV9GUiJdLCJjYXRlZ29yaWVzIjp7IkZSIjpbIkdlbmVyYWwg8J+7oiIsIlNwb3J0cyDimq3igIsiLCJEb2N1bWVudGFpcmVzIPCfijrQuiIsIkZpbG1zIPCfjqwiLCJJbmZvcm1hdGlvbnMg8J+7oiIsIkVuZmFudHMgv5G2IiwiTXVzaWMg8J+OtSJdfSwiZW5hYmxlU2VhcmNoIjpmYWxzZX0', label: 'Mio', isPriority: false }
 ];
 
 let channelsData = [];
@@ -131,9 +131,6 @@ function getChannelMeta(channelName) {
     if (n.includes('DISNEY JUNIOR') || n.includes('DISNEY JR')) return { index: 10, category: 'vavoo_jeunesse' };
     if (n === 'DISNEY CHANNEL +1') return { index: 50, category: 'vavoo_jeunesse' };
     if (n.includes('NICKELODEON +1') || n.includes('NICKELODEON 14')) return { index: 51, category: 'vavoo_jeunesse' };
-    if (n.includes('DISNEY') || n.includes('CARTOON') || n.includes('BOOMERANG') || n.includes('NICKELODEON') || n.includes('TIJI') || n.includes('CANAL J') || n.includes('TELETOON') || n.includes('PIWI') || n.includes('KIDS')) {
-        return { index: 20, category: 'vavoo_jeunesse' };
-    }
 
     if (n.includes('DISCOVERY') || n.includes('CRIME DISTRICT') || n.includes('USHUAIA') || n.includes('CHASSE') || n.includes('ANIMAUX') || n.includes('STAR CHANNEL')) {
         let decIndex = 10;
@@ -220,94 +217,6 @@ function getChannelMeta(channelName) {
     return { index: 500, category: 'vavoo_autres' };
 }
 
-const EPG_MAPPING = {
-    "TF1": ["TF1", "TF1.FR", "TF1 HD"],
-    "FRANCE 2": ["FRANCE 2", "FRANCETV 2", "FRANCE 2 HD"],
-    "FRANCE 3": ["FRANCE 3", "FRANCE 3 REGIONS"],
-    "FRANCE 4": ["FRANCE 4"],
-    "FRANCE 5": ["FRANCE 5"],
-    "M6": ["M6", "M6.FR", "M6 HD"],
-    "ARTE": ["ARTE", "ARTE HD"],
-    "C8": ["C8"],
-    "W9": ["W9"],
-    "TMC": ["TMC"],
-    "TFX": ["TFX"],
-    "NRJ 12": ["NRJ 12", "NRJ12"],
-    "BFMTV": ["BFMTV", "BFM TV"],
-    "CNEWS": ["CNEWS"],
-    "LCI": ["LCI"],
-    "FRANCE INFO": ["FRANCE INFO", "FRANCEINFO"],
-    "CANAL+": ["CANAL+", "CANAL +"],
-    "CANAL J": ["CANAL J", "CANALJ"],
-    "CANAL+ KIDS": ["CANAL+ KIDS", "CANAL KIDS"]
-};
-
-function getEpgForChannel(channelName) {
-    if (!epgData) return null;
-    const target = channelName.toUpperCase().trim();
-    if (epgData[target]) return epgData[target];
-
-    for (const [key, aliases] of Object.entries(EPG_MAPPING)) {
-        if (aliases.includes(target) || target === key) {
-            for (const alias of aliases) {
-                if (epgData[alias]) return epgData[alias];
-            }
-        }
-    }
-
-    const foundKey = Object.keys(epgData).find(k => k === target || k.includes(target) || target.includes(k));
-    return foundKey ? epgData[foundKey] : null;
-}
-
-async function updateEPG() {
-    try {
-        const res = await axios.get('https://xmltv.ch/xmltv/xmltv-tnt.xml', { timeout: 15000 });
-        const xml = res.data;
-        let epgChannels = {};
-        const chRegex = /<channel id="([^"]+)">\s*<display-name[^>]*>(.*?)<\/display-name>/g;
-        let match;
-        while ((match = chRegex.exec(xml)) !== null) {
-            epgChannels[match[1]] = match[2].toUpperCase().trim();
-        }
-
-        const progBlocks = xml.match(/<programme[\s\S]*?<\/programme>/g) || [];
-        let newEpgData = {};
-
-        for (let block of progBlocks) {
-            const startMatch = block.match(/start="(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s?([^"]*)"/);
-            const stopMatch = block.match(/stop="(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s?([^"]*)"/);
-            const chanMatch = block.match(/channel="([^"]+)"/);
-            const titleMatch = block.match(/<title[^>]*>([^<]+)<\/title>/);
-            const descMatch = block.match(/<desc[^>]*>([^<]+)<\/desc>/);
-
-            if (startMatch && stopMatch && chanMatch && titleMatch) {
-                const rawChName = epgChannels[chanMatch[1]];
-                if (!rawChName) continue;
-                const chName = normalizeChannelName(rawChName);
-
-                // Extraction dynamique du décalage horaire exact (ex: +0200 -> +02:00) pour l'heure de Paris
-                const rawOffset = startMatch[7] || '+0200';
-                const formattedOffset = rawOffset.includes(':') ? rawOffset : rawOffset.slice(0, 3) + ':' + rawOffset.slice(3);
-
-                const startStr = `${startMatch[1]}-${startMatch[2]}-${startMatch[3]}T${startMatch[4]}:${startMatch[5]}:${startMatch[6]}${formattedOffset}`;
-                const stopStr = `${stopMatch[1]}-${stopMatch[2]}-${stopMatch[3]}T${stopMatch[4]}:${stopMatch[5]}:${stopMatch[6]}${formattedOffset}`;
-                
-                const startTs = new Date(startStr).getTime();
-                const stopTs = new Date(stopStr).getTime();
-
-                if (!newEpgData[chName]) newEpgData[chName] = [];
-                newEpgData[chName].push({
-                    start: startTs,
-                    stop: stopTs,
-                    title: titleMatch[1].trim(),
-                    desc: descMatch ? descMatch[1].trim() : ''
-                });
-            }
-        }
-        epgData = newEpgData;
-    } catch (err) {}
-}
-
 async function fetchAddonCatalog(provider) {
     let allMetas = [];
     try {
@@ -377,6 +286,8 @@ async function updateStreams() {
         Object.values(channelsMap).forEach(ch => {
             expandedChannelsMap[ch.id] = ch;
             const uName = ch.name.toUpperCase();
+            
+            // Duplication Sport pour les chaînes Canal+ Sport/Foot
             if (uName.includes('CANAL') && (uName.includes('SPORT') || uName.includes('FOOT') || uName.includes('FORMULA') || uName.includes('FOOT+'))) {
                 let sportCopy = {
                     ...ch,
@@ -386,15 +297,19 @@ async function updateStreams() {
                 };
                 expandedChannelsMap[sportCopy.id] = sportCopy;
             }
+
+            // Duplication Canal J dans Jeunesse (position 8)
             if (uName === 'CANAL J') {
                 let jeunesseCopy = {
                     ...ch,
-                    id: ch.id + '_jeunesse',
+                    id: ch.id + '_jeunesse_canalj',
                     category: 'vavoo_jeunesse',
                     sortIndex: 8
                 };
                 expandedChannelsMap[jeunesseCopy.id] = jeunesseCopy;
             }
+
+            // Duplication Canal+ Kids dans Jeunesse (position 9)
             if (uName === 'CANAL+ KIDS') {
                 let jeunesseCopy2 = {
                     ...ch,
@@ -419,18 +334,18 @@ async function updateStreams() {
 
 app.get('/', (req, res) => {
     if (isUpdating) {
-        res.send(`<h1>Hybrid TV FR (v34.0)</h1><p>⏳ Chargement en cours...</p>`);
+        res.send(`<h1>Hybrid TV FR (v35.0)</h1><p>⏳ Chargement en cours...</p>`);
     } else {
-        res.send(`<h1>Hybrid TV FR (v34.0) est en ligne !</h1><p>Chaînes actives : <strong>${channelsData.length}</strong></p>`);
+        res.send(`<h1>Hybrid TV FR (v35.0) est en ligne !</h1><p>Chaînes actives : <strong>${channelsData.length}</strong></p>`);
     }
 });
 
 app.get('/manifest.json', (req, res) => {
     res.json({
-        id: 'org.hybridproxy.fr.live.v340', 
-        version: '34.0.0',
+        id: 'org.hybridproxy.fr.live.v350', 
+        version: '35.0.0',
         name: 'Hybrid TV FR',
-        description: 'TNT, Information, Jeunesse, Découverte, Cinéma, Musique, Bouquet Canal, Sports et EPG en direct.',
+        description: 'TNT, Information, Jeunesse, Découverte, Cinéma, Musique, Bouquet Canal, Sports et EPG.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -472,21 +387,24 @@ const handleCatalog = (req, res) => {
 app.get('/catalog/tv/:id.json', handleCatalog);
 app.get('/catalog/tv/:id/:extra', handleCatalog);
 
+// ROUTE META : Interroge directement les sources Mio / Vavoo pour récupérer le programme en temps réel
 app.get('/meta/tv/:id.json', async (req, res) => {
-    const cleanId = req.params.id.replace('_sport', '').replace('_jeunesse_kids', '').replace('_jeunesse', '');
+    const cleanId = req.params.id.replace('_sport', '').replace('_jeunesse_kids', '').replace('_jeunesse_canalj', '').replace('_jeunesse', '');
     const channel = channelsData.find(c => c.id === req.params.id || c.id === cleanId);
     if (!channel) return res.json({ meta: {} });
     
-    let progTitle = "";
-    let progDesc = "";
-    
-    const epgList = getEpgForChannel(channel.name);
-    if (epgList) {
-        const now = Date.now();
-        const currentProg = epgList.find(p => now >= p.start && now <= p.stop);
-        if (currentProg) {
-            progTitle = currentProg.title;
-            progDesc = currentProg.desc || '';
+    let descriptionText = "";
+
+    // Requête directe sur les endpoints meta des fournisseurs (Mio / Vavoo) pour récupérer leur propre EPG/description
+    for (const source of channel.sources) {
+        if (source.type === 'addon' && source.metaId) {
+            try {
+                const metaRes = await axios.get(`${source.provider.base}/meta/tv/${source.metaId}.json`, { timeout: 3000 });
+                if (metaRes.data && metaRes.data.meta && metaRes.data.meta.description) {
+                    descriptionText = metaRes.data.meta.description;
+                    break;
+                }
+            } catch (e) {}
         }
     }
 
@@ -497,7 +415,7 @@ app.get('/meta/tv/:id.json', async (req, res) => {
             name: channel.name,
             poster: channel.poster,
             posterShape: 'square',
-            description: progTitle ? `EN DIRECT : ${progTitle}\n\n${progDesc}`.trim() : ''
+            description: descriptionText // Vide si non disponible, sans texte par défaut moche
         }
     });
 });
@@ -512,7 +430,7 @@ function getStreamScore(title) {
 }
 
 app.get('/stream/tv/:id.json', async (req, res) => {
-    const cleanId = req.params.id.replace('_sport', '').replace('_jeunesse_kids', '').replace('_jeunesse', '');
+    const cleanId = req.params.id.replace('_sport', '').replace('_jeunesse_kids', '').replace('_jeunesse_canalj', '').replace('_jeunesse', '');
     const rawIp = req.headers['x-forwarded-for'];
     const clientIp = rawIp ? rawIp.split(',')[0].trim() : req.socket.remoteAddress;
 
@@ -546,7 +464,7 @@ app.get('/stream/tv/:id.json', async (req, res) => {
             return b._score - a._score;
         });
 
-    const finalStreams = allStreams.map((s, idx) => ({
+        const finalStreams = allStreams.map((s, idx) => ({
             url: s.url,
             title: `[${s._label}] Choix ${idx + 1} | ${s.title.replace(/\[.*?\]\s*/g, '') || 'Auto'}`
         }));
@@ -560,7 +478,5 @@ app.get('/stream/tv/:id.json', async (req, res) => {
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, async () => {
     console.log(`Serveur démarré sur le port ${PORT}`);
-    await updateEPG(); 
     await updateStreams();
-    setInterval(updateEPG, 3600000); 
 });
