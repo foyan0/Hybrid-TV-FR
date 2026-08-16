@@ -5,9 +5,10 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 
-// Utilisation de la nouvelle source de contournement
 const VAVOO_URL = 'https://tvvoo.hayd.uk/cfg-fr';
 let channelsData = {};
+// Image par défaut pour forcer l'affichage dans Nuvio/Stremio
+const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
 function parseM3U(content) {
     const lines = content.split('\n');
@@ -32,10 +33,8 @@ function parseM3U(content) {
 
 async function updateStreams() {
     try {
-        console.log('[Vavoo] Téléchargement de la nouvelle playlist via le proxy...');
-        const response = await axios.get(VAVOO_URL, {
-            timeout: 15000
-        });
+        console.log('[Vavoo] Téléchargement de la nouvelle playlist...');
+        const response = await axios.get(VAVOO_URL, { timeout: 15000 });
 
         const playlist = parseM3U(response.data);
 
@@ -51,16 +50,22 @@ async function updateStreams() {
         });
 
         channelsData = channels;
-        console.log(`[Vavoo] Succès : ${Object.keys(channelsData).length} chaînes chargées avec la nouvelle méthode.`);
+        console.log(`[Vavoo] Succès : ${Object.keys(channelsData).length} chaînes chargées.`);
     } catch (err) {
-        console.error('[Vavoo] Erreur lors de la récupération des flux :', err.message);
+        console.error('[Vavoo] Erreur :', err.message);
     }
 }
+
+// Route de diagnostic (pour tester directement dans le navigateur)
+app.get('/', (req, res) => {
+    const count = Object.keys(channelsData).length;
+    res.send(`<h1>L'Add-on Vavoo FR est en ligne !</h1><p>Nombre de chaînes actuellement chargées en mémoire : <strong>${count}</strong></p>`);
+});
 
 app.get('/manifest.json', (req, res) => {
     res.json({
         id: 'org.vavoo.fr.live',
-        version: '1.0.2',
+        version: '1.0.3',
         name: 'Vavoo FR Live',
         description: 'Flux TV français',
         resources: ['catalog', 'meta', 'stream'],
@@ -80,6 +85,7 @@ app.get('/catalog/tv/vavoo_fr_catalog.json', (req, res) => {
         id: ch.id,
         type: 'tv',
         name: ch.name,
+        poster: DEFAULT_POSTER,
         posterShape: 'square'
     }));
     res.json({ metas });
@@ -94,6 +100,7 @@ app.get('/meta/tv/:id.json', (req, res) => {
             id: channel.id,
             type: 'tv',
             name: channel.name,
+            poster: DEFAULT_POSTER,
             posterShape: 'square',
             description: `Regarder ${channel.name} en direct`
         }
