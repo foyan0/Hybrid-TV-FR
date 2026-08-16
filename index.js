@@ -7,19 +7,17 @@ app.use(cors());
 
 let isUpdating = true;
 
-// --- LES SOURCES ---
+// --- LES SOURCES (Vavoo et Mio) ---
 const ADDON_PROVIDERS = [
     { id: 'vavoo', base: 'https://tvvoo.hayd.uk/cfg-fr', label: 'Vavoo', isPriority: true },
     { id: 'mio', base: 'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiLCJCRV9GUiJdLCJjYXRlZ29yaWVzIjp7IkZSIjpbIkdlbmVyYWwg8J+7oiIsIlNwb3J0cyDimq3igIsiLCJEb2N1bWVudGFpcmVzIPCfijrQuiIsIkZpbG1zIPCfjqwiLCJJbmZvcm1hdGlvbnMg8J+7oiIsIkVuZmFudHMgv5G2IiwiTXVzaWMg8J+OtSJdfSwiZW5hYmxlU2VhcmNoIjpmYWxzZX0', label: 'Mio', isPriority: false }
 ];
 
-const SPORTS_FEED_BASE = 'https://sports.highfly.dev/eyJpbmNsdWRlU3BvcnRzIjpbImJhc2tldGJhbGwiLCJmb290YmFsbCIsImZpZ2h0Il19';
-
 let channelsData = [];
-let sportsEventsData = []; 
+let epgData = {}; 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
-// --- NETTOYAGE SOUPLE (Pour ne rien rater) ---
+// --- NETTOYAGE SOUPLE ET INTELLIGENT ---
 function normalizeChannelName(rawName) {
     let clean = rawName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
     
@@ -36,23 +34,23 @@ function normalizeChannelName(rawName) {
 
     if (displayName.includes('EQUIPE')) return "L'Équipe"; 
 
-    // DISNEY
+    // EXTERMINATION DE DISNEY+ (Qui n'est pas une chaîne live)
+    if (displayName === 'DISNEY PLUS' || displayName === 'DISNEY+') return '';
+
+    // DISNEY FILTRÉ
     if (displayName.includes('DISNEY')) {
         if (displayName.includes('XD')) return 'Disney XD';
         if (displayName.includes('JUNIOR') || displayName.includes('JR')) return 'Disney Junior';
         if (displayName.includes('CINEMA')) return 'Disney Cinéma';
         if (displayName.includes('+ 1') || displayName.includes('PLUS 1')) return 'Disney Channel +1';
         if (displayName.includes('CHANNEL')) return 'Disney Channel';
-        if (displayName.includes('+') || displayName.includes('PLUS')) return 'Disney+';
         return 'Disney Channel';
     }
 
-    // CARTOON NETWORK
     if (displayName.includes('CARTOON') || displayName.includes('CN')) {
         return 'Cartoon Network';
     }
 
-    // CANAL+
     if (displayName.includes('CANAL')) {
         let suffix = displayName.replace(/CANAL\s*\+*/g, '').replace(/PLUS/g, '').trim();
         if (!suffix || suffix === 'LIVE') return 'Canal+';
@@ -132,9 +130,9 @@ function getChannelMeta(channelName) {
     if (n.includes('FRANCE INFO')) return { index: 27, category: 'vavoo_tnt' };
 
     // --- JEUNESSE ---
-    if (n === 'DISNEY CHANNEL' || n === 'DISNEY+') return { index: 1, category: 'vavoo_jeunesse' };
+    if (n === 'DISNEY CHANNEL') return { index: 1, category: 'vavoo_jeunesse' };
     if (n === 'CARTOON NETWORK') return { index: 2, category: 'vavoo_jeunesse' };
-    if (n.includes('DISNEY') || n.includes('CARTOON') || n.includes('BOOMERANG') || n.includes('NICKELODEON') || n.includes('TIJI') || n.includes('CANAL J') || n.includes('TELETOON') || n.includes('PIWI') || n.includes('GULLI')) {
+    if (n.includes('DISNEY') || n.includes('CARTOON') || n.includes('BOOMERANG') || n.includes('NICKELODEON') || n.includes('TIJI') || n.includes('CANAL J') || n.includes('TELETOON') || n.includes('PIWI')) {
         return { index: 10, category: 'vavoo_jeunesse' };
     }
 
@@ -222,22 +220,6 @@ async function fetchAddonCatalog(provider) {
     return allMetas;
 }
 
-async function fetchSportsEvents() {
-    let events = [];
-    try {
-        const manifestRes = await axios.get(`${SPORTS_FEED_BASE}/manifest.json`, { timeout: 10000 });
-        if (manifestRes.data && manifestRes.data.catalogs) {
-            for (const catalog of manifestRes.data.catalogs) {
-                let res = await axios.get(`${SPORTS_FEED_BASE}/catalog/${catalog.type}/${catalog.id}.json`, { timeout: 10000 });
-                if (res.data && res.data.metas) {
-                    events = events.concat(res.data.metas);
-                }
-            }
-        }
-    } catch (err) {}
-    sportsEventsData = events;
-}
-
 async function updateStreams() {
     isUpdating = true;
     try {
@@ -266,29 +248,31 @@ async function updateStreams() {
             });
         }
 
-        channelsData = Object.values(channelsMap);
+        // --- FILTRE ANTI-CHAÎNE VIDE (Supprime les chaînes qui n'ont aucun flux) ---
+        channelsData = Object.values(channelsMap).filter(ch => ch.sources && ch.sources.length > 0);
+
         channelsData.sort((a, b) => {
             if (a.sortIndex !== b.sortIndex) return a.sortIndex - b.sortIndex;
             return a.name.localeCompare(b.name);
         });
 
-        await fetchSportsEvents();
     } catch (err) {}
     isUpdating = false; 
 }
 
 app.get('/', (req, res) => {
     if (isUpdating) {
-        res.send(`<h1>Hybrid TV FR (v25.0)</h1><p>⏳ Chargement en cours...</p>`);
+        res.send(`<h1>Hybrid TV FR (v26.0)</h1><p>⏳ Chargement en cours...</p>`);
     } else {
-        res.send(`<h1>Hybrid TV FR (v25.0) est en ligne !</h1><p>Chaînes : <strong>${channelsData.length}</strong> | Matchs Live : <strong>${sportsEventsData.length}</strong></p>`);
+        res.send(`<h1>Hybrid TV FR (v26.0) est en ligne !</h1><p>Chaînes actives et fonctionnelles : <strong>${channelsData.length}</strong></p>`);
     }
 });
 
+// MANIFEST PROPRE (4 onglets essentiels sans le sport live superflu)
 app.get('/manifest.json', (req, res) => {
     res.json({
-        id: 'org.hybridproxy.fr.live.v25', 
-        version: '25.0.0',
+        id: 'org.hybridproxy.fr.live.v26', 
+        version: '26.0.0',
         name: 'Hybrid TV FR',
         description: 'TNT, Jeunesse, Sports, Chaînes Payantes et EPG.',
         resources: ['catalog', 'meta', 'stream'],
@@ -297,7 +281,6 @@ app.get('/manifest.json', (req, res) => {
             { type: 'tv', id: 'vavoo_tnt', name: '📺 TNT Française' },
             { type: 'tv', id: 'vavoo_jeunesse', name: '👶 Jeunesse (Disney & CN)' },
             { type: 'tv', id: 'vavoo_sports', name: '⚽ Sports (Chaînes)' },
-            { type: 'tv', id: 'sports_live', name: '🔴 Sports Live (Matchs)' },
             { type: 'tv', id: 'vavoo_premium', name: '💳 Chaînes Payantes' },
             { type: 'tv', id: 'vavoo_autres', name: '📂 Autres Chaînes' }
         ]
@@ -310,17 +293,6 @@ const handleCatalog = (req, res) => {
     if (req.params.extra) {
         const match = req.params.extra.match(/skip=(\d+)/);
         if (match) skip = parseInt(match[1], 10);
-    }
-
-    if (requestedCatalog === 'sports_live') {
-        const paginatedSports = sportsEventsData.slice(skip, skip + 100).map(ev => ({
-            id: 'sport_ev_' + ev.id,
-            type: 'tv',
-            name: ev.name,
-            poster: ev.poster || DEFAULT_POSTER,
-            posterShape: 'landscape'
-        }));
-        return res.json({ metas: paginatedSports });
     }
 
     const validCatalogs = ['vavoo_tnt', 'vavoo_jeunesse', 'vavoo_sports', 'vavoo_premium', 'vavoo_autres'];
@@ -342,23 +314,6 @@ app.get('/catalog/tv/:id/:extra', handleCatalog);
 
 app.get('/meta/tv/:id.json', async (req, res) => {
     const id = req.params.id;
-
-    if (id.startsWith('sport_ev_')) {
-        const originalId = id.replace('sport_ev_', '');
-        const event = sportsEventsData.find(e => e.id === originalId);
-        if (!event) return res.json({ meta: {} });
-        return res.json({
-            meta: {
-                id: id,
-                type: 'tv',
-                name: event.name,
-                poster: event.poster || DEFAULT_POSTER,
-                posterShape: 'landscape',
-                description: `🔴 ÉVÉNEMENT SPORTIF EN DIRECT\n\nCliquez pour lancer la diffusion.`
-            }
-        });
-    }
-
     const channel = channelsData.find(c => c.id === id);
     if (!channel) return res.json({ meta: {} });
     
@@ -400,16 +355,6 @@ app.get('/stream/tv/:id.json', async (req, res) => {
     const id = req.params.id;
     const rawIp = req.headers['x-forwarded-for'];
     const clientIp = rawIp ? rawIp.split(',')[0].trim() : req.socket.remoteAddress;
-
-    if (id.startsWith('sport_ev_')) {
-        const originalId = id.replace('sport_ev_', '');
-        try {
-            const streamRes = await axios.get(`${SPORTS_FEED_BASE}/stream/sports/${originalId}.json`, { timeout: 10000 });
-            return res.json(streamRes.data);
-        } catch (err) {
-            return res.json({ streams: [] });
-        }
-    }
 
     const channel = channelsData.find(c => c.id === id);
     if (!channel) return res.json({ streams: [] });
