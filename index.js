@@ -7,6 +7,7 @@ app.use(cors());
 
 let isUpdating = true;
 
+// --- LES SOURCES ---
 const ADDON_PROVIDERS = [
     { id: 'vavoo', base: 'https://tvvoo.hayd.uk/cfg-fr', label: 'Vavoo', isPriority: true },
     { id: 'mio', base: 'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiLCJCRV9GUiJdLCJjYXRlZ29yaWVzIjp7IkZSIjpbIkdlbmVyYWwg8J+7oiIsIlNwb3J0cyDimq3igIsiLCJEb2N1bWVudGFpcmVzIPCfijrQuiIsIkZpbG1zIPCfjqwiLCJJbmZvcm1hdGlvbnMg8J+7oiIsIkVuZmFudHMgv5G2IiwiTXVzaWMg8J+OtSJdfSwiZW5hYmxlU2VhcmNoIjpmYWxzZX0', label: 'Mio', isPriority: false }
@@ -122,13 +123,13 @@ function getChannelMeta(channelName) {
     if (n === 'CARTOON NETWORK') return { index: 1, category: 'vavoo_jeunesse' };
     if (n === 'DISNEY CHANNEL') return { index: 2, category: 'vavoo_jeunesse' };
     if (n === 'GULLI') return { index: 3, category: 'vavoo_jeunesse' };
-    if (n === 'GAME ONE') return { index: 4, category: 'vavoo_jeunesse' };
-    if (n.includes('DISNEY XD')) return { index: 5, category: 'vavoo_jeunesse' };
-    if (n === 'BOOMERANG') return { index: 6, category: 'vavoo_jeunesse' };
-    if (n === 'CANAL J') return { index: 7, category: 'vavoo_jeunesse' };
-    if (n === 'CANAL+ KIDS') return { index: 8, category: 'vavoo_jeunesse' };
-    if (n.includes('DISNEY JUNIOR') || n.includes('DISNEY JR')) return { index: 9, category: 'vavoo_jeunesse' };
-    if (n.includes('NICKELODEON') && !n.includes('+1') && !n.includes('14')) return { index: 10, category: 'vavoo_jeunesse' };
+    if (n === 'NICKELODEON' && !n.includes('+1') && !n.includes('14')) return { index: 4, category: 'vavoo_jeunesse' };
+    if (n === 'GAME ONE') return { index: 5, category: 'vavoo_jeunesse' };
+    if (n.includes('DISNEY XD')) return { index: 6, category: 'vavoo_jeunesse' };
+    if (n === 'BOOMERANG') return { index: 7, category: 'vavoo_jeunesse' };
+    if (n === 'CANAL J') return { index: 8, category: 'vavoo_jeunesse' };
+    if (n === 'CANAL+ KIDS') return { index: 9, category: 'vavoo_jeunesse' };
+    if (n.includes('DISNEY JUNIOR') || n.includes('DISNEY JR')) return { index: 10, category: 'vavoo_jeunesse' };
     if (n === 'DISNEY CHANNEL +1') return { index: 50, category: 'vavoo_jeunesse' };
     if (n.includes('NICKELODEON +1') || n.includes('NICKELODEON 14')) return { index: 51, category: 'vavoo_jeunesse' };
     if (n.includes('DISNEY') || n.includes('CARTOON') || n.includes('BOOMERANG') || n.includes('NICKELODEON') || n.includes('TIJI') || n.includes('CANAL J') || n.includes('TELETOON') || n.includes('PIWI') || n.includes('KIDS')) {
@@ -217,10 +218,6 @@ function getChannelMeta(channelName) {
         return { index: tntIndex, category: 'vavoo_tnt' };
     }
 
-    if (['TF1', 'FRANCE 2', 'FRANCE 3', 'FRANCE 4', 'FRANCE 5', 'M6', 'ARTE', 'C8', 'W9', 'TMC', 'TFX', 'NRJ 12', 'NRJ12', '6TER', "L'ÉQUIPE"].includes(n) || n.includes('TNT') || n.includes('LCP') || n.includes('SENAT') || n.includes('RMC STORY') || n.includes('RMC DECOUVERTE') || n.includes('CHERIE 25')) {
-        return { index: 100, category: 'vavoo_tnt' };
-    }
-
     return { index: 500, category: 'vavoo_autres' };
 }
 
@@ -243,7 +240,6 @@ async function updateEPG() {
             epgChannels[match[1]] = normalizeChannelName(match[2]);
         }
 
-        // Parseur XMLTV robuste et indépendant de l'ordre des attributs
         const progBlocks = xml.match(/<programme[\s\S]*?<\/programme>/g) || [];
         let newEpgData = {};
 
@@ -275,10 +271,7 @@ async function updateEPG() {
             }
         }
         epgData = newEpgData;
-        console.log(`[EPG] Succès : ${Object.keys(epgData).length} chaînes synchronisées.`);
-    } catch (err) {
-        console.error('[EPG Error]', err.message);
-    }
+    } catch (err) {}
 }
 
 async function fetchAddonCatalog(provider) {
@@ -364,9 +357,18 @@ async function updateStreams() {
                     ...ch,
                     id: ch.id + '_jeunesse',
                     category: 'vavoo_jeunesse',
-                    sortIndex: 7
+                    sortIndex: 8
                 };
                 expandedChannelsMap[jeunesseCopy.id] = jeunesseCopy;
+            }
+            if (uName === 'CANAL+ KIDS') {
+                let jeunesseCopy2 = {
+                    ...ch,
+                    id: ch.id + '_jeunesse_kids',
+                    category: 'vavoo_jeunesse',
+                    sortIndex: 9
+                };
+                expandedChannelsMap[jeunesseCopy2.id] = jeunesseCopy2;
             }
         });
 
@@ -383,16 +385,16 @@ async function updateStreams() {
 
 app.get('/', (req, res) => {
     if (isUpdating) {
-        res.send(`<h1>Hybrid TV FR (v33.1)</h1><p>⏳ Chargement en cours...</p>`);
+        res.send(`<h1>Hybrid TV FR (v33.2)</h1><p>⏳ Chargement en cours...</p>`);
     } else {
-        res.send(`<h1>Hybrid TV FR (v33.1) est en ligne !</h1><p>Chaînes actives : <strong>${channelsData.length}</strong></p>`);
+        res.send(`<h1>Hybrid TV FR (v33.2) est en ligne !</h1><p>Chaînes actives : <strong>${channelsData.length}</strong></p>`);
     }
 });
 
 app.get('/manifest.json', (req, res) => {
     res.json({
-        id: 'org.hybridproxy.fr.live.v331', 
-        version: '33.1.0',
+        id: 'org.hybridproxy.fr.live.v332', 
+        version: '33.2.0',
         name: 'Hybrid TV FR',
         description: 'TNT, Information, Jeunesse, Découverte, Cinéma, Musique, Bouquet Canal, Sports et EPG en direct.',
         resources: ['catalog', 'meta', 'stream'],
@@ -437,20 +439,17 @@ app.get('/catalog/tv/:id.json', handleCatalog);
 app.get('/catalog/tv/:id/:extra', handleCatalog);
 
 app.get('/meta/tv/:id.json', async (req, res) => {
-    const cleanId = req.params.id.replace('_sport', '').replace('_jeunesse', '');
+    const cleanId = req.params.id.replace('_sport', '').replace('_jeunesse_kids', '').replace('_jeunesse', '');
     const channel = channelsData.find(c => c.id === req.params.id || c.id === cleanId);
     if (!channel) return res.json({ meta: {} });
     
-    let currentTitle = "Programme TV non disponible";
-    let currentDesc = "";
-    
+    let progText = "";
     const epgList = getEpgForChannel(channel.name);
     if (epgList) {
         const now = Date.now();
         const currentProg = epgList.find(p => now >= p.start && now <= p.stop);
         if (currentProg) {
-            currentTitle = currentProg.title;
-            currentDesc = currentProg.desc || '';
+            progText = `${currentProg.title}${currentProg.desc ? ' - ' + currentProg.desc : ''}`;
         }
     }
 
@@ -461,8 +460,7 @@ app.get('/meta/tv/:id.json', async (req, res) => {
             name: channel.name,
             poster: channel.poster,
             posterShape: 'square',
-            releaseInfo: `🔴 ${currentTitle}`,
-            description: `🔴 EN DIRECT : ${currentTitle}\n\n${currentDesc}`.trim()
+            description: progText ? `EN COURS : ${progText}` : ''
         }
     });
 });
@@ -477,7 +475,7 @@ function getStreamScore(title) {
 }
 
 app.get('/stream/tv/:id.json', async (req, res) => {
-    const cleanId = req.params.id.replace('_sport', '').replace('_jeunesse', '');
+    const cleanId = req.params.id.replace('_sport', '').replace('_jeunesse_kids', '').replace('_jeunesse', '');
     const rawIp = req.headers['x-forwarded-for'];
     const clientIp = rawIp ? rawIp.split(',')[0].trim() : req.socket.remoteAddress;
 
