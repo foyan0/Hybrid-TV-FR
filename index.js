@@ -98,59 +98,35 @@ function getChannelMeta(channelName) {
     const n = channelName.toUpperCase();
     if (!n) return null;
     
-    if (n === 'TF1') return { index: 1, category: 'vavoo_tnt' };
-    if (n === 'FRANCE 2') return { index: 2, category: 'vavoo_tnt' };
-    if (n === 'FRANCE 3') return { index: 3, category: 'vavoo_tnt' };
-    if (n === 'FRANCE 4') return { index: 4, category: 'vavoo_tnt' };
-    if (n === 'FRANCE 5') return { index: 5, category: 'vavoo_tnt' };
-    if (n === 'M6') return { index: 6, category: 'vavoo_tnt' };
-    if (n === 'ARTE') return { index: 7, category: 'vavoo_tnt' };
-    if (n === 'C8') return { index: 8, category: 'vavoo_tnt' };
-    if (n === 'W9') return { index: 9, category: 'vavoo_tnt' };
-    if (n === 'TMC') return { index: 10, category: 'vavoo_tnt' };
-    if (n === 'TFX') return { index: 11, category: 'vavoo_tnt' };
-    if (n === 'NRJ 12' || n === 'NRJ12') return { index: 12, category: 'vavoo_tnt' };
-    if (n.includes('LCP') || n.includes('SENAT')) return { index: 13, category: 'vavoo_tnt' };
-    if (n.includes('CSTAR')) return { index: 17, category: 'vavoo_tnt' };
-    if (n === 'GULLI') return { index: 18, category: 'vavoo_tnt' };
-    if (n.includes('TF1 SERIES')) return { index: 20, category: 'vavoo_tnt' };
-    if (n === "L'ÉQUIPE") return { index: 21, category: 'vavoo_tnt' };
-    if (n === '6TER') return { index: 22, category: 'vavoo_tnt' };
-    if (n.includes('RMC STORY')) return { index: 23, category: 'vavoo_tnt' };
-    if (n.includes('RMC DECOUVERTE')) return { index: 24, category: 'vavoo_tnt' };
-    if (n.includes('CHERIE 25')) return { index: 25, category: 'vavoo_tnt' };
-
     if (n.includes('BFM') || n.includes('CNEWS') || n.includes('LCI') || n.includes('FRANCE INFO') || n.includes('INFO')) {
         return { index: 1, category: 'vavoo_info' };
     }
 
-    if (n === 'DISNEY CHANNEL') return { index: 1, category: 'vavoo_jeunesse' };
-    if (n === 'CARTOON NETWORK') return { index: 2, category: 'vavoo_jeunesse' };
-    if (n.includes('DISNEY') || n.includes('CARTOON') || n.includes('BOOMERANG') || n.includes('NICKELODEON') || n.includes('TIJI') || n.includes('CANAL J') || n.includes('TELETOON') || n.includes('PIWI')) {
+    if (n.includes('DISNEY') || n.includes('CARTOON') || n.includes('BOOMERANG') || n.includes('NICKELODEON') || n.includes('TIJI') || n.includes('CANAL J') || n.includes('TELETOON') || n.includes('PIWI') || n.includes('GULLI')) {
         return { index: 10, category: 'vavoo_jeunesse' };
     }
 
-    if (n === 'CANAL+') return { index: 1, category: 'vavoo_canal' };
-    if (n === 'CANAL+ 360') return { index: 2, category: 'vavoo_canal' };
-    if (n === 'CANAL+ 4K') return { index: 3, category: 'vavoo_canal' };
-    if (n.includes('CINEMA') || n.includes('BOX OFFICE') || n.includes('SPORT') || n.includes('FOOT') || n.includes('FORMULA') || n.includes('GRAND ECRAN') || n.includes('SERIES') || n.includes('DOCS')) {
+    if (n.includes('CANAL')) {
         return { index: 10, category: 'vavoo_canal' };
     }
-    if (n.startsWith('CANAL+')) return { index: 20, category: 'vavoo_canal' }; 
 
-    if (n.startsWith('BEIN SPORTS')) return { index: 100, category: 'vavoo_sports' };
-    if (n.startsWith('RMC SPORT')) return { index: 110, category: 'vavoo_sports' };
-    if (n.startsWith('EUROSPORT')) return { index: 120, category: 'vavoo_sports' };
-    if (n.startsWith('DAZN')) return { index: 130, category: 'vavoo_sports' };
-    if (n.startsWith('AUTOMOTO')) return { index: 140, category: 'vavoo_sports' };
-    if (n.includes('GOLF+')) return { index: 150, category: 'vavoo_sports' };
-    if (n.includes('EQUIDIA')) return { index: 160, category: 'vavoo_sports' };
-    if (n.includes('CANAL+ SPORT') || n.includes('CANAL+ FORMULA') || n.includes('CANAL+ FOOT')) {
-        return { index: 250, category: 'vavoo_sports' }; 
+    if (n.includes('SPORT') || n.includes('BEIN') || n.includes('EUROSPORT') || n.includes('DAZN') || n.includes('AUTOMOTO') || n.includes('GOLF') || n.includes('EQUIDIA') || n.includes('RMC SPORT')) {
+        return { index: 100, category: 'vavoo_sports' };
     }
-    if (n.includes('SPORT')) return { index: 199, category: 'vavoo_sports' };
 
-    return { index: 999, category: 'vavoo_autres' };
+    if (['TF1', 'FRANCE 2', 'FRANCE 3', 'FRANCE 4', 'FRANCE 5', 'M6', 'ARTE', 'C8', 'W9', 'TMC', 'TFX', 'NRJ 12', 'NRJ12', '6TER', "L'ÉQUIPE"].includes(n) || n.includes('TNT') || n.includes('LCP') || n.includes('SENAT') || n.includes('RMC STORY') || n.includes('RMC DECOUVERTE') || n.includes('CHERIE 25')) {
+        return { index: 10, category: 'vavoo_tnt' };
+    }
+
+    return { index: 500, category: 'vavoo_autres' };
+}
+
+function getEpgForChannel(channelName) {
+    if (!epgData) return null;
+    const target = channelName.toUpperCase().trim();
+    if (epgData[target]) return epgData[target];
+    const foundKey = Object.keys(epgData).find(k => k.includes(target) || target.includes(k));
+    return foundKey ? epgData[foundKey] : null;
 }
 
 async function updateEPG() {
@@ -167,8 +143,9 @@ async function updateEPG() {
         const progRegex = /<programme start="(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s?([^"]*)" stop="(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s?([^"]*)" channel="([^"]+)">.*?<title[^>]*>([^<]+)<\/title>(?:.*?<desc[^>]*>([^<]+)<\/desc>)?/gs;
         let newEpgData = {};
         while ((match = progRegex.exec(xml)) !== null) {
-            const chName = epgChannels[match[15]];
-            if (!chName) continue;
+            const rawChName = epgChannels[match[15]];
+            if (!rawChName) continue;
+            const chName = normalizeChannelName(rawChName);
             const startStr = `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}+02:00`;
             const stopStr = `${match[8]}-${match[9]}-${match[10]}T${match[11]}:${match[12]}:${match[13]}+02:00`;
             const startTs = new Date(startStr).getTime();
@@ -248,7 +225,7 @@ async function updateStreams() {
         let expandedChannelsMap = {};
         Object.values(channelsMap).forEach(ch => {
             expandedChannelsMap[ch.id] = ch;
-            if (ch.name.includes('CANAL+') && (ch.name.includes('SPORT') || ch.name.includes('FOOT') || ch.name.includes('FORMULA'))) {
+            if (ch.name.toUpperCase().includes('CANAL') && (ch.name.toUpperCase().includes('SPORT') || ch.name.toUpperCase().includes('FOOT') || ch.name.toUpperCase().includes('FORMULA'))) {
                 let sportCopy = {
                     ...ch,
                     id: ch.id + '_sport',
@@ -272,16 +249,16 @@ async function updateStreams() {
 
 app.get('/', (req, res) => {
     if (isUpdating) {
-        res.send(`<h1>Hybrid TV FR (v27.3)</h1><p>⏳ Chargement en cours...</p>`);
+        res.send(`<h1>Hybrid TV FR (v28.0)</h1><p>⏳ Chargement en cours...</p>`);
     } else {
-        res.send(`<h1>Hybrid TV FR (v27.3) est en ligne !</h1><p>Chaînes actives : <strong>${channelsData.length}</strong></p>`);
+        res.send(`<h1>Hybrid TV FR (v28.0) est en ligne !</h1><p>Chaînes actives : <strong>${channelsData.length}</strong></p>`);
     }
 });
 
 app.get('/manifest.json', (req, res) => {
     res.json({
-        id: 'org.hybridproxy.fr.live.v273', 
-        version: '27.3.0',
+        id: 'org.hybridproxy.fr.live.v280', 
+        version: '28.0.0',
         name: 'Hybrid TV FR',
         description: 'TNT, Information, Jeunesse, Bouquet Canal, Sports et EPG en direct.',
         resources: ['catalog', 'meta', 'stream'],
@@ -327,13 +304,13 @@ app.get('/meta/tv/:id.json', async (req, res) => {
     const channel = channelsData.find(c => c.id === req.params.id || c.id === id);
     if (!channel) return res.json({ meta: {} });
     
-    let desc = "🔴 EN DIRECT :\nProgramme TV non disponible actuellement.";
-    
-    if (epgData[channel.name]) {
+    let desc = "";
+    const epgList = getEpgForChannel(channel.name);
+    if (epgList) {
         const now = Date.now();
-        const currentProg = epgData[channel.name].find(p => now >= p.start && now <= p.stop);
+        const currentProg = epgList.find(p => now >= p.start && now <= p.stop);
         if (currentProg) {
-            desc = `🔴 EN DIRECT : ${currentProg.title}\n\n${currentProg.desc || 'Aucun détail supplémentaire.'}`;
+            desc = `🔴 EN DIRECT : ${currentProg.title}\n\n${currentProg.desc || ''}`.trim();
         }
     }
 
