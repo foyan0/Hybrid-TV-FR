@@ -12,9 +12,9 @@ const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-
 function normalizeChannelName(rawName) {
     let clean = rawName.toUpperCase();
 
+    // Nettoyage de base
     clean = clean.replace(/^(?:FR|BE|CH|CA|VIP)\s*[:|/-]+\s*/, '');
     clean = clean.replace(/^FR\s+/, '');
-    
     clean = clean.replace(/\+/g, ' PLUS '); 
     clean = clean.replace(/\[.*?\]|\(.*?\)/g, ' '); 
     
@@ -26,41 +26,49 @@ function normalizeChannelName(rawName) {
     clean = clean.replace(/[^A-Z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
     let displayName = clean.replace(/PLUS/g, '+').replace(/\s+/g, ' ').trim();
 
+    // Fusions spécifiques
     if (displayName.includes('EQUIPE')) return "L'Équipe"; 
-    if (displayName.includes('DISNEY')) return 'Disney'; 
-    
-    if (displayName === 'CANAL' || displayName === 'CANAL LIVE' || displayName === 'CANAL PLUS' || displayName === 'CANAL+') return 'Canal+';
+    if (displayName.includes('DISNEY')) return 'Disney Channel'; 
+
+    // Galaxie Canal+ (Garde Canal+ Cinéma, Canal+ Sport, mais regroupe la chaîne mère)
+    if (displayName === 'CANAL' || displayName === 'CANAL PLUS' || displayName === 'CANAL LIVE') return 'Canal+';
     if (displayName.startsWith('CANAL+')) {
-        return displayName.replace('CANAL+', 'Canal+'); 
+        let suffix = displayName.replace('CANAL+', '').trim();
+        if (!suffix) return 'Canal+';
+        // Formate bien le nom, ex: "Canal+ Cinema"
+        return `Canal+ ${suffix.charAt(0).toUpperCase() + suffix.slice(1).toLowerCase()}`;
     }
 
-    if (displayName.includes('RMC SPORT')) {
-        let rmcMatch = displayName.match(/RMC SPORT\s*(\d+)/);
-        if (rmcMatch) return `RMC Sport ${rmcMatch[1]}`;
-        if (displayName.includes('LIVE') || displayName.includes('MULT')) return 'RMC Sport (Multicanal)';
-        return 'RMC Sport';
-    }
-
+    // beIN SPORTS (Sépare proprement la 1, 2, 3)
     if (displayName.includes('BEIN SPORT')) {
         let beinMatch = displayName.match(/BEIN SPORTS?\s*(\d+)/);
         if (beinMatch) return `beIN SPORTS ${beinMatch[1]}`;
-        if (displayName.includes('MAX')) return 'beIN SPORTS MAX (Multicanal)';
-        return 'beIN SPORTS';
+        if (displayName.includes('MAX')) return 'beIN SPORTS MAX';
+        return 'beIN SPORTS 1'; // Par défaut si non spécifié
     }
 
+    // RMC SPORT
+    if (displayName.includes('RMC SPORT')) {
+        let rmcMatch = displayName.match(/RMC SPORT\s*(\d+)/);
+        if (rmcMatch) return `RMC Sport ${rmcMatch[1]}`;
+        return 'RMC Sport (Multicanal)';
+    }
+
+    // EUROSPORT
     if (displayName.includes('EUROSPORT')) {
         let euroMatch = displayName.match(/EUROSPORT\s*(\d+)/);
         if (euroMatch) return `Eurosport ${euroMatch[1]}`;
-        if (displayName.includes('360')) return 'Eurosport 360 (Multicanal)';
-        return 'Eurosport';
+        return 'Eurosport 1';
     }
 
+    // DAZN
     if (displayName.includes('DAZN')) {
         let daznMatch = displayName.match(/DAZN\s*(\d+)/);
         if (daznMatch) return `DAZN ${daznMatch[1]}`;
-        return 'DAZN';
+        return 'DAZN 1';
     }
 
+    // Noms TNT propres
     if (displayName === 'FRANCE 2') return 'France 2';
     if (displayName === 'FRANCE 3') return 'France 3';
     if (displayName === 'FRANCE 4') return 'France 4';
@@ -70,15 +78,14 @@ function normalizeChannelName(rawName) {
     return displayName;
 }
 
-// Nouvelle fonction qui attribue à la fois l'ordre ET le catalogue (TNT, Sports, Premium, Autres)
+// Architecture type Bouquet TV Freebox
 function getChannelMeta(channelName) {
     const n = channelName.toUpperCase();
     
-    // --- CATALOGUE 1 : TNT ---
+    // --- TNT (SANS CANAL+) ---
     if (n === 'TF1') return { index: 1, category: 'vavoo_tnt' };
     if (n === 'FRANCE 2') return { index: 2, category: 'vavoo_tnt' };
     if (n === 'FRANCE 3') return { index: 3, category: 'vavoo_tnt' };
-    if (n === 'CANAL+') return { index: 4, category: 'vavoo_tnt' };
     if (n === 'FRANCE 5') return { index: 5, category: 'vavoo_tnt' };
     if (n === 'M6') return { index: 6, category: 'vavoo_tnt' };
     if (n === 'ARTE') return { index: 7, category: 'vavoo_tnt' };
@@ -102,29 +109,30 @@ function getChannelMeta(channelName) {
     if (n === 'LCI') return { index: 26, category: 'vavoo_tnt' };
     if (n.includes('FRANCE INFO')) return { index: 27, category: 'vavoo_tnt' };
 
-    // --- CATALOGUE 2 : SPORTS ---
-    if (n.startsWith('BEIN SPORTS')) return { index: 101, category: 'vavoo_sports' };
-    if (n.startsWith('RMC SPORT')) return { index: 102, category: 'vavoo_sports' };
-    if (n.startsWith('DAZN')) return { index: 103, category: 'vavoo_sports' };
-    if (n.startsWith('EUROSPORT')) return { index: 104, category: 'vavoo_sports' };
-    if (n.startsWith('CANAL+ SPORT')) return { index: 105, category: 'vavoo_sports' };
-    if (n.startsWith('AUTOMOTO')) return { index: 106, category: 'vavoo_sports' };
-    if (n.startsWith('GOLF+')) return { index: 107, category: 'vavoo_sports' };
+    // --- PREMIUM / PAYANTES ---
+    if (n.startsWith('CANAL+')) return { index: 40, category: 'vavoo_premium' }; 
+    if (n.startsWith('CINE+')) return { index: 45, category: 'vavoo_premium' };
+    if (n.startsWith('OCS')) return { index: 46, category: 'vavoo_premium' };
+    if (n === 'PARIS PREMIERE' || n.includes('RTL 9') || n === 'RTL9') return { index: 47, category: 'vavoo_premium' };
+    if (n.includes('DISNEY')) return { index: 50, category: 'vavoo_premium' };
+
+    // --- SPORTS ---
+    if (n.startsWith('BEIN SPORTS')) return { index: 100, category: 'vavoo_sports' };
+    if (n.startsWith('RMC SPORT')) return { index: 110, category: 'vavoo_sports' };
+    if (n.startsWith('EUROSPORT')) return { index: 120, category: 'vavoo_sports' };
+    if (n.startsWith('DAZN')) return { index: 130, category: 'vavoo_sports' };
+    if (n.startsWith('AUTOMOTO')) return { index: 140, category: 'vavoo_sports' };
+    if (n.startsWith('GOLF+')) return { index: 150, category: 'vavoo_sports' };
+    if (n.includes('EQUIDIA')) return { index: 160, category: 'vavoo_sports' };
     if (n.includes('SPORT')) return { index: 199, category: 'vavoo_sports' };
 
-    // --- CATALOGUE 3 : CHAINES PAYANTES / PREMIUM ---
-    if (n.startsWith('CANAL+')) return { index: 201, category: 'vavoo_premium' }; 
-    if (n.startsWith('CINE+')) return { index: 202, category: 'vavoo_premium' };
-    if (n.startsWith('OCS')) return { index: 203, category: 'vavoo_premium' };
-    if (n === 'DISNEY') return { index: 204, category: 'vavoo_premium' };
-
-    // --- CATALOGUE 4 : AUTRES ---
+    // --- AUTRES ---
     return { index: 999, category: 'vavoo_autres' };
 }
 
 async function updateStreams() {
     try {
-        console.log('[TvVoo Proxy] Récupération, filtrage et création des sous-catalogues...');
+        console.log('[TvVoo Proxy] Construction du bouquet type Free...');
         const manifestRes = await axios.get(`${TVVOO_BASE}/manifest.json`, { timeout: 10000 });
         const catalogId = manifestRes.data.catalogs[0].id;
         const catalogRes = await axios.get(`${TVVOO_BASE}/catalog/tv/${catalogId}.json`, { timeout: 15000 });
@@ -139,7 +147,7 @@ async function updateStreams() {
             if (!displayName || displayName.length < 2) return; 
 
             const id = 'vavoo_id_' + displayName.replace(/[^a-zA-Z0-9+]/g, '_').toLowerCase();
-            const metaInfo = getChannelMeta(displayName); // On récupère l'index et le catalogue cible
+            const metaInfo = getChannelMeta(displayName); 
 
             if (!channelsMap[id]) {
                 channelsMap[id] = {
@@ -148,7 +156,7 @@ async function updateStreams() {
                     originalIds: [],
                     poster: meta.poster || DEFAULT_POSTER,
                     sortIndex: metaInfo.index,
-                    category: metaInfo.category // On sauvegarde le catalogue auquel la chaîne appartient
+                    category: metaInfo.category 
                 };
             }
 
@@ -166,24 +174,9 @@ async function updateStreams() {
             return a.name.localeCompare(b.name);
         });
 
-        console.log(`[TvVoo Proxy] Succès : ${channelsData.length} chaînes triées dans 4 catalogues.`);
+        console.log(`[TvVoo Proxy] Succès : Bouquet prêt avec ${channelsData.length} chaînes.`);
     } catch (err) {
         console.error('[TvVoo Proxy] Erreur :', err.message);
-    }
-}
-
-async function checkStreamValid(url) {
-    try {
-        await axios.get(url, { 
-            headers: { 'Range': 'bytes=0-100' },
-            timeout: 3000 
-        });
-        return true;
-    } catch (e) {
-        if (e.response && [404, 502, 503].includes(e.response.status)) {
-            return false; 
-        }
-        return true; 
     }
 }
 
@@ -197,16 +190,15 @@ function getStreamScore(title) {
 }
 
 app.get('/', (req, res) => {
-    res.send(`<h1>Vavoo FR (v9.0 - Multi-Catalogues) est en ligne !</h1><p>Chaînes totales : <strong>${channelsData.length}</strong></p>`);
+    res.send(`<h1>Vavoo FR (v10.0 - Bouquet Freebox) est en ligne !</h1><p>Chaînes totales : <strong>${channelsData.length}</strong></p>`);
 });
 
-// MANIFEST MIS À JOUR : On déclare nos 4 catalogues pour que Nuvio les sépare visuellement
 app.get('/manifest.json', (req, res) => {
     res.json({
         id: 'org.vavooproxy.fr.live',
-        version: '9.0.0',
-        name: 'Vavoo FR Multi',
-        description: 'Bouquets organisés par thèmes : TNT, Sports et Premium.',
+        version: '10.0.0',
+        name: 'Vavoo FR Box',
+        description: 'Organisation type Freebox, Canal+ en premium et sources backups restaurées.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -218,11 +210,9 @@ app.get('/manifest.json', (req, res) => {
     });
 });
 
-// ROUTING DYNAMIQUE : Sert uniquement les chaînes du catalogue demandé
 const handleCatalog = (req, res) => {
-    const requestedCatalog = req.params.id; // Va valoir vavoo_tnt, vavoo_sports, etc.
+    const requestedCatalog = req.params.id; 
     
-    // Sécurité : vérifier que le catalogue demandé existe
     const validCatalogs = ['vavoo_tnt', 'vavoo_sports', 'vavoo_premium', 'vavoo_autres'];
     if (!validCatalogs.includes(requestedCatalog)) {
         return res.json({ metas: [] });
@@ -234,7 +224,6 @@ const handleCatalog = (req, res) => {
         if (match) skip = parseInt(match[1], 10);
     }
 
-    // On ne garde que les chaînes qui appartiennent au catalogue sur lequel tu as cliqué
     const filteredChannels = channelsData.filter(ch => ch.category === requestedCatalog);
 
     const paginatedMetas = filteredChannels.slice(skip, skip + 100).map(ch => ({
@@ -248,7 +237,6 @@ const handleCatalog = (req, res) => {
     res.json({ metas: paginatedMetas });
 };
 
-// Intercepte les demandes dynamiques
 app.get('/catalog/tv/:id.json', handleCatalog);
 app.get('/catalog/tv/:id/:extra', handleCatalog);
 
@@ -263,7 +251,7 @@ app.get('/meta/tv/:id.json', (req, res) => {
             name: channel.name,
             poster: channel.poster,
             posterShape: 'square',
-            description: `${channel.originalIds.length} sources regroupées.`
+            description: `${channel.originalIds.length} sources trouvées.`
         }
     });
 });
@@ -288,22 +276,13 @@ app.get('/stream/tv/:id.json', async (req, res) => {
             }
         }
         
-        const checkedStreams = await Promise.all(allStreams.map(async (s) => {
-            const isValid = await checkStreamValid(s.url);
-            return isValid ? s : null;
-        }));
+        // Suppression du testeur de flux qui éliminait les liens à tort !
         
-        let validStreams = checkedStreams.filter(s => s !== null);
+        allStreams.sort((a, b) => getStreamScore(b.title) - getStreamScore(a.title));
 
-        if (validStreams.length === 0 && allStreams.length > 0) {
-            validStreams = allStreams;
-        }
-
-        validStreams.sort((a, b) => getStreamScore(b.title) - getStreamScore(a.title));
-
-        const finalStreams = validStreams.map((s, idx) => ({
+        const finalStreams = allStreams.map((s, idx) => ({
             ...s,
-            title: `Source ${idx + 1} | ${s.title || 'Flux Auto'}`
+            title: `Backup ${idx + 1} | ${s.title || 'Flux Auto'}`
         }));
         
         res.json({ streams: finalStreams });
