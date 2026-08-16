@@ -7,7 +7,6 @@ app.use(cors());
 
 let isUpdating = true;
 
-// --- LES SOURCES ---
 const ADDON_PROVIDERS = [
     { id: 'vavoo', base: 'https://tvvoo.hayd.uk/cfg-fr', label: 'Vavoo', isPriority: true },
     { id: 'mio', base: 'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiLCJCRV9GUiJdLCJjYXRlZ29yaWVzIjp7IkZSIjpbIkdlbmVyYWwg8J+7oiIsIlNwb3J0cyDimq3igIsiLCJEb2N1bWVudGFpcmVzIPCfijrQuiIsIkZpbG1zIPCfjqwiLCJJbmZvcm1hdGlvbnMg8J+7oiIsIkVuZmFudHMgv5G2IiwiTXVzaWMg8J+OtSJdfSwiZW5hYmxlU2VhcmNoIjpmYWxzZX0', label: 'Mio', isPriority: false }
@@ -360,16 +359,16 @@ async function updateStreams() {
 
 app.get('/', (req, res) => {
     if (isUpdating) {
-        res.send(`<h1>Hybrid TV FR (v32.0)</h1><p>⏳ Chargement en cours...</p>`);
+        res.send(`<h1>Hybrid TV FR (v32.1)</h1><p>⏳ Chargement en cours...</p>`);
     } else {
-        res.send(`<h1>Hybrid TV FR (v32.0) est en ligne !</h1><p>Chaînes actives : <strong>${channelsData.length}</strong></p>`);
+        res.send(`<h1>Hybrid TV FR (v32.1) est en ligne !</h1><p>Chaînes actives : <strong>${channelsData.length}</strong></p>`);
     }
 });
 
 app.get('/manifest.json', (req, res) => {
     res.json({
-        id: 'org.hybridproxy.fr.live.v320', 
-        version: '32.0.0',
+        id: 'org.hybridproxy.fr.live.v321', 
+        version: '32.1.0',
         name: 'Hybrid TV FR',
         description: 'TNT, Information, Jeunesse, Découverte, Cinéma, Musique, Bouquet Canal, Sports et EPG en direct.',
         resources: ['catalog', 'meta', 'stream'],
@@ -497,7 +496,7 @@ app.get('/stream/tv/:id.json', async (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, async () => {
-    console.log(`Serveur démarré sur le port `${PORT}`);
+    console.log(`Serveur démarré sur le port ${PORT}`);
     await updateEPG(); 
     await updateStreams();
     setInterval(updateEPG, 3600000); 
