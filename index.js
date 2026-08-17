@@ -16,7 +16,7 @@ let channelsData = [];
 let epgData = {}; 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
-// === NORMALISATION ANTI-DOUBLONS MASSIVE ===
+// === NORMALISATION ===
 function normalizeChannelName(rawName) {
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     
@@ -93,7 +93,6 @@ function normalizeChannelName(rawName) {
     return n;
 }
 
-// Embellissement des noms
 function getPrettyName(n) {
     if (n === 'L EQUIPE') return "L'Équipe";
     if (n === 'CHASSE ET PECHE') return "Chasse et Pêche";
@@ -108,7 +107,7 @@ function getPrettyName(n) {
     return n.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.substr(1).toLowerCase());
 }
 
-// === PLACEMENT INTELLIGENT (IA DE TRI) ===
+// === PLACEMENT PAR THEME ===
 function getChannelPlacements(n) {
     let placements = [];
 
@@ -183,7 +182,7 @@ function getChannelPlacements(n) {
         placements.push({ category: 'vavoo_decouverte', index: decIndex });
     }
 
-    // CINEMA & SERIES
+    // CINEMA
     if (['PARAMOUNT', 'WARNER', 'ACTION', 'TCM', 'CINE+', 'OCS', 'SYFY', 'SCI FI', 'SERIE CLUB', 'TV BREIZH', 'COMEDY CENTRAL', 'POLAR+'].some(k => n.includes(k))) {
         placements.push({ category: 'vavoo_cinema', index: 10 });
     }
@@ -221,7 +220,6 @@ function getChannelPlacements(n) {
         placements.push({ category: 'vavoo_tnt', index: tntList.indexOf(n) + 1 });
     }
 
-    // AUTRES
     if (placements.length === 0) {
         placements.push({ category: 'vavoo_autres', index: 500 });
     }
@@ -229,86 +227,117 @@ function getChannelPlacements(n) {
     return placements;
 }
 
-// === LE NOUVEAU PARSEUR EPG BAsé SUR IPTV-ORG ===
+// === NOUVEAU MOTEUR EPG (Rapide et Robuste) ===
 function slugify(str) {
     return str.toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function parseXmltvDate(str) {
+    if (!str || str.length < 14) return 0;
+    const y = str.substring(0,4), m = str.substring(4,6), d = str.substring(6,8);
+    const h = str.substring(8,10), min = str.substring(10,12), s = str.substring(12,14);
+    let offset = str.substring(15).trim() || '+0200';
+    if (!offset.includes(':') && offset.length >= 5) offset = offset.slice(0,3) + ':' + offset.slice(3);
+    else if (offset.length < 5) offset = '+02:00';
+    
+    const ts = new Date(`${y}-${m}-${d}T${h}:${min}:${s}${offset}`).getTime();
+    return isNaN(ts) ? 0 : ts;
+}
+
+async function updateEPG() {
+    // Utilisation d'une source GitHub fiable et rapide
+    const urls = [
+        'https://allfrtv.github.io/xmltv/xmltv.xml',
+        'https://xmltv.ch/xmltv/xmltv-tnt.xml'
+    ];
+    let newEpgData = {};
+
+    for (const url of urls) {
+        try {
+            const res = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 20000 });
+            const xml = res.data;
+            let epgChannels = {};
+            
+            // 1. Lire les identifiants de chaînes
+            const chanRegex = /<channel id="([^"]+)">[\s\S]*?<display-name[^>]*>(.*?)<\/display-name>/g;
+            let matchChan;
+            while ((matchChan = chanRegex.exec(xml)) !== null) {
+                epgChannels[matchChan[1]] = normalizeChannelName(matchChan[2]);
+            }
+
+            // 2. Extraire les programmes (méthode ultra-légère par index indexOf au lieu de Regex lourdes)
+            let pIndex = xml.indexOf('<programme');
+            while (pIndex !== -1) {
+                const endIndex = xml.indexOf('</programme>', pIndex);
+                if (endIndex === -1) break;
+                
+                const block = xml.substring(pIndex, endIndex + 12);
+                const startMatch = block.match(/start="([^"]+)"/);
+                const stopMatch = block.match(/stop="([^"]+)"/);
+                const chanMatch = block.match(/channel="([^"]+)"/);
+                
+                if (startMatch && stopMatch && chanMatch) {
+                    const rawChName = epgChannels[chanMatch[1]];
+                    if (rawChName) {
+                        const titleM = block.match(/<title[^>]*>([^<]+)<\/title>/);
+                        const descM = block.match(/<desc[^>]*>([^<]+)<\/desc>/);
+
+                        if (titleM) {
+                            if (!newEpgData[rawChName]) newEpgData[rawChName] = [];
+                            newEpgData[rawChName].push({
+                                start: parseXmltvDate(startMatch[1]),
+                                stop: parseXmltvDate(stopMatch[1]),
+                                title: titleM[1].trim(),
+                                desc: descM ? descM[1].trim() : ''
+                            });
+                        }
+                    }
+                }
+                pIndex = xml.indexOf('<programme', endIndex);
+            }
+        } catch (err) {}
+    }
+    
+    if (Object.keys(newEpgData).length > 0) {
+        epgData = newEpgData;
+    }
 }
 
 function getEpgForChannel(channelName) {
     if (!epgData) return null;
     const targetSlug = slugify(channelName);
     
-    const foundKey = Object.keys(epgData).find(k => slugify(k) === targetSlug || slugify(k).includes(targetSlug));
+    // Correspondance stricte pour éviter les mélanges (ex: TF1 vs TF1 SERIES)
+    let foundKey = Object.keys(epgData).find(k => slugify(k) === targetSlug);
+    if (foundKey) return epgData[foundKey];
+
+    // Alias pour la sécurité
+    const aliases = {
+        "TF1": ["TF1FR", "TF1HD"],
+        "FRANCE2": ["FRANCETV2", "FRANCE2HD"],
+        "M6": ["M6FR", "M6HD"],
+        "ARTE": ["ARTEHD"],
+        "W9": ["W9HD"],
+        "TMC": ["TMCHD"],
+        "TFX": ["TFXHD"],
+        "NRJ12": ["NRJ12HD"],
+        "C8": ["C8HD"],
+        "GULLI": ["GULLIHD"]
+    };
+
+    if (aliases[targetSlug]) {
+        for (const alias of aliases[targetSlug]) {
+            foundKey = Object.keys(epgData).find(k => slugify(k) === alias);
+            if (foundKey) return epgData[foundKey];
+        }
+    }
+
+    // Dernier recours très sécurisé
+    foundKey = Object.keys(epgData).find(k => slugify(k).startsWith(targetSlug) && Math.abs(k.length - targetSlug.length) <= 3);
     return foundKey ? epgData[foundKey] : null;
 }
 
-function parseXmltvDate(str) {
-    if (!str) return 0;
-    const y = str.substring(0,4), m = str.substring(4,6), d = str.substring(6,8);
-    const h = str.substring(8,10), min = str.substring(10,12), s = str.substring(12,14);
-    let offset = str.substring(15).trim() || '+0200';
-    if (!offset.includes(':') && offset.length >= 5) offset = offset.slice(0,3) + ':' + offset.slice(3);
-    else if (offset.length < 5) offset = '+02:00';
-    return new Date(`${y}-${m}-${d}T${h}:${min}:${s}${offset}`).getTime();
-}
-
-async function updateEPG() {
-    // Sources EPG de IPTV-ORG (Plus ciblées, plus complètes, moins lourdes)
-    const urls = [
-        'https://iptv-org.github.io/epg/guides/fr/programme-tv.net.epg.xml',
-        'https://iptv-org.github.io/epg/guides/fr/telestar.fr.epg.xml',
-        'https://xmltv.ch/xmltv/xmltv-tnt.xml' // On garde la TNT suisse en backup
-    ];
-    let newEpgData = {};
-
-    for (const url of urls) {
-        try {
-            const res = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 15000 });
-            const xml = res.data;
-            let epgChannels = {};
-            
-            // Étape 1 : Lire les vrais noms de chaînes de IPTV-org
-            const channelsMatch = xml.matchAll(/<channel id="([^"]+)">\s*<display-name[^>]*>(.*?)<\/display-name>/g);
-            for (const m of channelsMatch) {
-                epgChannels[m[1]] = normalizeChannelName(m[2]);
-            }
-
-            // Étape 2 : Lier les programmes à notre normalisation
-            const progMatch = xml.matchAll(/<programme\s+([^>]+)>([\s\S]*?)<\/programme>/g);
-            for (const m of progMatch) {
-                const attrs = m[1];
-                const content = m[2];
-                
-                const startStr = (attrs.match(/start="([^"]+)"/) || [])[1];
-                const stopStr = (attrs.match(/stop="([^"]+)"/) || [])[1];
-                const chanStr = (attrs.match(/channel="([^"]+)"/) || [])[1];
-                
-                if (startStr && stopStr && chanStr) {
-                    const rawChName = epgChannels[chanStr];
-                    if (!rawChName) continue;
-
-                    const titleM = content.match(/<title[^>]*>([^<]+)<\/title>/);
-                    const descM = content.match(/<desc[^>]*>([^<]+)<\/desc>/);
-
-                    if (titleM) {
-                        if (!newEpgData[rawChName]) newEpgData[rawChName] = [];
-                        newEpgData[rawChName].push({
-                            start: parseXmltvDate(startStr),
-                            stop: parseXmltvDate(stopStr),
-                            title: titleM[1].trim(),
-                            desc: descM ? descM[1].trim() : ''
-                        });
-                    }
-                }
-            }
-        } catch (err) {
-            console.error("[EPG] Erreur de lecture sur la source :", url);
-        }
-    }
-    epgData = newEpgData;
-}
-
-// === ASPIRATEUR ===
+// === LECTURE DES FLUX ===
 async function fetchAddonCatalog(provider) {
     let allMetas = [];
     try {
@@ -376,12 +405,11 @@ async function updateStreams() {
     isUpdating = false; 
 }
 
-// === INTERFACE WEB (Stremio & Nuvio) ===
+// === INTERFACE WEB ===
 app.get('/', (req, res) => {
     const host = req.get('host');
     const manifestUrl = `https://${host}/manifest.json`;
     const stremioUrl = `stremio://${host}/manifest.json`;
-    const nuvioUrl = `nuvio://${host}/manifest.json`;
     
     const html = `
     <!DOCTYPE html>
@@ -397,8 +425,6 @@ app.get('/', (req, res) => {
             p { font-size: 16px; color: #aaa; margin-bottom: 30px; line-height: 1.6; }
             .btn { display: inline-block; background: #e50914; color: #fff; padding: 15px 30px; text-decoration: none; font-size: 16px; font-weight: bold; border-radius: 8px; margin: 10px; cursor: pointer; border: none; transition: 0.2s; }
             .btn:hover { background: #f40612; transform: scale(1.05); }
-            .btn-blue { background: #007bff; }
-            .btn-blue:hover { background: #0056b3; }
             .btn-secondary { background: #333; }
             .btn-secondary:hover { background: #444; }
             .stats { margin-top: 30px; font-size: 14px; color: #888; background: #111; padding: 15px; border-radius: 6px; }
@@ -411,8 +437,6 @@ app.get('/', (req, res) => {
             <p>Votre add-on télévisuel intelligent et épuré. <br>Naviguez sans doublons, avec un tri par catégories pensé pour vous.</p>
             
             <a href="${stremioUrl}" class="btn">▶ Ajouter à Stremio</a>
-            <a href="${nuvioUrl}" class="btn btn-blue">▶ Ajouter à Nuvio</a>
-            <br>
             <button onclick="copyLink()" class="btn btn-secondary">📋 Copier le lien</button>
             
             <input type="text" id="manifestLink" value="${manifestUrl}" readonly>
@@ -438,8 +462,8 @@ app.get('/', (req, res) => {
 
 app.get('/manifest.json', (req, res) => {
     res.json({
-        id: 'org.hybridproxy.fr.live.v43', 
-        version: '43.0.0',
+        id: 'org.hybridproxy.fr.live.v44', 
+        version: '44.0.0',
         name: 'Hybrid TV FR',
         description: 'TNT, Info, Jeunesse, Découverte, Cinéma, Musique, Bouquet Canal, Sports.',
         resources: ['catalog', 'meta', 'stream'],
@@ -497,7 +521,6 @@ app.get('/meta/tv/:id.json', async (req, res) => {
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ meta: {} });
     
-    // Le texte PROPRE par défaut (pour empêcher le "Détail du film manquant")
     let descriptionText = `▶ Diffusion en cours sur ${channel.displayName}...`;
     
     const epgList = getEpgForChannel(channel.name);
