@@ -7,6 +7,7 @@ app.use(cors());
 
 let isUpdating = true;
 
+// --- LES SOURCES ---
 const ADDON_PROVIDERS = [
     { id: 'vavoo', base: 'https://tvvoo.hayd.uk/cfg-fr', label: 'Vavoo', isPriority: true },
     { id: 'mio', base: 'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiLCJCRV9GUiJdLCJjYXRlZ29yaWVzIjp7IkZSIjpbIkdlbmVyYWwg8J+7oiIsIlNwb3J0cyDimq3igIsiLCJEb2N1bWVudGFpcmVzIPCfijrQuiIsIkZpbG1zIPCfjqwiLCJJbmZvcm1hdGlvbnMg8J+7oiIsIkVuZmFudHMgv5G2IiwiTXVzaWMg8J+OtSJdfSwiZW5hYmxlU2VhcmNoIjpmYWxzZX0', label: 'Mio', isPriority: false }
@@ -16,81 +17,78 @@ let channelsData = [];
 let epgData = {}; 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
-// === NORMALISATION ULTRA-STRICTE (Fini les fusions hasardeuses) ===
+// === NORMALISATION (Supprime les TV entre parenthèses, les tags, etc.) ===
 function normalizeChannelName(rawName) {
-    let n = rawName.toUpperCase();
-    n = n.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // Retire les accents
-    n = n.replace(/\s*\([Tt][Vv]\)\s*/g, ''); // Éradication de (TV)
-    n = n.replace(/\[.*?\]|\(.*?\)/g, ' '); // Retire les balises
-    n = n.replace(/^(?:FR|BE|CH|CA|VIP)\s*[:|/-]+\s*/, '');
-    n = n.replace(/^FR\s+/, '');
+    let clean = rawName.toUpperCase();
+    clean = clean.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     
-    // Mots à supprimer
+    clean = clean.replace(/\s*\([Tt][Vv]\)\s*/g, ''); // Suppression stricte de (TV)
+    clean = clean.replace(/^(?:FR|BE|CH|CA|VIP)\s*[:|/-]+\s*/, '');
+    clean = clean.replace(/^FR\s+/, '');
+    clean = clean.replace(/\+/g, ' PLUS '); 
+    clean = clean.replace(/\[.*?\]|\(.*?\)/g, ' '); 
+    
     const badWords = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'VAVOO', 'DIRECT', 'RAW', 'ACCESS'];
-    n = n.replace(/[^A-Z0-9+]/g, ' '); 
+    clean = clean.replace(/[^A-Z0-9+ ]/g, ' ');
     badWords.forEach(w => {
-        n = n.replace(new RegExp(`\\b${w}\\b`, 'g'), ' ');
+        clean = clean.replace(new RegExp(`\\b${w}\\b`, 'g'), ' ');
     });
-    n = n.replace(/\s+/g, ' ').trim();
 
-    // Dictionnaire Exact
-    if (n === 'CNEWS' || n.includes('C NEWS')) return 'CNews';
-    if (n === 'LCN') return 'LCN';
-    if (n === 'CARTOON NETWORK') return 'Cartoon Network';
-    if (n === 'CARTOONITO') return 'Cartoonito';
+    clean = clean.replace(/\s+/g, ' ').trim();
+    let displayName = clean.replace(/PLUS/g, '+').replace(/\s+/g, ' ').trim();
+
+    if (displayName === 'CNEWS' || displayName.includes('C NEWS')) return 'CNews';
+    if (displayName === 'LCN') return 'LCN';
+    if (displayName === 'CARTOON NETWORK') return 'Cartoon Network';
+    if (displayName === 'CARTOONITO') return 'Cartoonito';
+    if (displayName.includes('EQUIPE')) return "L'Équipe"; 
+
+    // CANAL+ EXACT
+    if (displayName.includes('CANAL J')) return 'Canal J';
+    if (displayName.includes('CANAL+ KIDS') || displayName.includes('CANAL KIDS')) return 'Canal+ Kids';
+    if (displayName.includes('CANAL+ FOOT') || displayName === 'FOOT+') return 'Canal+ Foot';
+    if (displayName.includes('CANAL+ SPORT 360') || displayName === 'CANAL+ 360') return 'Canal+ Sport 360';
+    if (displayName.includes('CANAL+ SPORT')) return 'Canal+ Sport';
+    if (displayName.includes('CANAL+ CINEMA')) return 'Canal+ Cinéma';
+    if (displayName.includes('CANAL+ GRAND ECRAN')) return 'Canal+ Grand Écran';
+    if (displayName.includes('CANAL+ BOX OFFICE')) return 'Canal+ Box Office';
+    if (displayName.includes('CANAL+ SERIES')) return 'Canal+ Séries';
+    if (displayName.includes('CANAL+ DOCS')) return 'Canal+ Docs';
+    if (displayName.includes('CANAL+ FAMILY')) return 'Canal+ Family';
+    if (displayName.includes('CANAL+ DECALE')) return 'Canal+ Décalé';
+    if (displayName.includes('CANAL+ 4K') || displayName.includes('CANAL ULTRA')) return 'Canal+ 4K';
+    if (displayName === 'CANAL+' || displayName === 'CANAL +') return 'Canal+';
+
+    // JEUNESSE EXACT
+    if (displayName.includes('DISNEY CHANNEL') && displayName.includes('1')) return 'Disney Channel +1';
+    if (displayName.includes('DISNEY CHANNEL')) return 'Disney Channel';
+    if (displayName.includes('DISNEY XD')) return 'Disney XD';
+    if (displayName.includes('DISNEY JUNIOR') || displayName.includes('DISNEY JR')) return 'Disney Junior';
+    if (displayName.includes('DISNEY CINEMA')) return 'Disney Cinéma';
+    if (displayName.includes('NICKELODEON') && (displayName.includes('1') || displayName.includes('14') || displayName.includes('+'))) return 'Nickelodeon +1';
+    if (displayName.includes('NICKELODEON TEEN')) return 'Nickelodeon Teen';
+    if (displayName.includes('NICKELODEON JUNIOR')) return 'Nickelodeon Junior';
+    if (displayName === 'NICKELODEON') return 'Nickelodeon';
+    if (displayName.includes('GAME ONE') || displayName === 'J ONE') return 'Game One';
+    if (displayName === 'GULLI') return 'Gulli';
+    if (displayName.includes('BOOMERANG')) return 'Boomerang';
+
+    // AUTRES
+    if (displayName === 'TF1') return 'TF1';
+    if (displayName === 'FRANCE 2') return 'France 2';
+    if (displayName === 'FRANCE 3') return 'France 3';
+    if (displayName === 'FRANCE 4') return 'France 4';
+    if (displayName === 'FRANCE 5') return 'France 5';
+    if (displayName === 'M6') return 'M6';
     
-    if (n.includes('EQUIPE')) return "L'Équipe";
-    
-    // Canal
-    if (n.includes('CANAL J')) return 'Canal J';
-    if (n.includes('CANAL+ KIDS') || n.includes('CANAL KIDS')) return 'Canal+ Kids';
-    if (n.includes('CANAL+ FOOT') || n === 'FOOT+') return 'Canal+ Foot';
-    if (n.includes('CANAL+ SPORT 360') || n.includes('CANAL SPORT 360') || n === 'CANAL+ 360') return 'Canal+ Sport 360';
-    if (n.includes('CANAL+ SPORT') || n.includes('CANAL SPORT')) return 'Canal+ Sport';
-    if (n.includes('CANAL+ CINEMA')) return 'Canal+ Cinéma';
-    if (n.includes('CANAL+ GRAND ECRAN')) return 'Canal+ Grand Écran';
-    if (n.includes('CANAL+ BOX OFFICE')) return 'Canal+ Box Office';
-    if (n.includes('CANAL+ SERIES')) return 'Canal+ Séries';
-    if (n.includes('CANAL+ DOCS')) return 'Canal+ Docs';
-    if (n.includes('CANAL+ FAMILY')) return 'Canal+ Family';
-    if (n.includes('CANAL+ DECALE')) return 'Canal+ Décalé';
-    if (n.includes('CANAL+ 4K') || n.includes('CANAL ULTRA') || n.includes('CANAL+ ULTRA')) return 'Canal+ 4K';
-    if (n === 'CANAL+' || n === 'CANAL +') return 'Canal+';
-
-    // Jeunesse
-    if (n.includes('DISNEY CHANNEL') && n.includes('1')) return 'Disney Channel +1';
-    if (n.includes('DISNEY CHANNEL')) return 'Disney Channel';
-    if (n.includes('DISNEY XD')) return 'Disney XD';
-    if (n.includes('DISNEY JUNIOR') || n.includes('DISNEY JR')) return 'Disney Junior';
-    if (n.includes('DISNEY CINEMA')) return 'Disney Cinéma';
-
-    if (n.includes('NICKELODEON') && (n.includes('1') || n.includes('14') || n.includes('+'))) return 'Nickelodeon +1';
-    if (n.includes('NICKELODEON TEEN')) return 'Nickelodeon Teen';
-    if (n.includes('NICKELODEON JUNIOR')) return 'Nickelodeon Junior';
-    if (n === 'NICKELODEON') return 'Nickelodeon';
-
-    if (n.includes('GAME ONE') || n === 'J ONE') return 'Game One';
-    if (n === 'GULLI') return 'Gulli';
-    if (n.includes('BOOMERANG')) return 'Boomerang';
-
-    // Majuscules de base
-    if (n === 'TF1') return 'TF1';
-    if (n === 'FRANCE 2') return 'France 2';
-    if (n === 'FRANCE 3') return 'France 3';
-    if (n === 'FRANCE 4') return 'France 4';
-    if (n === 'FRANCE 5') return 'France 5';
-    if (n === 'M6') return 'M6';
-
-    // Format propre par défaut (Ex: Tf1 Series Films)
-    return n.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase()).replace('+', '+ ');
+    return displayName.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase()).replace('+', '+ ');
 }
 
-// === PLACEMENT INTELLIGENT SANS DOUBLON ===
+// === PLACEMENTS ET TRI MULTIPLES ===
 function getChannelPlacements(name) {
     const n = name.toUpperCase();
     let placements = []; 
 
-    // INFO (Toutes les chaînes d'info restaurées)
     if (n.includes('BFM') || n === 'CNEWS' || n === 'LCI' || n === 'FRANCE INFO' || n === 'FRANCE 24' || n === 'EURONEWS' || n.includes('METEO') || n.includes('20 MINUTES') || n === 'LCN') {
         let idx = 50;
         if(n.includes('TF1')) idx = 1;
@@ -105,7 +103,6 @@ function getChannelPlacements(name) {
         placements.push({ category: 'vavoo_info', index: idx });
     }
 
-    // JEUNESSE (Ordre Strict)
     let jeuIdx = -1;
     if(n==='CARTOON NETWORK') jeuIdx=1;
     if(n==='DISNEY CHANNEL') jeuIdx=2;
@@ -114,20 +111,19 @@ function getChannelPlacements(name) {
     if(n==='GAME ONE') jeuIdx=5;
     if(n==='DISNEY XD') jeuIdx=6;
     if(n==='BOOMERANG') jeuIdx=7;
-    if(n==='CANAL J') jeuIdx=8;
-    if(n==='CANAL+ KIDS') jeuIdx=9;
+    if(n==='CANAL+ KIDS') jeuIdx=8;
+    if(n==='CANAL J') jeuIdx=9;
     if(n==='DISNEY JUNIOR') jeuIdx=10;
-    if(n==='NICKELODEON JUNIOR') jeuIdx=11;
-    if(n==='NICKELODEON TEEN') jeuIdx=12;
-    if(n==='DISNEY CHANNEL +1') jeuIdx=50; // A la fin
-    if(n==='NICKELODEON +1') jeuIdx=51; // A la fin
+    if(n==='NICKELODEON TEEN') jeuIdx=11;
+    if(n==='DISNEY CHANNEL +1') jeuIdx=50; 
+    if(n==='NICKELODEON +1') jeuIdx=51; 
+    
     if(jeuIdx !== -1) {
         placements.push({ category: 'vavoo_jeunesse', index: jeuIdx });
-    } else if (n.includes('TIJI') || n.includes('TELETOON') || n.includes('PIWI') || n.includes('CARTOONITO')) {
+    } else if (n.includes('TIJI') || n.includes('TELETOON') || n.includes('PIWI')) {
         placements.push({ category: 'vavoo_jeunesse', index: 30 });
     }
 
-    // CANAL (Bouquet complet et rangé)
     let canIdx = -1;
     if(n==='CANAL+') canIdx=1;
     if(n==='CANAL+ FOOT') canIdx=2;
@@ -149,33 +145,31 @@ function getChannelPlacements(name) {
         placements.push({ category: 'vavoo_canal', index: canIdx });
     }
 
-    // DECOUVERTE
-    let decIdx = -1;
-    if(n==='DISCOVERY CHANNEL') decIdx=1;
-    if(n==='DISCOVERY') decIdx=2;
-    if(n==='USHUAIA') decIdx=3;
-    if(n==='CRIME DISTRICT') decIdx=4;
-    if(n==='CHASSE ET PECHE' || n==='CHASSE & PECHE') decIdx=5;
-    if(n==='ANIMAUX') decIdx=6;
-    if(n==='STAR CHANNEL') decIdx=7;
-    if(decIdx !== -1) placements.push({ category: 'vavoo_decouverte', index: decIdx });
+    if (n.includes('DISCOVERY') || n.includes('CRIME DISTRICT') || n.includes('USHUAIA') || n.includes('CHASSE') || n.includes('ANIMAUX') || n.includes('STAR CHANNEL')) {
+        let decIndex = 10;
+        if (n.includes('DISCOVERY CHANNEL')) decIndex = 1;
+        if (n.includes('DISCOVERY')) decIndex = 2;
+        if (n.includes('USHUAIA')) decIndex = 3;
+        if (n.includes('CRIME DISTRICT')) decIndex = 4;
+        if (n.includes('CHASSE')) decIndex = 5;
+        if (n.includes('ANIMAUX')) decIndex = 6;
+        if (n.includes('STAR CHANNEL')) decIndex = 7;
+        placements.push({ category: 'vavoo_decouverte', index: decIndex });
+    }
 
-    // CINEMA
-    let cinIdx = -1;
-    if(n.includes('PARAMOUNT')) cinIdx=1;
-    if(n.includes('WARNER')) cinIdx=2;
-    if(n.includes('ACTION')) cinIdx=3;
-    if(n.includes('TCM')) cinIdx=4;
-    if(n.includes('CINE+')) cinIdx=5;
-    if(n.includes('OCS')) cinIdx=6;
-    if(cinIdx !== -1) placements.push({ category: 'vavoo_cinema', index: cinIdx });
+    if (n.includes('PARAMOUNT') || n.includes('WARNER') || n.includes('ACTION') || n.includes('TCM') || n.includes('OCS') || n.includes('CINE+')) {
+        let cinIndex = 10;
+        if (n.includes('PARAMOUNT')) cinIndex = 1;
+        if (n.includes('WARNER')) cinIndex = 2;
+        if (n.includes('ACTION')) cinIndex = 3;
+        if (n.includes('TCM')) cinIndex = 4;
+        placements.push({ category: 'vavoo_cinema', index: cinIndex });
+    }
 
-    // MUSIQUE
-    if(n.includes('MCM') || n.includes('MEZZO') || n.includes('MTV') || n.includes('NRJ HITS')) {
+    if (n.includes('MCM') || n.includes('MEZZO') || n.includes('MTV') || n.includes('NRJ HITS')) {
         placements.push({ category: 'vavoo_musique', index: 10 });
     }
 
-    // SPORTS
     let spoIdx = -1;
     if(n.startsWith('BEIN SPORTS')) spoIdx=100;
     if(n.startsWith('RMC SPORT') && !n.includes('MULTICANAL')) spoIdx=110;
@@ -187,7 +181,6 @@ function getChannelPlacements(name) {
     if(n==='CANAL+ SPORT' || n==='CANAL+ FOOT' || n==='CANAL+ FORMULA 1' || n==='CANAL+ SPORT 360') spoIdx=250;
     if(spoIdx !== -1) placements.push({ category: 'vavoo_sports', index: spoIdx });
 
-    // TNT
     let tntIdx = -1;
     if(n==='TF1') tntIdx=1;
     if(n==='FRANCE 2') tntIdx=2;
@@ -213,7 +206,6 @@ function getChannelPlacements(name) {
     
     if(tntIdx !== -1) placements.push({ category: 'vavoo_tnt', index: tntIdx });
 
-    // FALLBACK
     if (placements.length === 0) {
         placements.push({ category: 'vavoo_autres', index: 500 });
     }
@@ -221,86 +213,70 @@ function getChannelPlacements(name) {
     return placements;
 }
 
-const EPG_MAPPING = {
-    "TF1": ["TF1", "TF1 FR", "TF1 HD"],
-    "FRANCE 2": ["FRANCE 2", "FRANCETV 2", "FRANCE 2 HD"],
-    "FRANCE 3": ["FRANCE 3", "FRANCE 3 REGIONS"],
-    "M6": ["M6", "M6 FR", "M6 HD"],
-    "ARTE": ["ARTE", "ARTE HD"],
-    "CNEWS": ["CNEWS", "C NEWS"],
-    "LCI": ["LCI"],
-    "BFMTV": ["BFMTV", "BFM TV", "BFM"],
-    "FRANCE INFO": ["FRANCE INFO", "FRANCEINFO"],
-    "CANAL+": ["CANAL+", "CANAL +", "CANAL"],
-    "CANAL J": ["CANAL J", "CANALJ"],
-    "CANAL+ KIDS": ["CANAL+ KIDS", "CANAL KIDS", "CANAL PLUS KIDS"],
-    "GULLI": ["GULLI", "GULLI HD"]
-};
-
-function getEpgForChannel(channelName) {
-    if (!epgData) return null;
-    const target = channelName.toUpperCase().trim();
-    
-    if (epgData[target]) return epgData[target];
-
-    for (const [key, aliases] of Object.entries(EPG_MAPPING)) {
-        if (aliases.includes(target) || target === key) {
-            for (const alias of aliases) {
-                if (epgData[alias]) return epgData[alias];
-            }
-        }
-    }
-    
-    const foundKey = Object.keys(epgData).find(k => k === target || k.includes(target) || target.includes(k));
-    return foundKey ? epgData[foundKey] : null;
-}
-
+// === LECTEUR EPG BLINDÉ (Multi-sources, Anti-Bug et Fuseau Paris) ===
 async function updateEPG() {
-    try {
-        const res = await axios.get('https://xmltv.ch/xmltv/xmltv-tnt.xml', { timeout: 15000 });
-        const xml = res.data;
-        let epgChannels = {};
-        const chRegex = /<channel id="([^"]+)">\s*<display-name[^>]*>(.*?)<\/display-name>/g;
-        let match;
-        while ((match = chRegex.exec(xml)) !== null) {
-            epgChannels[match[1]] = match[2].toUpperCase().trim();
-        }
+    const urls = [
+        'https://xmltv.ch/xmltv/xmltv-tnt.xml',
+        'https://xmltv.ch/xmltv/xmltv-francophone.xml'
+    ];
+    let newEpgData = {};
 
-        const progBlocks = xml.match(/<programme[\s\S]*?<\/programme>/g) || [];
-        let newEpgData = {};
-
-        for (let block of progBlocks) {
-            const startMatch = block.match(/start="(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s?([^"]*)"/);
-            const stopMatch = block.match(/stop="(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s?([^"]*)"/);
-            const chanMatch = block.match(/channel="([^"]+)"/);
-            const titleMatch = block.match(/<title[^>]*>([^<]+)<\/title>/);
-            const descMatch = block.match(/<desc[^>]*>([^<]+)<\/desc>/);
-
-            if (startMatch && stopMatch && chanMatch && titleMatch) {
-                const rawChName = epgChannels[chanMatch[1]];
-                if (!rawChName) continue;
-
-                // Calage sur le fuseau horaire explicite
-                const rawOffset = startMatch[7] || '+0200';
-                const formattedOffset = rawOffset.includes(':') ? rawOffset : rawOffset.slice(0, 3) + ':' + rawOffset.slice(3);
-
-                const startStr = `${startMatch[1]}-${startMatch[2]}-${startMatch[3]}T${startMatch[4]}:${startMatch[5]}:${startMatch[6]}${formattedOffset}`;
-                const stopStr = `${stopMatch[1]}-${stopMatch[2]}-${stopMatch[3]}T${stopMatch[4]}:${stopMatch[5]}:${stopMatch[6]}${formattedOffset}`;
-                
-                const startTs = new Date(startStr).getTime();
-                const stopTs = new Date(stopStr).getTime();
-
-                if (!newEpgData[rawChName]) newEpgData[rawChName] = [];
-                newEpgData[rawChName].push({
-                    start: startTs,
-                    stop: stopTs,
-                    title: titleMatch[1].trim(),
-                    desc: descMatch ? descMatch[1].trim() : ''
-                });
+    for (const url of urls) {
+        try {
+            const res = await axios.get(url, { timeout: 15000 });
+            const xml = res.data;
+            
+            let epgChannels = {};
+            const chRegex = /<channel id="([^"]+)">\s*<display-name[^>]*>(.*?)<\/display-name>/g;
+            let match;
+            while ((match = chRegex.exec(xml)) !== null) {
+                epgChannels[match[1]] = normalizeChannelName(match[2]);
             }
-        }
-        epgData = newEpgData;
-    } catch (err) {}
+
+            const progBlocks = xml.match(/<programme[^>]+>[\s\S]*?<\/programme>/g) || [];
+            
+            for (let block of progBlocks) {
+                const startMatch = block.match(/start="([^"]+)"/);
+                const stopMatch = block.match(/stop="([^"]+)"/);
+                const chanMatch = block.match(/channel="([^"]+)"/);
+                const titleMatch = block.match(/<title[^>]*>([^<]+)<\/title>/);
+                const descMatch = block.match(/<desc[^>]*>([^<]+)<\/desc>/);
+
+                if (startMatch && stopMatch && chanMatch && titleMatch) {
+                    const rawChName = epgChannels[chanMatch[1]];
+                    if (!rawChName) continue;
+                    
+                    const startStr = startMatch[1];
+                    const year = startStr.substring(0,4);
+                    const month = startStr.substring(4,6);
+                    const day = startStr.substring(6,8);
+                    const hour = startStr.substring(8,10);
+                    const min = startStr.substring(10,12);
+                    const sec = startStr.substring(12,14);
+                    
+                    let offset = startStr.substring(15).trim() || '+0200';
+                    if (!offset.includes(':')) offset = offset.slice(0,3) + ':' + offset.slice(3);
+
+                    const isoStart = `${year}-${month}-${day}T${hour}:${min}:${sec}${offset}`;
+                    
+                    const stopStr = stopMatch[1];
+                    const isoStop = `${stopStr.substring(0,4)}-${stopStr.substring(4,6)}-${stopStr.substring(6,8)}T${stopStr.substring(8,10)}:${stopStr.substring(10,12)}:${stopStr.substring(12,14)}${offset}`;
+
+                    const startTs = new Date(isoStart).getTime();
+                    const stopTs = new Date(isoStop).getTime();
+
+                    if (!newEpgData[rawChName]) newEpgData[rawChName] = [];
+                    newEpgData[rawChName].push({
+                        start: startTs,
+                        stop: stopTs,
+                        title: titleMatch[1].trim(),
+                        desc: descMatch ? descMatch[1].trim() : ''
+                    });
+                }
+            }
+        } catch (err) {}
+    }
+    epgData = newEpgData;
 }
 
 async function fetchAddonCatalog(provider) {
@@ -363,7 +339,6 @@ async function updateStreams() {
             });
         }
 
-        // On assigne les placements officiels SANS dupliquer les objets
         channelsData = [];
         Object.values(channelsMap).forEach(ch => {
             if (ch.sources.length > 0) {
@@ -376,10 +351,12 @@ async function updateStreams() {
     isUpdating = false; 
 }
 
-// === PAGE WEB DE L'INSTALLATEUR ===
+// === NOUVELLE PAGE WEB POUR NUVIO ===
 app.get('/', (req, res) => {
     const host = req.get('host');
-    const installUrl = `stremio://${host}/manifest.json`;
+    const manifestUrl = `https://${host}/manifest.json`;
+    const stremioUrl = `stremio://${host}/manifest.json`;
+    
     const html = `
     <!DOCTYPE html>
     <html lang="fr">
@@ -388,24 +365,42 @@ app.get('/', (req, res) => {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Hybrid TV FR</title>
         <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #141414; color: #fff; text-align: center; padding: 50px; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #141414; color: #fff; text-align: center; padding: 40px 20px; }
             .container { max-width: 600px; margin: 0 auto; background: #1f1f1f; padding: 40px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-top: 4px solid #e50914; }
-            h1 { color: #fff; margin-bottom: 10px; font-size: 32px; }
-            p { font-size: 18px; color: #aaa; margin-bottom: 30px; line-height: 1.5; }
-            .btn { display: inline-block; background: #e50914; color: #fff; padding: 15px 30px; text-decoration: none; font-size: 18px; font-weight: bold; border-radius: 8px; transition: 0.2s; }
+            h1 { color: #fff; font-size: 32px; margin-bottom: 10px; }
+            p { font-size: 16px; color: #aaa; margin-bottom: 30px; line-height: 1.6; }
+            .btn { display: inline-block; background: #e50914; color: #fff; padding: 15px 30px; text-decoration: none; font-size: 16px; font-weight: bold; border-radius: 8px; margin: 10px; cursor: pointer; border: none; transition: 0.2s; }
             .btn:hover { background: #f40612; transform: scale(1.05); }
-            .stats { margin-top: 30px; font-size: 14px; color: #666; background: #111; padding: 15px; border-radius: 6px; }
+            .btn-secondary { background: #333; }
+            .btn-secondary:hover { background: #444; }
+            .stats { margin-top: 30px; font-size: 14px; color: #888; background: #111; padding: 15px; border-radius: 6px; }
+            input { width: 100%; padding: 12px; margin-top: 20px; background: #111; color: #fff; border: 1px solid #444; border-radius: 6px; text-align: center; font-size: 14px; box-sizing: border-box; }
         </style>
     </head>
     <body>
         <div class="container">
             <h1>📺 Hybrid TV FR</h1>
-            <p>Votre add-on IPTV unifié et épuré. <br>Naviguez sans doublons, sans textes polluants et avec un guide TV parfaitement calibré.</p>
-            <a href="${installUrl}" class="btn">Ajouter à Stremio</a>
+            <p>Votre add-on de streaming TV unifié et épuré. <br>Profitez d'un guide TV en temps réel (EPG) sur la majorité des chaînes, le tout sans doublons ni textes polluants.</p>
+            
+            <a href="${stremioUrl}" class="btn">▶ Ajouter à Stremio</a>
+            <button onclick="copyLink()" class="btn btn-secondary">📋 Copier pour Nuvio</button>
+            
+            <input type="text" id="manifestLink" value="${manifestUrl}" readonly>
+            
             <div class="stats">
                 ${isUpdating ? '⏳ Mise à jour de la grille en cours...' : `✅ <b>${channelsData.length}</b> chaînes actives et triées`}
             </div>
         </div>
+
+        <script>
+            function copyLink() {
+                var copyText = document.getElementById("manifestLink");
+                copyText.select();
+                copyText.setSelectionRange(0, 99999);
+                document.execCommand("copy");
+                alert("Lien copié avec succès ! Allez dans Nuvio pour l'ajouter.");
+            }
+        </script>
     </body>
     </html>
     `;
@@ -414,8 +409,8 @@ app.get('/', (req, res) => {
 
 app.get('/manifest.json', (req, res) => {
     res.json({
-        id: 'org.hybridproxy.fr.live.v37', 
-        version: '37.0.0',
+        id: 'org.hybridproxy.fr.live.v38', 
+        version: '38.0.0',
         name: 'Hybrid TV FR',
         description: 'TNT, Information, Jeunesse, Découverte, Cinéma, Musique, Bouquet Canal, Sports.',
         resources: ['catalog', 'meta', 'stream'],
@@ -445,7 +440,6 @@ const handleCatalog = (req, res) => {
     const validCatalogs = ['vavoo_tnt', 'vavoo_info', 'vavoo_jeunesse', 'vavoo_decouverte', 'vavoo_cinema', 'vavoo_musique', 'vavoo_canal', 'vavoo_sports', 'vavoo_autres'];
     if (!validCatalogs.includes(requestedCatalog)) return res.json({ metas: [] });
     
-    // Le filtre sélectionne la chaîne si elle a le bon tag, puis la trie correctement pour ce catalogue spécifique !
     const filteredChannels = channelsData
         .filter(ch => ch.placements.some(p => p.category === requestedCatalog))
         .map(ch => {
@@ -475,11 +469,18 @@ app.get('/meta/tv/:id.json', async (req, res) => {
     if (!channel) return res.json({ meta: {} });
     
     let descriptionText = "";
-    const epgList = getEpgForChannel(channel.name);
     
-    if (epgList) {
+    // Recherche stricte et robuste dans notre EPG maison
+    const target = channel.name;
+    let currentEpg = epgData[target];
+    if (!currentEpg) {
+        const foundKey = Object.keys(epgData).find(k => k.toUpperCase() === target.toUpperCase());
+        if (foundKey) currentEpg = epgData[foundKey];
+    }
+
+    if (currentEpg) {
         const now = Date.now();
-        const currentProg = epgList.find(p => now >= p.start && now <= p.stop);
+        const currentProg = currentEpg.find(p => now >= p.start && now <= p.stop);
         if (currentProg) {
             descriptionText = `🔴 EN DIRECT : ${currentProg.title}`;
             if (currentProg.desc) {
@@ -488,7 +489,6 @@ app.get('/meta/tv/:id.json', async (req, res) => {
         }
     }
 
-    // Le texte reste vide si on n'a rien (pour bloquer les pubs/textes de Vavoo)
     res.json({
         meta: {
             id: channel.id,
@@ -496,7 +496,7 @@ app.get('/meta/tv/:id.json', async (req, res) => {
             name: channel.name,
             poster: channel.poster,
             posterShape: 'square',
-            description: descriptionText
+            description: descriptionText // Vide si aucun programme TV, sans aucun texte parasite
         }
     });
 });
