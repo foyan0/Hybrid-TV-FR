@@ -40,17 +40,17 @@ function normalizeChannelName(rawName) {
     if (n === '20 MINUTES') return '20 MINUTES TV';
     if (n === 'SCI FI') return 'SYFY';
 
-    // L'Équipe (Gère le problème de l'apostrophe effacée)
+    // L'Équipe
     if (n === 'L EQUIPE' || n === 'LA CHAINE L EQUIPE') return 'L EQUIPE';
 
-    // National Geographic (Fusionne Nat Geo, Geo Graphic, FR, etc.)
+    // National Geographic
     if (n.includes('WILD') && (n.includes('NAT') || n.includes('GEO'))) return 'NATIONAL GEOGRAPHIC WILD';
     if (n.includes('NAT GEO') || n.includes('NATIONAL GEO')) return 'NATIONAL GEOGRAPHIC';
 
     // Chasse & Pêche
     if (n.includes('CHASSE') && n.includes('PECHE')) return 'CHASSE ET PECHE';
 
-    // Discovery (Protection des variantes)
+    // Discovery
     if (n.includes('DISCOVERY')) {
         if (n.includes('SCIENCE') || n.includes('SCI FI')) return 'DISCOVERY SCIENCE';
         if (n.includes('INVESTIGATION') || n.includes('ID')) return 'DISCOVERY INVESTIGATION';
@@ -93,7 +93,7 @@ function normalizeChannelName(rawName) {
     return n;
 }
 
-// Embellissement des noms pour l'affichage propre
+// Embellissement des noms
 function getPrettyName(n) {
     if (n === 'L EQUIPE') return "L'Équipe";
     if (n === 'CHASSE ET PECHE') return "Chasse et Pêche";
@@ -112,7 +112,7 @@ function getPrettyName(n) {
 function getChannelPlacements(n) {
     let placements = [];
 
-    // 1. INFO (Toutes les déclinaisons BFM Régions attrapées)
+    // INFO
     if (['FRANCE INFO', 'LA CHAINE METEO', 'CNEWS', 'LCI', 'BFMTV', 'FRANCE 24', 'EURONEWS', 'LCN', '20 MINUTES TV'].includes(n) || n.startsWith('BFM ')) {
         let idx = 50;
         if(n === 'FRANCE INFO') idx = 1;
@@ -122,11 +122,11 @@ function getChannelPlacements(n) {
         else if(n === 'BFMTV') idx = 5;
         else if(n === 'FRANCE 24') idx = 6;
         else if(n === 'EURONEWS') idx = 7;
-        else if(n.startsWith('BFM ')) idx = 20; // Toutes les BFM locales
+        else if(n.startsWith('BFM ')) idx = 20; 
         placements.push({ category: 'vavoo_info', index: idx });
     }
 
-    // 2. JEUNESSE
+    // JEUNESSE
     let jeuIdx = -1;
     if (n === 'CARTOON NETWORK') jeuIdx = 1;
     else if (n === 'DISNEY CHANNEL') jeuIdx = 2;
@@ -150,7 +150,7 @@ function getChannelPlacements(n) {
         placements.push({ category: 'vavoo_jeunesse', index: 30 });
     }
 
-    // 3. BOUQUET CANAL
+    // BOUQUET CANAL
     let canIdx = -1;
     if(n==='CANAL+') canIdx=1;
     if(n==='CANAL+ FOOT') canIdx=2;
@@ -166,15 +166,15 @@ function getChannelPlacements(n) {
     if(n==='CANAL J') canIdx=12;
     if(n==='CANAL+ KIDS') canIdx=13;
     if(n==='CANAL+ 4K') canIdx=14;
-    if(n==='CANAL+ DECALE') canIdx=15;
-    if(n.includes('CSTAR HITS')) canIdx=16;
+    if(n==='CANAL+ DECALE') canIdx=16;
+    if(n.includes('CSTAR HITS')) canIdx=17;
     if(canIdx !== -1) {
         placements.push({ category: 'vavoo_canal', index: canIdx });
-    } else if (n.startsWith('CANAL') && !n.includes('PLAY')) { // Bloque Canal Play
+    } else if (n.startsWith('CANAL') && !n.includes('PLAY')) { 
         placements.push({ category: 'vavoo_canal', index: 30 });
     }
 
-    // 4. DECOUVERTE
+    // DECOUVERTE
     if (['DISCOVERY', 'PLANETE', 'NATIONAL GEOGRAPHIC', 'USHUAIA', 'HISTOIRE', 'ANIMAUX', 'CHASSE', 'SCIENCE', 'TREK', 'SEASONS', 'MYZEN', 'CRIME DISTRICT', 'STAR CHANNEL'].some(k => n.includes(k))) {
         let decIndex = 10;
         if(n === 'DISCOVERY CHANNEL') decIndex = 1;
@@ -183,12 +183,12 @@ function getChannelPlacements(n) {
         placements.push({ category: 'vavoo_decouverte', index: decIndex });
     }
 
-    // 5. CINEMA & SERIES
+    // CINEMA & SERIES
     if (['PARAMOUNT', 'WARNER', 'ACTION', 'TCM', 'CINE+', 'OCS', 'SYFY', 'SCI FI', 'SERIE CLUB', 'TV BREIZH', 'COMEDY CENTRAL', 'POLAR+'].some(k => n.includes(k))) {
         placements.push({ category: 'vavoo_cinema', index: 10 });
     }
 
-    // 6. MUSIQUE
+    // MUSIQUE
     if (['TRACE', 'M6 MUSIC', 'MTV', 'NRJ HITS', 'MCM', 'MEZZO', 'MELODY', 'CLUBBING TV', 'CSTAR HITS'].some(k => n.includes(k)) && n !== 'BFMTV') {
         let musIndex = 10;
         if(n.includes('M6 MUSIC')) musIndex = 1;
@@ -200,7 +200,7 @@ function getChannelPlacements(n) {
         placements.push({ category: 'vavoo_musique', index: musIndex });
     }
 
-    // 7. SPORTS
+    // SPORTS
     if (n === 'CANAL+ SPORT' || n === 'CANAL+ FOOT' || n === 'CANAL+ SPORT 360' || n === 'CANAL+ FORMULA 1') placements.push({ category: 'vavoo_sports', index: 250 });
     if (n.startsWith('BEIN SPORTS') || n.includes('BING SPORT')) {
         let match = n.match(/\d+/);
@@ -215,13 +215,13 @@ function getChannelPlacements(n) {
     else if (n === 'L EQUIPE') placements.push({ category: 'vavoo_sports', index: 160 });
     else if (n.includes('SPORT') && !n.includes('CANAL')) placements.push({ category: 'vavoo_sports', index: 199 });
 
-    // 8. TNT 
+    // TNT 
     const tntList = ['TF1', 'FRANCE 2', 'FRANCE 3', 'FRANCE 4', 'FRANCE 5', 'M6', 'ARTE', 'C8', 'W9', 'TMC', 'TFX', 'NRJ 12', 'LCP', 'PUBLIC SENAT', 'CSTAR', 'GULLI', 'TF1 SERIES', 'L EQUIPE', '6TER', 'RMC STORY', 'RMC DECOUVERTE', 'CHERIE 25'];
     if (tntList.includes(n)) {
         placements.push({ category: 'vavoo_tnt', index: tntList.indexOf(n) + 1 });
     }
 
-    // 9. AUTRES
+    // AUTRES
     if (placements.length === 0) {
         placements.push({ category: 'vavoo_autres', index: 500 });
     }
@@ -229,7 +229,7 @@ function getChannelPlacements(n) {
     return placements;
 }
 
-// === LE NOUVEAU PARSEUR EPG (Infaillible) ===
+// === LE NOUVEAU PARSEUR EPG BAsé SUR IPTV-ORG ===
 function slugify(str) {
     return str.toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
@@ -238,7 +238,6 @@ function getEpgForChannel(channelName) {
     if (!epgData) return null;
     const targetSlug = slugify(channelName);
     
-    // Recherche par correspondance stricte de Slug (ex: CHASSEETPECHE = CHASSEPECHE = CHASSE&PECHE)
     const foundKey = Object.keys(epgData).find(k => slugify(k) === targetSlug || slugify(k).includes(targetSlug));
     return foundKey ? epgData[foundKey] : null;
 }
@@ -254,21 +253,27 @@ function parseXmltvDate(str) {
 }
 
 async function updateEPG() {
-    const urls = ['https://xmltv.ch/xmltv/xmltv-tnt.xml', 'https://xmltv.ch/xmltv/xmltv-francophone.xml'];
+    // Sources EPG de IPTV-ORG (Plus ciblées, plus complètes, moins lourdes)
+    const urls = [
+        'https://iptv-org.github.io/epg/guides/fr/programme-tv.net.epg.xml',
+        'https://iptv-org.github.io/epg/guides/fr/telestar.fr.epg.xml',
+        'https://xmltv.ch/xmltv/xmltv-tnt.xml' // On garde la TNT suisse en backup
+    ];
     let newEpgData = {};
 
     for (const url of urls) {
         try {
-            const res = await axios.get(url, { timeout: 15000 });
+            const res = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 15000 });
             const xml = res.data;
             let epgChannels = {};
             
+            // Étape 1 : Lire les vrais noms de chaînes de IPTV-org
             const channelsMatch = xml.matchAll(/<channel id="([^"]+)">\s*<display-name[^>]*>(.*?)<\/display-name>/g);
             for (const m of channelsMatch) {
                 epgChannels[m[1]] = normalizeChannelName(m[2]);
             }
 
-            // Nouveau RegEx qui ne dépend pas de l'ordre des attributs (C'était ça le bug !)
+            // Étape 2 : Lier les programmes à notre normalisation
             const progMatch = xml.matchAll(/<programme\s+([^>]+)>([\s\S]*?)<\/programme>/g);
             for (const m of progMatch) {
                 const attrs = m[1];
@@ -296,7 +301,9 @@ async function updateEPG() {
                     }
                 }
             }
-        } catch (err) {}
+        } catch (err) {
+            console.error("[EPG] Erreur de lecture sur la source :", url);
+        }
     }
     epgData = newEpgData;
 }
@@ -369,7 +376,7 @@ async function updateStreams() {
     isUpdating = false; 
 }
 
-// === INTERFACE WEB (Boutons Stremio, Nuvio, Copier) ===
+// === INTERFACE WEB (Stremio & Nuvio) ===
 app.get('/', (req, res) => {
     const host = req.get('host');
     const manifestUrl = `https://${host}/manifest.json`;
@@ -431,8 +438,8 @@ app.get('/', (req, res) => {
 
 app.get('/manifest.json', (req, res) => {
     res.json({
-        id: 'org.hybridproxy.fr.live.v42', 
-        version: '42.0.0',
+        id: 'org.hybridproxy.fr.live.v43', 
+        version: '43.0.0',
         name: 'Hybrid TV FR',
         description: 'TNT, Info, Jeunesse, Découverte, Cinéma, Musique, Bouquet Canal, Sports.',
         resources: ['catalog', 'meta', 'stream'],
@@ -490,7 +497,7 @@ app.get('/meta/tv/:id.json', async (req, res) => {
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ meta: {} });
     
-    // Le texte PROPRE par défaut, qui écrase l'erreur native de Nuvio/Stremio
+    // Le texte PROPRE par défaut (pour empêcher le "Détail du film manquant")
     let descriptionText = `▶ Diffusion en cours sur ${channel.displayName}...`;
     
     const epgList = getEpgForChannel(channel.name);
@@ -567,7 +574,6 @@ app.get('/stream/tv/:id.json', async (req, res) => {
             return b._score - a._score;
         });
 
-        // Noms des sources ultra propres
         const finalStreams = allStreams.map((s, idx) => ({
             url: s.url,
             name: `▶ Source ${idx + 1}\n(${s._label})`,
