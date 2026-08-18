@@ -16,11 +16,11 @@ const ADDON_PROVIDERS = [
     { id: 'mio', base: 'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiLCJCRV9GUiJdLCJjYXRlZ29yaWVzIjp7IkZSIjpbIkdlbmVyYWwg8J+7oiIsIlNwb3J0cyDimq3igIsiLCJEb2N1bWVudGFpcmVzIPCfijrQuiIsIkZpbG1zIPCfjqwiLCJJbmZvcm1hdGlvbnMg8J+7oiIsIkVuZmFudHMgv5G2IiwiTXVzaWMg8J+OtSJdfSwiZW5hYmxlU2VhcmNoIjpmYWxzZX0', label: 'Mio', isPriority: false }
 ];
 
-let channelsData = []; // Cache principal en RAM
-let epgData = {}; // Cache EPG en RAM
+let channelsData = []; 
+let epgData = {}; 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
-// === NORMALISATION (Même logique parfaite qu'avant) ===
+// === NORMALISATION ===
 function normalizeChannelName(rawName) {
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     n = n.replace(/\s*\([Tt][Vv]\)\s*/g, '');
@@ -41,9 +41,12 @@ function normalizeChannelName(rawName) {
     if (n === 'LCN') return 'LCN';
     if (n === '20 MINUTES') return '20 MINUTES TV';
     if (n === 'SCI FI') return 'SYFY';
+
     if (n === 'L EQUIPE' || n === 'LA CHAINE L EQUIPE') return 'L EQUIPE';
+
     if (n.includes('WILD') && (n.includes('NAT') || n.includes('GEO'))) return 'NATIONAL GEOGRAPHIC WILD';
     if (n.includes('NAT GEO') || n.includes('NATIONAL GEO')) return 'NATIONAL GEOGRAPHIC';
+
     if (n.includes('CHASSE') && n.includes('PECHE')) return 'CHASSE ET PECHE';
 
     if (n.includes('DISCOVERY')) {
@@ -147,7 +150,7 @@ function getChannelPlacements(n) {
     return placements;
 }
 
-// === ZERO-DOWNTIME UPDATES (Inspiration StreamViX) ===
+// === LECTEUR EPG AVANCÉ ("BUFFER" POUR NE RATER AUCUN PROGRAMME) ===
 function slugify(str) { return str.toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 
 function parseXmltvDate(str) {
@@ -164,57 +167,77 @@ function parseXmltvDate(str) {
 async function updateEPG() {
     if (isUpdatingEPG) return;
     isUpdatingEPG = true;
-    const urls = ['https://xmltv.ch/xmltv/xmltv-francophone.xml', 'https://xmltv.ch/xmltv/xmltv-tnt.xml'];
-    let tempEpgData = {}; // Cache temporaire
+    
+    // Fichiers d'une fiabilité totale pour la TNT et le câble
+    const urls = [
+        'https://allfrtv.github.io/xmltv/xmltv.xml',
+        'https://xmltv.ch/xmltv/xmltv-francophone.xml'
+    ];
+    let tempEpgData = {}; 
 
     for (const url of urls) {
         try {
             const response = await axios.get(url, { responseType: 'stream', timeout: 30000 });
-            const rl = readline.createInterface({ input: response.data });
-            let inChannel = false, chanBlock = '', inProgramme = false, progBlock = '';
+            const rl = readline.createInterface({ input: response.data, crlfDelay: Infinity });
+
             let epgChannels = {};
+            let buffer = ''; // Le fameux entonnoir qui corrige le bug des lignes coupées
 
             for await (const line of rl) {
-                if (line.includes('<channel ')) { inChannel = true; chanBlock = line; }
-                else if (inChannel) {
-                    chanBlock += '\n' + line;
-                    if (line.includes('</channel>')) {
-                        let idMatch = chanBlock.match(/id="([^"]+)"/);
-                        let nameMatch = chanBlock.match(/<display-name[^>]*>(.*?)<\/display-name>/);
-                        if (idMatch && nameMatch) epgChannels[idMatch[1]] = normalizeChannelName(nameMatch[2]);
-                        inChannel = false; chanBlock = '';
+                buffer += line + '\n';
+                
+                // 1. Aspiration des chaînes (Peu importe les sauts de ligne)
+                while (buffer.includes('<channel ') && buffer.includes('</channel>')) {
+                    const sIdx = buffer.indexOf('<channel ');
+                    const eIdx = buffer.indexOf('</channel>') + 10;
+                    const block = buffer.substring(sIdx, eIdx);
+                    
+                    const idM = block.match(/id="([^"]+)"/);
+                    const nameM = block.match(/<display-name[^>]*>(.*?)<\/display-name>/);
+                    if (idM && nameM) {
+                        epgChannels[idM[1]] = normalizeChannelName(nameM[2]);
                     }
+                    // On retire le bloc traité de l'entonnoir
+                    buffer = buffer.substring(0, sIdx) + buffer.substring(eIdx);
                 }
-                if (line.includes('<programme ')) { inProgramme = true; progBlock = line; }
-                else if (inProgramme) {
-                    progBlock += '\n' + line;
-                    if (line.includes('</programme>')) {
-                        let startMatch = progBlock.match(/start="([^"]+)"/);
-                        let stopMatch = progBlock.match(/stop="([^"]+)"/);
-                        let chanMatch = progBlock.match(/channel="([^"]+)"/);
-                        let titleMatch = progBlock.match(/<title[^>]*>([^<]+)<\/title>/);
-                        let descMatch = progBlock.match(/<desc[^>]*>([^<]+)<\/desc>/);
-
-                        if (startMatch && stopMatch && chanMatch && titleMatch) {
-                            let rawChName = epgChannels[chanMatch[1]];
-                            if (rawChName) {
-                                if (!tempEpgData[rawChName]) tempEpgData[rawChName] = [];
-                                tempEpgData[rawChName].push({
-                                    start: parseXmltvDate(startMatch[1]),
-                                    stop: parseXmltvDate(stopMatch[1]),
-                                    title: titleMatch[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").trim(),
-                                    desc: descMatch ? descMatch[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").trim() : ''
-                                });
-                            }
+                
+                // 2. Aspiration des programmes
+                while (buffer.includes('<programme ') && buffer.includes('</programme>')) {
+                    const sIdx = buffer.indexOf('<programme ');
+                    const eIdx = buffer.indexOf('</programme>') + 12;
+                    const block = buffer.substring(sIdx, eIdx);
+                    
+                    const startM = block.match(/start="([^"]+)"/);
+                    const stopM = block.match(/stop="([^"]+)"/);
+                    const chanM = block.match(/channel="([^"]+)"/);
+                    const titleM = block.match(/<title[^>]*>([^<]+)<\/title>/);
+                    const descM = block.match(/<desc[^>]*>([\s\S]*?)<\/desc>/);
+                    
+                    if (startM && stopM && chanM && titleM) {
+                        const rawChName = epgChannels[chanM[1]];
+                        if (rawChName) {
+                            if (!tempEpgData[rawChName]) tempEpgData[rawChName] = [];
+                            tempEpgData[rawChName].push({
+                                start: parseXmltvDate(startM[1]),
+                                stop: parseXmltvDate(stopM[1]),
+                                title: titleM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").trim(),
+                                desc: descM ? descM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").trim() : ''
+                            });
                         }
-                        inProgramme = false; progBlock = '';
                     }
+                    buffer = buffer.substring(0, sIdx) + buffer.substring(eIdx);
+                }
+                
+                // On empêche l'entonnoir de déborder
+                if (buffer.length > 20000) {
+                    buffer = buffer.substring(buffer.length - 10000);
                 }
             }
-        } catch (err) { console.error("[Background EPG] Source injoignable:", url); }
+        } catch (err) {
+            console.error("[EPG] Impossible d'analyser la source:", url);
+        }
     }
     
-    // Swap invisible du cache
     if (Object.keys(tempEpgData).length > 0) {
         epgData = tempEpgData;
         lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
@@ -223,8 +246,9 @@ async function updateEPG() {
 }
 
 function getEpgForChannel(channelName) {
-    if (!epgData) return null;
+    if (!epgData || Object.keys(epgData).length === 0) return null;
     const targetSlug = slugify(channelName);
+    
     let foundKey = Object.keys(epgData).find(k => slugify(k) === targetSlug);
     if (foundKey) return epgData[foundKey];
 
@@ -240,11 +264,12 @@ function getEpgForChannel(channelName) {
             if (foundKey) return epgData[foundKey];
         }
     }
+
     foundKey = Object.keys(epgData).find(k => slugify(k).startsWith(targetSlug) && Math.abs(k.length - targetSlug.length) <= 3);
     return foundKey ? epgData[foundKey] : null;
 }
 
-// === MISE À JOUR DES FLUX (Zero Downtime) ===
+// === MISE À JOUR DES FLUX ===
 async function fetchAddonCatalog(provider) {
     let allMetas = [];
     try {
@@ -300,25 +325,13 @@ async function updateStreams() {
             }
         });
 
-        // Swap invisible (L'utilisateur ne subit aucune coupure)
         if (tempChannelsData.length > 0) channelsData = tempChannelsData;
 
     } catch (err) {}
     isUpdatingChannels = false; 
 }
 
-// === ROUTES ADMIN INSPIRÉES DE STREAMVIX ===
-app.get('/admin/reload-epg', async (req, res) => {
-    updateEPG(); // Démarre en asynchrone
-    res.send("🔄 Tâche de fond lancée : Synchronisation EPG en cours...");
-});
-
-app.get('/admin/reload-channels', async (req, res) => {
-    updateStreams(); // Démarre en asynchrone
-    res.send("🔄 Tâche de fond lancée : Scan des sources IPTV en cours...");
-});
-
-// === ROUTES STREMIO (AVEC CACHE INTELLIGENT) ===
+// === ROUTES STREMIO ===
 app.get('/', (req, res) => {
     const host = req.get('host');
     const manifestUrl = `https://${host}/manifest.json`;
@@ -371,10 +384,10 @@ app.get('/', (req, res) => {
 });
 
 app.get('/manifest.json', (req, res) => {
-    res.setHeader('Cache-Control', 'max-age=86400, public'); // Cache Stremio: 24h
+    res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v46', 
-        version: '46.0.0',
+        id: 'org.hybridproxy.fr.live.v47', 
+        version: '47.0.0',
         name: 'Hybrid TV FR',
         description: 'L\'expérience IPTV ultime. Tri par IA, EPG ultra-rapide, zéro publicité.',
         resources: ['catalog', 'meta', 'stream'],
@@ -394,7 +407,7 @@ app.get('/manifest.json', (req, res) => {
 });
 
 app.get('/catalog/tv/:id.json', (req, res) => {
-    res.setHeader('Cache-Control', 'max-age=14400, public'); // Cache Stremio: 4h
+    res.setHeader('Cache-Control', 'max-age=14400, public'); 
     const requestedCatalog = req.params.id; 
     let skip = 0;
     const validCatalogs = ['vavoo_tnt', 'vavoo_info', 'vavoo_jeunesse', 'vavoo_decouverte', 'vavoo_cinema', 'vavoo_musique', 'vavoo_canal', 'vavoo_sports', 'vavoo_autres'];
@@ -418,7 +431,7 @@ app.get('/catalog/tv/:id.json', (req, res) => {
 });
 
 app.get('/catalog/tv/:id/:extra', (req, res) => {
-    res.setHeader('Cache-Control', 'max-age=14400, public'); // Cache Stremio
+    res.setHeader('Cache-Control', 'max-age=14400, public'); 
     const requestedCatalog = req.params.id; 
     let skip = 0;
     if (req.params.extra) {
@@ -446,11 +459,15 @@ app.get('/catalog/tv/:id/:extra', (req, res) => {
 });
 
 app.get('/meta/tv/:id.json', async (req, res) => {
-    res.setHeader('Cache-Control', 'max-age=3600, public'); // L'EPG se rafraîchit chaque heure dans Stremio
+    res.setHeader('Cache-Control', 'max-age=3600, public'); 
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ meta: {} });
     
+    // Si l'EPG est toujours en cours de téléchargement sur Render (prend 1 min au boot)
     let descriptionText = `▶ Diffusion en cours sur ${channel.displayName}...`;
+    if (Object.keys(epgData).length === 0) {
+        descriptionText = `▶ EPG en cours de téléchargement (Actualisez dans 1 min)...`;
+    }
     
     const epgList = getEpgForChannel(channel.name);
     if (epgList) {
@@ -477,7 +494,7 @@ function getStreamScore(title) {
 }
 
 app.get('/stream/tv/:id.json', async (req, res) => {
-    res.setHeader('Cache-Control', 'max-age=1800, public'); // Cache des liens vidéo : 30 minutes
+    res.setHeader('Cache-Control', 'max-age=1800, public'); 
     const rawIp = req.headers['x-forwarded-for'];
     const clientIp = rawIp ? rawIp.split(',')[0].trim() : req.socket.remoteAddress;
 
@@ -523,10 +540,8 @@ app.get('/stream/tv/:id.json', async (req, res) => {
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, async () => {
     console.log(`Serveur démarré sur le port ${PORT}`);
-    
-    // Tâches de fond invisibles pour l'utilisateur
     updateEPG(); 
     updateStreams();
     setInterval(updateEPG, 3600000); 
-    setInterval(updateStreams, 14400000); // Recharge les chaînes toutes les 4h
+    setInterval(updateStreams, 14400000); 
 });
