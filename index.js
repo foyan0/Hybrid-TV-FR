@@ -36,7 +36,7 @@ function normalizeChannelName(rawName) {
     return n.replace(/\s+/g, ' ').trim();
 }
 
-// === TRADUCTEUR UNIVERSEL EPG (Garantit que Canal+ et TF1 "matchent") ===
+// === TRADUCTEUR UNIVERSEL EPG (Pour fusionner Canal+, TF1, etc. sans faille) ===
 function toSyncId(name) {
     if (!name) return '';
     let n = name.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -143,7 +143,7 @@ function getChannelPlacements(n) {
     return placements;
 }
 
-// === EXTRACTEUR EPG V63 (ZLIB + RACACAX) ===
+// === EXTRACTEUR EPG V64 ===
 function parseXmltvDate(str) {
     if (!str || str.length < 14) return 0;
     const y = str.substring(0,4), m = str.substring(4,6), d = str.substring(6,8);
@@ -159,7 +159,6 @@ function extractEpgData(xml) {
     let sourceEpg = {};
     let idToSyncKey = {}; 
     
-    // Scan des chaînes
     let chIdx = 0;
     while ((chIdx = xml.indexOf('<channel id=', chIdx)) !== -1) {
         const quote = xml.charAt(chIdx + 12);
@@ -179,7 +178,6 @@ function extractEpgData(xml) {
         chIdx = nameEnd || chIdx + 10;
     }
 
-    // Scan des programmes
     let pIdx = 0;
     while ((pIdx = xml.indexOf('<programme start=', pIdx)) !== -1) {
         const pEnd = xml.indexOf('</programme>', pIdx);
@@ -209,29 +207,31 @@ function extractEpgData(xml) {
     return sourceEpg;
 }
 
+// L'ESSAIM : On tape plusieurs petites cibles ultra-stables
 async function updateEPG() {
     if (isUpdatingEPG) return;
     isUpdatingEPG = true; 
     let tempEpgData = {};
-    let errorLog = [];
+    let successCount = 0;
     
-    // RACACAX (Le nouveau AllFrTV in-bloquable) + Fazzani
-    const urls = [ 
-        { url: 'https://racacaxtv.github.io/xmltv/xmltv.xml', isGz: false }, 
-        { url: 'https://raw.githubusercontent.com/Fazzani/grabber/master/guide.xml', isGz: false },
-        { url: 'https://epgshare01.online/epgshare01/epg_ripper_FR1.xml.gz', isGz: true }
+    const sources = [
+        // 1. EPGShare01 (Nouvelle adresse GitHub garantie in-bloquable)
+        { url: 'https://raw.githubusercontent.com/epgshare01/share01/master/epg_ripper_FR1.xml.gz', isGz: true },
+        // 2. Petits fichiers ciblés de XMLTVfr (Ils ne font jamais planter les serveurs)
+        { url: 'https://xmltvfr.fr/xmltv/xmltv_tnt.xml', isGz: false },
+        { url: 'https://xmltvfr.fr/xmltv/xmltv_canalsat.xml', isGz: false },
+        { url: 'https://xmltvfr.fr/xmltv/xmltv_suisse.xml', isGz: false },
+        // 3. GitHub de secours ultra-massif
+        { url: 'https://raw.githubusercontent.com/acidjesuz/EPG/master/guide.xml', isGz: false }
     ];
 
     try {
-        for (const source of urls) {
+        for (const source of sources) {
             try {
                 const response = await axios.get(source.url, { 
                     responseType: source.isGz ? 'arraybuffer' : 'text',
-                    timeout: 60000, 
-                    headers: { 
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Accept': '*/*'
-                    }
+                    timeout: 20000, // Petit délai : si ça traîne, on passe au fichier suivant
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
                 });
                 
                 let xml = '';
@@ -249,27 +249,29 @@ async function updateEPG() {
                 const parsedEpg = extractEpgData(xml);
                 xml = null; 
                 
+                let added = false;
                 for (const channelKey in parsedEpg) {
+                    // On ajoute seulement les chaînes qui n'ont pas encore été trouvées
                     if (!tempEpgData[channelKey] && parsedEpg[channelKey].length > 0) {
                         tempEpgData[channelKey] = parsedEpg[channelKey];
+                        added = true;
                     }
                 }
+                if (added) successCount++;
                 
-                // Plus de 100 chaînes = on a tout le bouquet FR !
-                if (Object.keys(tempEpgData).length > 100) break;
             } catch (err) {
-                // On enregistre l'erreur exacte pour la page web
-                const domain = source.url.split('/')[2];
-                errorLog.push(`${domain}: ${err.message}`);
+                // On ignore silencieusement le 404, on passe simplement au fichier suivant
+                console.log(`[EPG] Source ignorée: ${source.url.substring(0, 30)}...`);
             }
         }
         
+        // Si on a récolté les programmes d'au moins 10 chaînes, la mission est accomplie
         if (Object.keys(tempEpgData).length > 10) {
             epgData = tempEpgData;
             lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
-            lastEpgError = "Succès";
+            lastEpgError = `Succès (Données fusionnées depuis ${successCount} sources)`;
         } else {
-            lastEpgError = "Erreurs: " + errorLog.join(" | ");
+            lastEpgError = "Toutes les sources EPG de l'essaim ont échoué.";
         }
         
     } finally {
@@ -350,16 +352,16 @@ async function updateStreams() {
     isUpdatingChannels = false; 
 }
 
-// === INTERFACE WEB (AVEC LE BOUTON EPG COCHABLE) ===
+// === INTERFACE WEB ===
 app.get('/', (req, res) => {
     let channelsStatus = isUpdatingChannels ? '⏳ Recherche des chaînes en cours...' : `✅ <b>${channelsData.length}</b> chaînes actives`;
     let epgStatus = "";
     if (isUpdatingEPG) {
-        epgStatus = `⏳ Téléchargement EPG en cours...`;
+        epgStatus = `⏳ Téléchargement de l'Essaim EPG en cours...`;
     } else {
         const epgCount = Object.keys(epgData).length;
         if (epgCount > 0) {
-            epgStatus = `✅ Programme TV chargé pour <b>${epgCount}</b> chaînes (Racacax V63)`;
+            epgStatus = `✅ Programme TV chargé pour <b>${epgCount}</b> chaînes (${lastEpgError})`;
         } else {
             epgStatus = `❌ Échec du téléchargement.<br><span style="color:#ff6b6b; font-size:12px;">Détails : ${lastEpgError}</span>`;
         }
@@ -389,7 +391,7 @@ app.get('/', (req, res) => {
     <body>
         <div class="container">
             <h1>📺 Hybrid TV FR</h1>
-            <p>Votre add-on télévisuel haute-performance.<br>Édition "Magazine TV Ultime".</p>
+            <p>Votre add-on télévisuel haute-performance.<br>Édition "Magazine TV" Ultime - Serveur Essaim.</p>
             
             <div class="options">
                 <label style="cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px;">
@@ -438,8 +440,8 @@ app.get('/', (req, res) => {
 function handleManifest(req, res, conf) {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v63.' + conf, 
-        version: '63.0.0',
+        id: 'org.hybridproxy.fr.live.v64.' + conf, 
+        version: '64.0.0',
         name: conf === 'epg-on' ? 'Hybrid TV FR' : 'Hybrid TV FR (Sans EPG)',
         description: 'L\'expérience IPTV ultime. Édition Magazine TV Ultime.',
         resources: ['catalog', 'meta', 'stream'],
@@ -519,7 +521,7 @@ app.get('/:conf?/catalog/tv/:id/:extra', async (req, res) => {
     res.json({ metas: paginatedMetas });
 });
 
-// === LA MISE EN PAGE INVERSÉE ===
+// === LA MISE EN PAGE INVERSÉE ET ÉPURÉE ===
 app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
     const isEpgOn = !req.params.conf || req.params.conf === 'epg-on';
     await waitForChannels();
@@ -547,10 +549,10 @@ app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
                     const sTime = new Date(currentProg.start).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
                     const eTime = new Date(currentProg.stop).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
                     
-                    // 1. LE TITRE EN HAUT (Sans résumé)
+                    // 1. LE DIRECT EN HAUT
                     descriptionText = `🔴 EN DIRECT (${sTime} - ${eTime}) : ${currentProg.title}`;
                     
-                    // 2. LE MENU À SUIVRE IMMÉDIATEMENT EN DESSOUS
+                    // 2. LE "À SUIVRE" EN DESSOUS (Visible immédiatement)
                     const upcoming = epgList.slice(currentIndex + 1, currentIndex + 6);
                     if (upcoming.length > 0) {
                         descriptionText += `\n\n📺 À SUIVRE :`;
@@ -560,7 +562,7 @@ app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
                         });
                     }
 
-                    // 3. LE GROS RÉSUMÉ CACHÉ TOUT EN BAS
+                    // 3. LE GROS RÉSUMÉ TOUT EN BAS
                     if (currentProg.desc) {
                         descriptionText += `\n\n📝 RÉSUMÉ DU DIRECT :\n${currentProg.desc}`;
                     }
