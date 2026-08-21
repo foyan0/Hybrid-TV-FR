@@ -22,7 +22,18 @@ let channelsData = [];
 let epgData = {}; 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
-// === NORMALISATION AGRESSIVE (POUR FUSIONNER LES NOUVEAUX DOUBLONS) ===
+// === FORÇAGE DES LOGOS HAUTE QUALITÉ ===
+const CUSTOM_LOGOS = {
+    'CANAL+': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/Canal%2B.svg/512px-Canal%2B.svg.png',
+    'CANAL+ SPORT 360': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/Canal%2B_Sport_360_logo.svg/512px-Canal%2B_Sport_360_logo.svg.png',
+    'PLANETE+ CRIME': 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/Plan%C3%A8te%2B_Crime_2021.svg/512px-Plan%C3%A8te%2B_Crime_2021.svg.png',
+    'PLANETE+ AVENTURE': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/Plan%C3%A8te%2B_Aventure_2021.svg/512px-Plan%C3%A8te%2B_Aventure_2021.svg.png',
+    'BFMTV': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/BFMTV_logo.svg/512px-BFMTV_logo.svg.png',
+    'CNEWS': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/07/CNews_2017.svg/512px-CNews_2017.svg.png',
+    'L EQUIPE': 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/L%27%C3%89quipe_2021_logo.svg/512px-L%27%C3%89quipe_2021_logo.svg.png'
+};
+
+// === NORMALISATION AGRESSIVE ET NETTOYAGE ===
 function normalizeChannelName(rawName) {
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     n = n.replace(/\s*\([Tt][Vv]\)\s*/g, '');
@@ -31,11 +42,14 @@ function normalizeChannelName(rawName) {
     n = n.replace(/^(FR|BE|CH|CA|VIP)\s*[:|/-]+\s*/, '');
     n = n.replace(/^FR\s+/, '');
     
+    // CENSURE : On bloque la fausse chaîne Disney+ qui pollue le bouquet
+    if (n === 'DISNEY+' || n === 'DISNEY PLUS') return '';
+
     // Suppression agressive des tags de qualité
     const tags = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'VAVOO', 'DIRECT', 'RAW', 'ACCESS'];
     n = n.replace(/[^A-Z0-9+ ]/g, ' '); 
     tags.forEach(tag => { n = n.replace(new RegExp(`\\b${tag}\\b`, 'g'), ' '); });
-    n = n.replace(/\bHD\b/g, ' '); // Sécurité supplémentaire pour "HD"
+    n = n.replace(/\bHD\b/g, ' '); 
     n = n.replace(/\s+/g, ' ').trim();
 
     // Raccords Spéciaux (Les bugs identifiés)
@@ -91,7 +105,6 @@ function normalizeChannelName(rawName) {
     return n;
 }
 
-// === TRADUCTEUR UNIVERSEL EPG (Pour fusionner Canal+, TF1, etc. sans faille) ===
 function toSyncId(name) {
     if (!name) return '';
     let n = name.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -323,7 +336,7 @@ async function fetchAndParseEPG(url, isGz) {
     });
 }
 
-// === TÉLÉCHARGEMENT EPG MASSIF (La méga-source) ===
+// === TÉLÉCHARGEMENT EPG MASSIF ===
 async function updateEPG() {
     if (isUpdatingEPG) return;
     isUpdatingEPG = true; 
@@ -346,7 +359,6 @@ async function updateEPG() {
                 }
                 
                 if (Object.keys(tempEpgData).length > 100) break;
-                
             } catch (err) {}
         }
         
@@ -378,7 +390,7 @@ async function waitForChannels() {
     }
 }
 
-// === MISE À JOUR DES FLUX ===
+// === MISE À JOUR DES FLUX ET FORÇAGE DES LOGOS ===
 async function fetchAddonCatalog(provider) {
     let allMetas = [];
     try {
@@ -416,11 +428,12 @@ async function updateStreams() {
                 if (!dName || dName.length < 2) return; 
 
                 const id = 'hyb_id_' + dName.replace(/[^a-zA-Z0-9+]/g, '_').toLowerCase();
+                const finalPoster = CUSTOM_LOGOS[dName] ? CUSTOM_LOGOS[dName] : (meta.poster || DEFAULT_POSTER);
 
                 if (!tempChannelsMap[id]) {
-                    tempChannelsMap[id] = { id, name: dName, displayName: getPrettyName(dName), sources: [], poster: meta.poster || DEFAULT_POSTER };
-                } else if (meta.poster && tempChannelsMap[id].poster === DEFAULT_POSTER) {
-                    tempChannelsMap[id].poster = meta.poster; // Force le bon logo (ex: CNews)
+                    tempChannelsMap[id] = { id, name: dName, displayName: getPrettyName(dName), sources: [], poster: finalPoster };
+                } else if (!CUSTOM_LOGOS[dName] && meta.poster && tempChannelsMap[id].poster === DEFAULT_POSTER) {
+                    tempChannelsMap[id].poster = meta.poster; 
                 }
                 
                 const sourceExists = tempChannelsMap[id].sources.find(s => s.metaId === meta.id && s.provider.id === provider.id);
@@ -478,7 +491,7 @@ app.get('/', (req, res) => {
     <body>
         <div class="container">
             <h1>📺 Hybrid TV FR</h1>
-            <p>Votre add-on télévisuel haute-performance.<br>Édition Version 1.0.</p>
+            <p>Votre add-on télévisuel haute-performance.<br>Propulsé par un cache mémoire et des mises à jour invisibles.</p>
             
             <div class="options">
                 <label style="cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px;">
@@ -528,7 +541,7 @@ function handleManifest(req, res, conf) {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridproxy.fr.live.v1.' + conf, 
-        version: '1.0.0',
+        version: '1.1.0',
         name: conf === 'epg-on' ? 'Hybrid TV FR' : 'Hybrid TV FR (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition TV FR.',
         resources: ['catalog', 'meta', 'stream'],
@@ -608,7 +621,7 @@ app.get('/:conf?/catalog/tv/:id/:extra', async (req, res) => {
     res.json({ metas: paginatedMetas });
 });
 
-// === LE LECTEUR AVEC FILTRE ANTI-DOUBLON ABSOLU ===
+// === FILTRE ANTI-DOUBLONS INTÉGRÉ ===
 app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
     const isEpgOn = !req.params.conf || req.params.conf === 'epg-on';
     await waitForChannels();
