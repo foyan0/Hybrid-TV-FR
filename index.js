@@ -7,20 +7,19 @@ const readline = require('readline');
 const app = express();
 app.use(cors());
 
-// Variables globales
-let isUpdatingChannels = false;
+// Variables globales EPG
 let isUpdatingEPG = false;
 let lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
 let lastEpgError = "Téléchargement initial en cours...";
-
-const ADDON_PROVIDERS = [
-    { id: 'vavoo', base: 'https://tvvoo.hayd.uk/cfg-fr', label: 'Vavoo', isPriority: true },
-    { id: 'mio', base: 'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiLCJCRV9GUiJdLCJjYXRlZ29yaWVzIjp7IkZSIjpbIkdlbmVyYWwg8J+7oiIsIlNwb3J0cyDimq3igIsiLCJEb2N1bWVudGFpcmVzIPCfijrQuiIsIkZpbG1zIPCfjqwiLCJJbmZvcm1hdGlvbnMg8J+7oiIsIkVuZmFudHMgv5G2IiwiTXVzaWMg8J+OtSJdfSwiZW5hYmxlU2VhcmNoIjpmYWxzZX0', label: 'Mio', isPriority: false }
-];
-
-let channelsData = []; 
 let epgData = {}; 
+
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
+
+// Sources par défaut si l'utilisateur ne met rien
+const DEFAULT_SOURCES = [
+    'https://tvvoo.hayd.uk/cfg-fr',
+    'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiLCJCRV9GUiJdLCjI','jIjoiRlIiLCJCRV9GUiJdLCjI1Zm5hYmxlU2VhcmNoIjpmYWxzZX0' // (ou ton autre lien Mio complet)
+];
 
 // === NORMALISATION AGRESSIVE ===
 function normalizeChannelName(rawName) {
@@ -31,7 +30,6 @@ function normalizeChannelName(rawName) {
     n = n.replace(/^(FR|BE|CH|CA|VIP)\s*[:|/-]+\s*/, '');
     n = n.replace(/^FR\s+/, '');
     
-    // CENSURE : On bloque la fausse chaîne Disney+
     if (n === 'DISNEY+' || n === 'DISNEY PLUS') return '';
 
     const tags = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'VAVOO', 'DIRECT', 'RAW', 'ACCESS'];
@@ -40,7 +38,6 @@ function normalizeChannelName(rawName) {
     n = n.replace(/\bHD\b/g, ' '); 
     n = n.replace(/\s+/g, ' ').trim();
 
-    // Raccords Spéciaux
     if (n.includes('BFM') && !n.includes('BUSINESS') && !n.includes('PARIS') && !n.includes('LYON')) return 'BFMTV';
     if (n.includes('CNEWS') || n.includes('C NEWS')) return 'CNEWS';
     if (n.includes('FRANCEINFO') || n.includes('FRANCE INFO')) return 'FRANCE INFO';
@@ -260,10 +257,8 @@ async function fetchAndParseEPG(url, isGz) {
             }
 
             const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
-
             let localChannels = {}; 
             let localEpg = {};      
-            
             let inChannel = false, chanBlock = '';
             let inProgramme = false, progBlock = '';
 
@@ -306,30 +301,17 @@ async function fetchAndParseEPG(url, isGz) {
                 }
             });
 
-            const timeoutId = setTimeout(() => { 
-                stream.destroy(); 
-                reject(new Error("Timeout")); 
-            }, 60000);
-
-            rl.on('close', () => {
-                clearTimeout(timeoutId);
-                resolve(localEpg);
-            });
-            rl.on('error', (err) => {
-                clearTimeout(timeoutId);
-                reject(err);
-            });
-
+            const timeoutId = setTimeout(() => { stream.destroy(); reject(new Error("Timeout")); }, 60000);
+            rl.on('close', () => { clearTimeout(timeoutId); resolve(localEpg); });
+            rl.on('error', (err) => { clearTimeout(timeoutId); reject(err); });
         } catch (err) { reject(err); }
     });
 }
 
-// === TÉLÉCHARGEMENT EPG MASSIF ===
 async function updateEPG() {
     if (isUpdatingEPG) return;
     isUpdatingEPG = true; 
     let tempEpgData = {};
-    
     const sources = [
         { url: 'https://xmltvfr.fr/xmltv/xmltv_francophone.xml', isGz: false },
         { url: 'https://epgshare01.online/epgshare01/epg_ripper_FR1.xml.gz', isGz: true }
@@ -339,25 +321,18 @@ async function updateEPG() {
         for (const source of sources) {
             try {
                 const parsedEpg = await fetchAndParseEPG(source.url, source.isGz);
-                
                 for (const channelKey in parsedEpg) {
                     if (!tempEpgData[channelKey] && parsedEpg[channelKey].length > 0) {
                         tempEpgData[channelKey] = parsedEpg[channelKey];
                     }
                 }
-                
                 if (Object.keys(tempEpgData).length > 100) break;
             } catch (err) {}
         }
-        
         if (Object.keys(tempEpgData).length > 10) {
             epgData = tempEpgData;
             lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
-            lastEpgError = ""; 
-        } else {
-            lastEpgError = "Toutes les sources EPG ont échoué.";
         }
-        
     } finally {
         isUpdatingEPG = false; 
     }
@@ -365,35 +340,27 @@ async function updateEPG() {
 
 function getEpgForChannel(channelName) {
     if (!epgData || Object.keys(epgData).length === 0) return null;
-    const syncKey = toSyncId(channelName);
-    return epgData[syncKey] || null;
+    return epgData[toSyncId(channelName)] || null;
 }
 
-// === SAS D'ATTENTE ===
-async function waitForChannels() {
-    let tries = 0;
-    while(isUpdatingChannels && tries < 30) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        tries++;
-    }
-}
-
-// === MISE À JOUR DES FLUX ===
-async function fetchAddonCatalog(provider) {
+// === RÉCUPÉRATION DYNAMIQUE DES SOURCES (VERSION META-ADDON) ===
+async function fetchAddonCatalog(providerUrl) {
     let allMetas = [];
     try {
-        const manifestRes = await axios.get(`${provider.base}/manifest.json`, { timeout: 10000 });
-        for (const catalog of manifestRes.data.catalogs) {
+        const manifestRes = await axios.get(`${providerUrl}/manifest.json`, { timeout: 8000 });
+        const base = providerUrl.replace(/\/manifest\.json$/, '');
+        
+        for (const catalog of manifestRes.data.catalogs || []) {
             let skip = 0; let hasMore = true; let pageCount = 0; let seenIds = new Set(); 
-            while (hasMore && pageCount < 15) {
+            while (hasMore && pageCount < 10) {
                 pageCount++;
                 try {
-                    let url = skip > 0 ? `${provider.base}/catalog/${catalog.type}/${catalog.id}/skip=${skip}.json` : `${provider.base}/catalog/${catalog.type}/${catalog.id}.json`;
-                    let res = await axios.get(url, { timeout: 10000 });
+                    let url = skip > 0 ? `${base}/catalog/${catalog.type}/${catalog.id}/skip=${skip}.json` : `${base}/catalog/${catalog.type}/${catalog.id}.json`;
+                    let res = await axios.get(url, { timeout: 8000 });
                     if (res.data && res.data.metas && res.data.metas.length > 0) {
                         let newAdded = 0;
                         res.data.metas.forEach(m => {
-                            if (!seenIds.has(m.id)) { seenIds.add(m.id); allMetas.push(m); newAdded++; }
+                            if (!seenIds.has(m.id)) { seenIds.add(m.id); allMetas.push({ ...m, _providerBase: base }); newAdded++; }
                         });
                         if (newAdded === 0) hasMore = false; else skip += res.data.metas.length; 
                     } else { hasMore = false; }
@@ -404,112 +371,168 @@ async function fetchAddonCatalog(provider) {
     return allMetas;
 }
 
-async function updateStreams() {
-    if (isUpdatingChannels) return;
-    isUpdatingChannels = true;
-    try {
-        let tempChannelsMap = {};
-        for (const provider of ADDON_PROVIDERS) {
-            const metas = await fetchAddonCatalog(provider);
-            metas.forEach(meta => {
-                let dName = normalizeChannelName(meta.name);
-                if (!dName || dName.length < 2) return; 
+async function getChannelsForSources(sourcesList) {
+    let tempChannelsMap = {};
+    for (let i = 0; i < sourcesList.length; i++) {
+        const providerUrl = sourcesList[i].trim();
+        if (!providerUrl) continue;
+        
+        const metas = await fetchAddonCatalog(providerUrl);
+        const base = providerUrl.replace(/\/manifest\.json$/, '');
 
-                const id = 'hyb_id_' + dName.replace(/[^a-zA-Z0-9+]/g, '_').toLowerCase();
+        metas.forEach(meta => {
+            let dName = normalizeChannelName(meta.name);
+            if (!dName || dName.length < 2) return; 
 
-                if (!tempChannelsMap[id]) {
-                    tempChannelsMap[id] = { id, name: dName, displayName: getPrettyName(dName), sources: [], poster: meta.poster || DEFAULT_POSTER };
-                } else if (meta.poster && tempChannelsMap[id].poster === DEFAULT_POSTER) {
-                    tempChannelsMap[id].poster = meta.poster; 
-                }
-                
-                const sourceExists = tempChannelsMap[id].sources.find(s => s.metaId === meta.id && s.provider.id === provider.id);
-                if (!sourceExists) tempChannelsMap[id].sources.push({ type: 'addon', metaId: meta.id, provider: provider });
-            });
-        }
-        let tempChannelsData = [];
-        Object.values(tempChannelsMap).forEach(ch => {
-            if (ch.sources.length > 0) {
-                ch.placements = getChannelPlacements(ch.name);
-                tempChannelsData.push(ch);
+            const id = 'hyb_id_' + dName.replace(/[^a-zA-Z0-9+]/g, '_').toLowerCase();
+
+            if (!tempChannelsMap[id]) {
+                tempChannelsMap[id] = { id, name: dName, displayName: getPrettyName(dName), sources: [], poster: meta.poster || DEFAULT_POSTER };
+            } else if (meta.poster && tempChannelsMap[id].poster === DEFAULT_POSTER) {
+                tempChannelsMap[id].poster = meta.poster; 
+            }
+            
+            const sourceExists = tempChannelsMap[id].sources.find(s => s.metaId === meta.id && s.providerBase === base);
+            if (!sourceExists) {
+                tempChannelsMap[id].sources.push({ 
+                    type: 'addon', 
+                    metaId: meta.id, 
+                    providerBase: base,
+                    isPriority: i === 0 // La 1ère source de la liste est prioritaire
+                });
             }
         });
-        if (tempChannelsData.length > 0) channelsData = tempChannelsData;
-    } catch (err) {}
-    isUpdatingChannels = false; 
+    }
+
+    let tempChannelsData = [];
+    Object.values(tempChannelsMap).forEach(ch => {
+        if (ch.sources.length > 0) {
+            ch.sources.sort((a, b) => (b.isPriority ? 1 : 0) - (a.isPriority ? 1 : 0));
+            ch.placements = getChannelPlacements(ch.name);
+            tempChannelsData.push(ch);
+        }
+    });
+    return tempChannelsData;
 }
 
-// === INTERFACE WEB ===
-app.get('/', (req, res) => {
-    let channelsStatus = isUpdatingChannels ? '⏳ Recherche des chaînes en cours...' : `✅ <b>${channelsData.length}</b> chaînes actives`;
-    let epgStatus = "";
-    if (isUpdatingEPG) {
-        epgStatus = `⏳ Téléchargement du Programme TV en cours...`;
-    } else {
-        const epgCount = Object.keys(epgData).length;
-        if (epgCount > 0) {
-            epgStatus = `✅ Programme téléchargé pour <b>${epgCount}</b> chaînes`;
-        } else {
-            epgStatus = `❌ Échec du téléchargement.<br><span style="color:#ff6b6b; font-size:12px;">Détails : ${lastEpgError}</span>`;
-        }
-    }
+// === INTERFACE WEB DYNAMIQUE (AVEC CHAMPS [+]/[-] POUR LES SOURCES) ===
+app.get('/', async (req, res) => {
+    let sourcesParam = req.query.sources;
+    let sourcesList = sourcesParam ? sourcesParam.split(',') : DEFAULT_SOURCES;
     
+    // On récupère les chaînes pour l'affichage de la page d'accueil
+    let channelsData = await getChannelsForSources(sourcesList);
+    let channelsStatus = `✅ <b>${channelsData.length}</b> chaînes actives`;
+    let epgCount = Object.keys(epgData).length;
+    let epgStatus = epgCount > 0 ? `✅ Programme téléchargé pour <b>${epgCount}</b> chaînes` : `⏳ Programme TV en cours...`;
+
     const html = `
     <!DOCTYPE html>
     <html lang="fr">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Hybrid TV FR</title>
+        <title>Hybrid TV FR - Meta Addon</title>
         <style>
             body { font-family: -apple-system, sans-serif; background: #141414; color: #fff; text-align: center; padding: 40px 20px; }
-            .container { max-width: 600px; margin: 0 auto; background: #1f1f1f; padding: 40px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-top: 4px solid #e50914; }
+            .container { max-width: 650px; margin: 0 auto; background: #1f1f1f; padding: 40px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-top: 4px solid #e50914; }
             h1 { color: #fff; font-size: 32px; margin-bottom: 10px; }
-            p { font-size: 16px; color: #aaa; margin-bottom: 30px; line-height: 1.6; }
-            .options { background: #111; padding: 15px; border-radius: 8px; margin-bottom: 25px; border: 1px solid #333; }
-            .btn { display: inline-block; background: #e50914; color: #fff; padding: 15px 30px; text-decoration: none; font-size: 16px; font-weight: bold; border-radius: 8px; margin: 10px; cursor: pointer; border: none; transition: 0.2s; }
-            .btn:hover { background: #f40612; transform: scale(1.05); }
+            p { font-size: 15px; color: #aaa; margin-bottom: 25px; line-height: 1.6; }
+            .options { background: #111; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #333; text-align: left; }
+            .source-row { display: flex; gap: 8px; margin-bottom: 10px; }
+            .source-row input { flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px; }
+            .btn { display: inline-block; background: #e50914; color: #fff; padding: 14px 25px; text-decoration: none; font-size: 15px; font-weight: bold; border-radius: 8px; margin: 5px; cursor: pointer; border: none; transition: 0.2s; }
+            .btn:hover { background: #f40612; transform: scale(1.02); }
             .btn-secondary { background: #333; }
             .btn-secondary:hover { background: #444; }
-            .stats { margin-top: 30px; font-size: 14px; color: #888; background: #111; padding: 15px; border-radius: 6px; line-height: 1.8; }
-            input[type="text"] { width: 100%; padding: 12px; margin-top: 20px; background: #111; color: #fff; border: 1px solid #444; border-radius: 6px; text-align: center; font-size: 14px; box-sizing: border-box; }
+            .btn-small { background: #444; padding: 8px 12px; font-size: 13px; border-radius: 6px; }
+            .stats { margin-top: 25px; font-size: 14px; color: #888; background: #111; padding: 15px; border-radius: 6px; line-height: 1.8; text-align: left; }
+            input[type="text"].main-link { width: 100%; padding: 12px; margin-top: 15px; background: #111; color: #fff; border: 1px solid #444; border-radius: 6px; text-align: center; font-size: 14px; box-sizing: border-box; }
         </style>
     </head>
     <body>
         <div class="container">
             <h1>📺 Hybrid TV FR</h1>
-            <p>Votre add-on télévisuel haute-performance.<br>Propulsé par un cache mémoire et des mises à jour invisibles.</p>
+            <p>Configure tes sources d'add-ons dynamiques ci-dessous (Vavoo, Mio, Sport, etc.), puis génère ton lien unique pour Stremio / Nuvio.</p>
             
             <div class="options">
-                <label style="cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px;">
-                    <input type="checkbox" id="epgToggle" checked onchange="updateLinks()" style="width: 20px; height: 20px; margin: 0; cursor: pointer;">
-                    <b style="font-size: 16px;">Activer le Programme TV</b>
+                <b style="font-size: 14px; color: #ccc;">Sources d'add-ons (jusqu'à 5) :</b><br><br>
+                <div id="sourcesContainer"></div>
+                <button type="button" onclick="addSourceField()" class="btn btn-small" style="margin-top: 5px;">+ Ajouter une source</button>
+            </div>
+
+            <div class="options" style="text-align: center;">
+                <label style="cursor: pointer; display: inline-flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="epgToggle" checked onchange="updateLinks()" style="width: 18px; height: 18px; cursor: pointer;">
+                    <b style="font-size: 15px;">Activer le Programme TV</b>
                 </label>
             </div>
             
-            <a href="#" id="stremioBtn" class="btn">▶ Ajouter à Stremio</a>
+            <a href="#" id="stremioBtn" class="btn">▶ Ajouter à Stremio / Nuvio</a>
             <button onclick="copyLink()" class="btn btn-secondary">📋 Copier le lien</button>
-            <input type="text" id="manifestLink" readonly>
+            <input type="text" id="manifestLink" class="main-link" readonly>
             
             <div class="stats">
                 ${channelsStatus}<br>
                 ${epgStatus}<br>
-                🕒 Dernière synchronisation du Programme TV : ${lastUpdate}
+                🕒 Synchronisation : ${lastUpdate}
             </div>
         </div>
+
         <script>
+            // Initialisation des champs de sources depuis l'URL ou par défaut
+            let initialSources = ${JSON.stringify(sourcesList)};
+
+            function renderSources() {
+                const container = document.getElementById('sourcesContainer');
+                container.innerHTML = '';
+                initialSources.forEach((src, index) => {
+                    if (index >= 5) return; // Limite à 5
+                    const div = document.createElement('div');
+                    div.className = 'source-row';
+                    div.innerHTML = \`
+                        <input type="text" value="\${src}" placeholder="https://..." oninput="updateSourceVal(\${index}, this.value)">
+                        \${initialSources.length > 1 ? '<button type="button" onclick="removeSource(\\' + index + '\\)" class="btn btn-small" style="background:#800;">✕</button>' : ''}
+                    \`;
+                    container.appendChild(div);
+                });
+                updateLinks();
+            }
+
+            function addSourceField() {
+                if (initialSources.length < 5) {
+                    initialSources.push('');
+                    renderSources();
+                }
+            }
+
+            function removeSource(index) {
+                initialSources.splice(index, 1);
+                renderSources();
+            }
+
+            function updateSourceVal(index, val) {
+                initialSources[index] = val;
+                updateLinks();
+            }
+
             function updateLinks() {
                 var isEpg = document.getElementById("epgToggle").checked;
                 var conf = isEpg ? "epg-on" : "epg-off";
+                var validSources = initialSources.map(s => s.trim()).filter(s => s.length > 0);
+                
                 var base = window.location.protocol + "//" + window.location.host;
-                var url = base + "/" + conf + "/manifest.json";
-                var stremioUrl = "stremio://" + window.location.host + "/" + conf + "/manifest.json";
+                var query = validSources.length > 0 ? "?sources=" + encodeURIComponent(validSources.join(',')) : "";
+                
+                var url = base + "/" + conf + "/manifest.json" + query;
+                var stremioUrl = "stremio://" + window.location.host + "/" + conf + "/manifest.json" + query;
                 
                 document.getElementById("manifestLink").value = url;
                 document.getElementById("stremioBtn").href = stremioUrl;
             }
-            updateLinks();
-            
+
+            renderSources();
+
             function copyLink() {
                 var copyText = document.getElementById("manifestLink");
                 copyText.select(); 
@@ -523,14 +546,14 @@ app.get('/', (req, res) => {
     res.send(html);
 });
 
-// === ROUTAGE INTELLIGENT ===
+// === ROUTAGE DES MANIFESTS DYNAMIQUES ===
 function handleManifest(req, res, conf) {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v1.' + conf, 
-        version: '1.0.0',
+        id: 'org.hybridproxy.fr.meta.' + conf, 
+        version: '2.0.0',
         name: conf === 'epg-on' ? 'Hybrid TV FR' : 'Hybrid TV FR (Sans Programme TV)',
-        description: 'L\'expérience IPTV ultime. Édition TV FR.',
+        description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -550,37 +573,17 @@ function handleManifest(req, res, conf) {
 app.get('/manifest.json', (req, res) => handleManifest(req, res, 'epg-on'));
 app.get('/:conf/manifest.json', (req, res) => handleManifest(req, res, req.params.conf));
 
-app.get('/:conf?/catalog/tv/:id.json', async (req, res) => {
-    await waitForChannels(); 
-    if (channelsData.length === 0) { res.setHeader('Cache-Control', 'no-cache'); return res.json({ metas: [] }); }
+// === CATALOGUES DYNAMIQUES ===
+app.get(['/:conf?/catalog/tv/:id.json', '/:conf?/catalog/tv/:id/:extra'], async (req, res) => {
+    let sourcesParam = req.query.sources;
+    let sourcesList = sourcesParam ? sourcesParam.split(',') : DEFAULT_SOURCES;
+    let channelsData = await getChannelsForSources(sourcesList);
+
+    if (channelsData.length === 0) { 
+        res.setHeader('Cache-Control', 'no-cache'); 
+        return res.json({ metas: [] }); 
+    }
     
-    res.setHeader('Cache-Control', 'max-age=14400, public'); 
-    const requestedCatalog = req.params.id; 
-    let skip = 0;
-    const validCatalogs = ['vavoo_tnt', 'vavoo_info', 'vavoo_jeunesse', 'vavoo_decouverte', 'vavoo_cinema', 'vavoo_musique', 'vavoo_canal', 'vavoo_sports', 'vavoo_autres'];
-    if (!validCatalogs.includes(requestedCatalog)) return res.json({ metas: [] });
-    
-    const filteredChannels = channelsData
-        .filter(ch => ch.placements.some(p => p.category === requestedCatalog))
-        .map(ch => {
-            const place = ch.placements.find(p => p.category === requestedCatalog);
-            return { ...ch, sortIndex: place.index };
-        })
-        .sort((a, b) => {
-            if (a.sortIndex !== b.sortIndex) return a.sortIndex - b.sortIndex;
-            return a.displayName.localeCompare(b.displayName);
-        });
-
-    const paginatedMetas = filteredChannels.slice(skip, skip + 100).map(ch => ({
-        id: ch.id, type: 'tv', name: ch.displayName, poster: ch.poster, posterShape: 'square'
-    }));
-    res.json({ metas: paginatedMetas });
-});
-
-app.get('/:conf?/catalog/tv/:id/:extra', async (req, res) => {
-    await waitForChannels(); 
-    if (channelsData.length === 0) { res.setHeader('Cache-Control', 'no-cache'); return res.json({ metas: [] }); }
-
     res.setHeader('Cache-Control', 'max-age=14400, public'); 
     const requestedCatalog = req.params.id; 
     let skip = 0;
@@ -588,6 +591,7 @@ app.get('/:conf?/catalog/tv/:id/:extra', async (req, res) => {
         const match = req.params.extra.match(/skip=(\d+)/);
         if (match) skip = parseInt(match[1], 10);
     }
+
     const validCatalogs = ['vavoo_tnt', 'vavoo_info', 'vavoo_jeunesse', 'vavoo_decouverte', 'vavoo_cinema', 'vavoo_musique', 'vavoo_canal', 'vavoo_sports', 'vavoo_autres'];
     if (!validCatalogs.includes(requestedCatalog)) return res.json({ metas: [] });
     
@@ -608,10 +612,13 @@ app.get('/:conf?/catalog/tv/:id/:extra', async (req, res) => {
     res.json({ metas: paginatedMetas });
 });
 
-// === LE LECTEUR AVEC FILTRE ANTI-DOUBLON ===
+// === Méta (Programme TV) ===
 app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
     const isEpgOn = !req.params.conf || req.params.conf === 'epg-on';
-    await waitForChannels();
+    let sourcesParam = req.query.sources;
+    let sourcesList = sourcesParam ? sourcesParam.split(',') : DEFAULT_SOURCES;
+    let channelsData = await getChannelsForSources(sourcesList);
+
     res.setHeader('Cache-Control', 'max-age=1800, public'); 
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ meta: {} });
@@ -619,10 +626,8 @@ app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
     let descriptionText = `▶ Diffusion en cours sur ${channel.displayName}...`;
     
     if (isEpgOn) {
-        if (isUpdatingEPG && Object.keys(epgData).length === 0) {
-            descriptionText = `▶ Programme TV en cours de téléchargement (Patientez)...`;
-        } else if (Object.keys(epgData).length === 0) {
-            descriptionText = `▶ Le Programme TV est momentanément indisponible...`;
+        if (Object.keys(epgData).length === 0) {
+            descriptionText = `▶ Le Programme TV est en cours de chargement...`;
         } else {
             const epgList = getEpgForChannel(channel.name);
             if (epgList && epgList.length > 0) {
@@ -656,25 +661,6 @@ app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
                         descriptionText += `\n📺 À SUIVRE :\n`;
                         descriptionText += filteredUpcoming.join('  |  ');
                     }
-                    
-                } else {
-                    const rawUpcoming = epgList.filter(p => p.start > now);
-                    let filteredUpcoming = [];
-                    let seenTimes = new Set();
-                    
-                    for (let p of rawUpcoming) {
-                        const uTime = formatTime(p.start);
-                        if (!seenTimes.has(uTime)) {
-                            seenTimes.add(uTime);
-                            filteredUpcoming.push(`${uTime} ${p.title}`);
-                        }
-                        if (filteredUpcoming.length === 4) break;
-                    }
-
-                    if (filteredUpcoming.length > 0) {
-                        descriptionText = `▶ Aucun programme renseigné en ce moment.\n📺 À VENIR :\n`;
-                        descriptionText += filteredUpcoming.join('  |  ');
-                    }
                 }
             }
         }
@@ -685,8 +671,12 @@ app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
     });
 });
 
+// === STREAMS (Récupération et tri des flux des sources dynamiques) ===
 app.get('/:conf?/stream/tv/:id.json', async (req, res) => {
-    await waitForChannels();
+    let sourcesParam = req.query.sources;
+    let sourcesList = sourcesParam ? sourcesParam.split(',') : DEFAULT_SOURCES;
+    let channelsData = await getChannelsForSources(sourcesList);
+
     res.setHeader('Cache-Control', 'max-age=1800, public'); 
     const rawIp = req.headers['x-forwarded-for'];
     const clientIp = rawIp ? rawIp.split(',')[0].trim() : req.socket.remoteAddress;
@@ -697,29 +687,29 @@ app.get('/:conf?/stream/tv/:id.json', async (req, res) => {
     try {
         let allStreams = [];
         for (const source of channel.sources) {
-            if (source.type === 'addon') {
-                try {
-                    const streamRes = await axios.get(`${source.provider.base}/stream/tv/${source.metaId}.json`, {
-                        headers: { 'X-Forwarded-For': clientIp }, timeout: 10000 
+            try {
+                const streamRes = await axios.get(`${source.providerBase}/stream/tv/${source.metaId}.json`, {
+                    headers: { 'X-Forwarded-For': clientIp }, timeout: 8000 
+                });
+                if (streamRes.data && streamRes.data.streams) {
+                    const labelName = source.providerBase.includes('tvvoo') ? 'Vavoo' : (source.providerBase.includes('tvmio') ? 'Mio' : 'Source');
+                    const mappedStreams = streamRes.data.streams.map(s => {
+                        let qual = "Qualité Standard (SD)";
+                        let up = (s.title || '').toUpperCase();
+                        if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) qual = "Ultra Haute Qualité (4K)";
+                        else if (up.includes('FHD') || up.includes('1080') || up.includes('HD') || up.includes('720')) qual = "Haute Qualité (HD/FHD)";
+                        return { ...s, _qualText: qual, _label: labelName, _isPriority: source.isPriority };
                     });
-                    if (streamRes.data && streamRes.data.streams) {
-                        const mappedStreams = streamRes.data.streams.map(s => {
-                            let qual = "Qualité Standard (SD)";
-                            let up = (s.title || '').toUpperCase();
-                            if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) qual = "Ultra Haute Qualité (4K)";
-                            else if (up.includes('FHD') || up.includes('1080') || up.includes('HD') || up.includes('720')) qual = "Haute Qualité (HD/FHD)";
-                            return { ...s, _qualText: qual, _label: source.provider.label, _isPriority: source.provider.isPriority };
-                        });
-                        allStreams = allStreams.concat(mappedStreams);
-                    }
-                } catch (err) {}
-            }
+                    allStreams = allStreams.concat(mappedStreams);
+                }
+            } catch (err) {}
         }
         
+        // Tri de stabilité : Priorité aux sources principales
         allStreams.sort((a, b) => {
-            if (a._label === 'Vavoo' && b._label === 'Mio') return -1; 
-            if (a._label === 'Mio' && b._label === 'Vavoo') return 1;
-            return b._score - a._score;
+            if (a._isPriority && !b._isPriority) return -1;
+            if (!a._isPriority && b._isPriority) return 1;
+            return 0;
         });
 
         const finalStreams = allStreams.map((s, idx) => ({
@@ -732,9 +722,7 @@ app.get('/:conf?/stream/tv/:id.json', async (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, async () => {
-    console.log(`Serveur démarré sur le port ${PORT}`);
+    console.log(`Meta-Addon Server démarré sur le port ${PORT}`);
     updateEPG(); 
-    updateStreams();
     setInterval(updateEPG, 3600000); 
-    setInterval(updateStreams, 14400000); 
 });
