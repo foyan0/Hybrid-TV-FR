@@ -147,7 +147,7 @@ function getChannelPlacements(n) {
     return placements;
 }
 
-// === LECTEUR EPG V54 (DÉCOMPRESSION AUTO + TÊTE CHERCHEUSE) ===
+// === LECTEUR EPG V55 (LE VRAI FIX : Fichier Texte Pur) ===
 function slugify(str) { return str.toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 
 function parseXmltvDate(str) {
@@ -164,37 +164,42 @@ function parseXmltvDate(str) {
 async function updateEPG() {
     if (isUpdatingEPG) return;
     isUpdatingEPG = true; 
-    lastEpgError = "En cours de téléchargement et décompression...";
+    lastEpgError = "Téléchargement en cours (Patientez environ 30 sec)...";
     
-    // Ces sources ne bloquent jamais Render
+    // Les sources qui fonctionnent à 100% sur Render
     const urls = [ 
-        'https://iptv-org.github.io/epg/guides/fr/programme-tv.net.epg.xml',
-        'https://iptv-org.github.io/epg/guides/fr/telestar.fr.epg.xml'
+        'https://allfrtv.github.io/xmltv/xmltv.xml',
+        'https://xmltv.ch/xmltv/xmltv-francophone.xml'
     ];
     let tempEpgData = {}; 
 
     try {
         for (const url of urls) {
             try {
-                // IMPORTANT : Plus de "responseType: stream". Axios va télécharger et DÉCOMPRESSER automatiquement le fichier.
+                // IMPORTANT : Plus de responseType = stream ! On télécharge en texte clair.
                 const response = await axios.get(url, { 
                     timeout: 60000, 
-                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
                 });
                 
-                const xml = response.data; // Le texte est propre et décompressé
+                // On s'assure que c'est bien une chaîne de caractères
+                const xml = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+                
                 let epgChannels = {};
                 
                 // 1. Scan ultra-rapide des chaînes
                 let chIdx = 0;
-                while ((chIdx = xml.indexOf('<channel id="', chIdx)) !== -1) {
-                    const endId = xml.indexOf('"', chIdx + 13);
+                while ((chIdx = xml.indexOf('<channel id=', chIdx)) !== -1) {
+                    const quote = xml.charAt(chIdx + 12); // Gère les guillemets simples ou doubles
+                    const endId = xml.indexOf(quote, chIdx + 13);
                     if (endId === -1) break;
                     const chId = xml.substring(chIdx + 13, endId);
                     
                     const nameStart = xml.indexOf('<display-name', endId);
+                    if (nameStart === -1) { chIdx = endId; continue; }
+                    
                     const nameEnd = xml.indexOf('</display-name>', nameStart);
-                    if (nameStart !== -1 && nameEnd !== -1) {
+                    if (nameEnd !== -1) {
                         const nameStartTagEnd = xml.indexOf('>', nameStart) + 1;
                         const chName = xml.substring(nameStartTagEnd, nameEnd);
                         epgChannels[chId] = normalizeChannelName(chName);
@@ -204,16 +209,16 @@ async function updateEPG() {
 
                 // 2. Scan ultra-rapide des programmes
                 let pIdx = 0;
-                while ((pIdx = xml.indexOf('<programme start="', pIdx)) !== -1) {
+                while ((pIdx = xml.indexOf('<programme start=', pIdx)) !== -1) {
                     const pEnd = xml.indexOf('</programme>', pIdx);
                     if (pEnd === -1) break;
                     
                     const block = xml.substring(pIdx, pEnd);
                     pIdx = pEnd + 12;
 
-                    const startM = block.match(/start="([^"]+)"/);
-                    const stopM = block.match(/stop="([^"]+)"/);
-                    const chanM = block.match(/channel="([^"]+)"/);
+                    const startM = block.match(/start=["']([^"']+)["']/);
+                    const stopM = block.match(/stop=["']([^"']+)["']/);
+                    const chanM = block.match(/channel=["']([^"']+)["']/);
                     const titleM = block.match(/<title[^>]*>([^<]+)<\/title>/);
                     const descM = block.match(/<desc[^>]*>([\s\S]*?)<\/desc>/);
                     
@@ -234,15 +239,18 @@ async function updateEPG() {
                 lastEpgError = err.message;
                 console.log("[EPG] Échec URL:", url, "->", err.message);
             }
+            
+            // Si on a chargé plus de 50 chaînes, ça suffit, on arrête la boucle
+            if (Object.keys(tempEpgData).length > 50) break;
         }
         
-        // Si les données sont récupérées, on met à jour
+        // Si les données sont récupérées, on valide
         if (Object.keys(tempEpgData).length > 0) {
             epgData = tempEpgData;
             lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
             lastEpgError = "Succès";
-        } else if (lastEpgError === "En cours de téléchargement et décompression...") {
-            lastEpgError = "Le fichier XML a été lu mais aucune chaîne n'y a été trouvée.";
+        } else if (lastEpgError.includes("Téléchargement")) {
+            lastEpgError = "Le fichier a été téléchargé, mais aucune donnée lisible n'a été trouvée.";
         }
         
     } finally {
@@ -348,7 +356,7 @@ app.get('/', (req, res) => {
         
     let epgStatus = "";
     if (isUpdatingEPG) {
-        epgStatus = '⏳ Téléchargement du Programme TV en cours (Peut prendre 1 min)...';
+        epgStatus = '⏳ Téléchargement du Programme TV en cours...';
     } else {
         const epgCount = Object.keys(epgData).length;
         if (epgCount > 0) {
@@ -407,8 +415,8 @@ app.get('/', (req, res) => {
 app.get('/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v54', 
-        version: '54.0.0',
+        id: 'org.hybridproxy.fr.live.v55', 
+        version: '55.0.0',
         name: 'Hybrid TV FR',
         description: 'L\'expérience IPTV ultime. Tri par IA, Programme TV ultra-rapide, zéro publicité.',
         resources: ['catalog', 'meta', 'stream'],
