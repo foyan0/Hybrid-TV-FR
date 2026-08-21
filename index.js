@@ -7,7 +7,7 @@ const readline = require('readline');
 const app = express();
 app.use(cors());
 
-// Variables globales EPG et Cache
+// Variables globales pour le programme TV (EPG) et le cache mémoire des flux
 let isUpdatingEPG = false;
 let lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
 let epgData = {}; 
@@ -15,7 +15,7 @@ let channelsCache = {};
 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
-// === DÉCODAGE DU TOKEN DE CONFIGURATION ===
+// Décodage du jeton de configuration encodé en Base64 présent dans l'URL
 function parseConfig(encodedConfig) {
     try {
         if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], epg: true };
@@ -26,7 +26,7 @@ function parseConfig(encodedConfig) {
     }
 }
 
-// === NORMALISATION AGRESSIVE ===
+// Normalisation des noms de chaînes pour la fusion multi-sources
 function normalizeChannelName(rawName) {
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     n = n.replace(/\s*\([Tt][Vv]\)\s*/g, '');
@@ -95,6 +95,7 @@ function normalizeChannelName(rawName) {
     return n;
 }
 
+// Génération d'une clé de synchronisation unique pour l'EPG
 function toSyncId(name) {
     if (!name) return '';
     let n = name.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -162,6 +163,7 @@ function toSyncId(name) {
     return n;
 }
 
+// Formattage propre des noms de chaînes
 function getPrettyName(n) {
     if (n === 'L EQUIPE') return "L'Équipe";
     if (n === 'CHASSE ET PECHE') return "Chasse et Pêche";
@@ -176,57 +178,58 @@ function getPrettyName(n) {
     return n.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.substr(1).toLowerCase());
 }
 
+// Rangement des chaînes dans les catégories neutres
 function getChannelPlacements(n) {
     let placements = [];
     if (['FRANCE INFO', 'LA CHAINE METEO', 'CNEWS', 'LCI', 'BFMTV', 'FRANCE 24', 'EURONEWS', 'LCN', '20 MINUTES TV'].includes(n) || n.startsWith('BFM ')) {
         let idx = 50;
         if(n === 'FRANCE INFO') idx = 1; else if(n === 'LA CHAINE METEO') idx = 2; else if(n === 'CNEWS') idx = 3; else if(n === 'LCI') idx = 4; else if(n === 'BFMTV') idx = 5; else if(n === 'FRANCE 24') idx = 6; else if(n === 'EURONEWS') idx = 7; else if(n.startsWith('BFM ')) idx = 20; 
-        placements.push({ category: 'vavoo_info', index: idx });
+        placements.push({ category: 'info', index: idx });
     }
     let jeuIdx = -1;
     if (n === 'CARTOON NETWORK') jeuIdx = 1; else if (n === 'DISNEY CHANNEL') jeuIdx = 2; else if (n === 'GULLI') jeuIdx = 3; else if (n === 'NICKELODEON') jeuIdx = 4; else if (n === 'GAME ONE') jeuIdx = 5; else if (n === 'DISNEY XD') jeuIdx = 6; else if (n === 'BOOMERANG') jeuIdx = 7; else if (n === 'CANAL+ KIDS') jeuIdx = 8; else if (n === 'CANAL J') jeuIdx = 9; else if (n === 'DISNEY JUNIOR') jeuIdx = 10; else if (n === 'NICKELODEON TEEN') jeuIdx = 11; else if (n === 'NICKELODEON JUNIOR') jeuIdx = 12; else if (n === 'NICKTOONS') jeuIdx = 13; else if (n === 'DISNEY CHANNEL +1') jeuIdx = 50; else if (n.includes('NICKELODEON') && (n.includes('+') || n.includes('14') || n.includes('1'))) jeuIdx = 51;
-    if (jeuIdx !== -1) placements.push({ category: 'vavoo_jeunesse', index: jeuIdx });
-    else if (['DISNEY', 'CARTOON', 'BOOMERANG', 'NICKELODEON', 'TIJI', 'TELETOON', 'PIWI', 'MANGAS', 'TOONAMI'].some(k => n.includes(k))) placements.push({ category: 'vavoo_jeunesse', index: 30 });
+    if (jeuIdx !== -1) placements.push({ category: 'jeunesse', index: jeuIdx });
+    else if (['DISNEY', 'CARTOON', 'BOOMERANG', 'NICKELODEON', 'TIJI', 'TELETOON', 'PIWI', 'MANGAS', 'TOONAMI'].some(k => n.includes(k))) placements.push({ category: 'jeunesse', index: 30 });
 
     let canIdx = -1;
     if(n==='CANAL+') canIdx=1; else if(n==='CANAL+ FOOT') canIdx=2; else if(n==='CANAL+ SPORT') canIdx=3; else if(n==='CANAL+ SPORT 360') canIdx=4; else if(n==='CANAL+ FORMULA 1') canIdx=5; else if(n==='CANAL+ CINEMA') canIdx=6; else if(n==='CANAL+ GRAND ECRAN') canIdx=7; else if(n==='CANAL+ BOX OFFICE') canIdx=8; else if(n==='CANAL+ SERIES') canIdx=9; else if(n==='CANAL+ FAMILY') canIdx=10; else if(n==='CANAL+ DOCS') canIdx=11; else if(n==='CANAL J') canIdx=12; else if(n==='CANAL+ KIDS') canIdx=13; else if(n==='CANAL+ 4K') canIdx=14; else if(n==='CANAL+ DECALE') canIdx=16; else if(n.includes('CSTAR HITS')) canIdx=17;
-    if(canIdx !== -1) placements.push({ category: 'vavoo_canal', index: canIdx });
-    else if (n.startsWith('CANAL') && !n.includes('PLAY')) placements.push({ category: 'vavoo_canal', index: 30 });
+    if(canIdx !== -1) placements.push({ category: 'canal', index: canIdx });
+    else if (n.startsWith('CANAL') && !n.includes('PLAY')) placements.push({ category: 'canal', index: 30 });
 
     if (['DISCOVERY', 'PLANETE', 'NATIONAL GEOGRAPHIC', 'USHUAIA', 'HISTOIRE', 'ANIMAUX', 'CHASSE', 'SCIENCE', 'TREK', 'SEASONS', 'MYZEN', 'CRIME DISTRICT', 'STAR CHANNEL'].some(k => n.includes(k))) {
         let decIndex = 10;
         if(n === 'DISCOVERY CHANNEL') decIndex = 1; else if(n.includes('PLANETE')) decIndex = 2; else if(n.includes('NATIONAL GEOGRAPHIC')) decIndex = 3;
-        placements.push({ category: 'vavoo_decouverte', index: decIndex });
+        placements.push({ category: 'decouverte', index: decIndex });
     }
 
-    if (['PARAMOUNT', 'WARNER', 'ACTION', 'TCM', 'CINE+', 'OCS', 'SYFY', 'SCI FI', 'SERIE CLUB', 'TV BREIZH', 'COMEDY CENTRAL', 'POLAR+'].some(k => n.includes(k))) placements.push({ category: 'vavoo_cinema', index: 10 });
+    if (['PARAMOUNT', 'WARNER', 'ACTION', 'TCM', 'CINE+', 'OCS', 'SYFY', 'SCI FI', 'SERIE CLUB', 'TV BREIZH', 'COMEDY CENTRAL', 'POLAR+'].some(k => n.includes(k))) placements.push({ category: 'cinema', index: 10 });
 
     if (['TRACE', 'M6 MUSIC', 'MTV', 'NRJ HITS', 'MCM', 'MEZZO', 'MELODY', 'CLUBBING TV', 'CSTAR HITS'].some(k => n.includes(k)) && n !== 'BFMTV') {
         let musIndex = 10;
         if(n.includes('M6 MUSIC')) musIndex = 1; else if(n.includes('NRJ HITS')) musIndex = 2; else if(n.includes('MTV')) musIndex = 3; else if(n.includes('TRACE')) musIndex = 4; else if(n.includes('MCM')) musIndex = 5; else if(n.includes('MEZZO') || n.includes('MELODY')) musIndex = 20; 
-        placements.push({ category: 'vavoo_musique', index: musIndex });
+        placements.push({ category: 'musique', index: musIndex });
     }
 
-    if (n === 'CANAL+ SPORT' || n === 'CANAL+ FOOT' || n === 'CANAL+ SPORT 360' || n === 'CANAL+ FORMULA 1') placements.push({ category: 'vavoo_sports', index: 250 });
+    if (n === 'CANAL+ SPORT' || n === 'CANAL+ FOOT' || n === 'CANAL+ SPORT 360' || n === 'CANAL+ FORMULA 1') placements.push({ category: 'sports', index: 250 });
     if (n.startsWith('BEIN SPORTS') || n.includes('BING SPORT')) {
         let match = n.match(/\d+/); let beinIdx = match ? parseInt(match[0]) : 0; if (n.includes('MAX')) beinIdx += 10; 
-        placements.push({ category: 'vavoo_sports', index: 100 + beinIdx });
+        placements.push({ category: 'sports', index: 100 + beinIdx });
     }
-    else if (n.startsWith('RMC SPORT') && !n.includes('MULTICANAL')) placements.push({ category: 'vavoo_sports', index: 120 });
-    else if (n.startsWith('EUROSPORT')) placements.push({ category: 'vavoo_sports', index: 130 });
-    else if (n.startsWith('DAZN')) placements.push({ category: 'vavoo_sports', index: 140 });
-    else if (['AUTOMOTO', 'GOLF', 'EQUIDIA', 'OLTV', 'INFOSPORT'].some(k => n.includes(k))) placements.push({ category: 'vavoo_sports', index: 150 });
-    else if (n === 'L EQUIPE') placements.push({ category: 'vavoo_sports', index: 160 });
-    else if (n.includes('SPORT') && !n.includes('CANAL')) placements.push({ category: 'vavoo_sports', index: 199 });
+    else if (n.startsWith('RMC SPORT') && !n.includes('MULTICANAL')) placements.push({ category: 'sports', index: 120 });
+    else if (n.startsWith('EUROSPORT')) placements.push({ category: 'sports', index: 130 });
+    else if (n.startsWith('DAZN')) placements.push({ category: 'sports', index: 140 });
+    else if (['AUTOMOTO', 'GOLF', 'EQUIDIA', 'OLTV', 'INFOSPORT'].some(k => n.includes(k))) placements.push({ category: 'sports', index: 150 });
+    else if (n === 'L EQUIPE') placements.push({ category: 'sports', index: 160 });
+    else if (n.includes('SPORT') && !n.includes('CANAL')) placements.push({ category: 'sports', index: 199 });
 
     const tntList = ['TF1', 'FRANCE 2', 'FRANCE 3', 'FRANCE 4', 'FRANCE 5', 'M6', 'ARTE', 'C8', 'W9', 'TMC', 'TFX', 'NRJ 12', 'LCP', 'PUBLIC SENAT', 'CSTAR', 'GULLI', 'TF1 SERIES', 'L EQUIPE', '6TER', 'RMC STORY', 'RMC DECOUVERTE', 'CHERIE 25'];
-    if (tntList.includes(n)) placements.push({ category: 'vavoo_tnt', index: tntList.indexOf(n) + 1 });
+    if (tntList.includes(n)) placements.push({ category: 'tnt', index: tntList.indexOf(n) + 1 });
 
-    if (placements.length === 0) placements.push({ category: 'vavoo_autres', index: 500 });
+    if (placements.length === 0) placements.push({ category: 'autres', index: 500 });
     return placements;
 }
 
-// === EXTRACTEUR EPG EN STREAMING ===
+// Analyseur de dates XMLTV
 function parseXmltvDate(str) {
     if (!str || str.length < 14) return 0;
     const y = str.substring(0,4), m = str.substring(4,6), d = str.substring(6,8);
@@ -246,6 +249,7 @@ function formatTime(timestamp) {
     }).format(new Date(timestamp)).replace(':', 'h');
 }
 
+// Téléchargement et analyse en continu du programme TV
 async function fetchAndParseEPG(url, isGz) {
     return new Promise(async (resolve, reject) => {
         try {
@@ -348,7 +352,7 @@ function getEpgForChannel(channelName) {
     return epgData[toSyncId(channelName)] || null;
 }
 
-// === NORMALISATEUR DE LIENS DE MANIFEST ===
+// Récupération dynamique des catalogues externes
 async function fetchAddonCatalog(providerUrl) {
     let allMetas = [];
     try {
@@ -415,7 +419,7 @@ async function getChannelsForSources(sourcesList) {
                     type: 'addon', 
                     metaId: meta.id, 
                     providerBase: base,
-                    sourceIndex: i // Respecte l'ordre exact de la liste (0 = n°1, 1 = n°2, etc.)
+                    sourceIndex: i 
                 });
             }
         });
@@ -424,7 +428,6 @@ async function getChannelsForSources(sourcesList) {
     let tempChannelsData = [];
     Object.values(tempChannelsMap).forEach(ch => {
         if (ch.sources.length > 0) {
-            // Tri strict selon l'ordre exact sur le site web
             ch.sources.sort((a, b) => a.sourceIndex - b.sourceIndex);
             ch.placements = getChannelPlacements(ch.name);
             tempChannelsData.push(ch);
@@ -435,7 +438,7 @@ async function getChannelsForSources(sourcesList) {
     return tempChannelsData;
 }
 
-// === INTERFACE WEB AVEC NUMÉROTATION DES PRIORITÉS ===
+// Interface Web avec gestion de configuration et tri numérique
 app.get('/', async (req, res) => {
     let sourcesParam = req.query.sources;
     let sourcesList = sourcesParam ? sourcesParam.split(',') : ['', ''];
@@ -631,7 +634,7 @@ app.get('/', async (req, res) => {
     res.send(html);
 });
 
-// === ROUTAGE PAR CONFIG TOKEN ===
+// Routage des manifests via le jeton de configuration
 app.get('/:config/manifest.json', (req, res) => {
     const config = parseConfig(req.params.config);
     const confName = config.epg ? 'epg-on' : 'epg-off';
@@ -639,21 +642,21 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '2.1.5',
+        version: '1.0.0',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
-            { type: 'tv', id: 'vavoo_tnt', name: '📺 TNT' },
-            { type: 'tv', id: 'vavoo_info', name: '📰 Information' },
-            { type: 'tv', id: 'vavoo_jeunesse', name: '👶 Jeunesse' },
-            { type: 'tv', id: 'vavoo_decouverte', name: '🔬 Découverte & Docu' },
-            { type: 'tv', id: 'vavoo_cinema', name: '🍿 Cinéma & Séries' },
-            { type: 'tv', id: 'vavoo_musique', name: '🎵 Musique' },
-            { type: 'tv', id: 'vavoo_canal', name: '🎟️ Bouquet Canal' },
-            { type: 'tv', id: 'vavoo_sports', name: '⚽ Sports' },
-            { type: 'tv', id: 'vavoo_autres', name: '📂 Autres' }
+            { type: 'tv', id: 'tnt', name: '📺 TNT' },
+            { type: 'tv', id: 'info', name: '📰 Information' },
+            { type: 'tv', id: 'jeunesse', name: '👶 Jeunesse' },
+            { type: 'tv', id: 'decouverte', name: '🔬 Découverte & Docu' },
+            { type: 'tv', id: 'cinema', name: '🍿 Cinéma & Séries' },
+            { type: 'tv', id: 'musique', name: '🎵 Musique' },
+            { type: 'tv', id: 'canal', name: '🎟️ Bouquet Canal' },
+            { type: 'tv', id: 'sports', name: '⚽ Sports' },
+            { type: 'tv', id: 'autres', name: '📂 Autres' }
         ]
     });
 });
@@ -676,7 +679,7 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
         if (match) skip = parseInt(match[1], 10);
     }
 
-    const validCatalogs = ['vavoo_tnt', 'vavoo_info', 'vavoo_jeunesse', 'vavoo_decouverte', 'vavoo_cinema', 'vavoo_musique', 'vavoo_canal', 'vavoo_sports', 'vavoo_autres'];
+    const validCatalogs = ['tnt', 'info', 'jeunesse', 'decouverte', 'cinema', 'musique', 'canal', 'sports', 'autres'];
     if (!validCatalogs.includes(requestedCatalog)) return res.json({ metas: [] });
     
     const filteredChannels = channelsData
@@ -785,10 +788,13 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             } catch (err) {}
         }
         
-        // Tri strict des flux vidéo selon l'ordre numérique des sources sur le site
+        // Tri strict des flux en fonction de l'ordre numérique défini sur la page d'administration
         allStreams.sort((a, b) => a._sourceIndex - b._sourceIndex);
 
-        const finalStreams = allStreams.map((s, idx) => ({
+        // LIMITATION À 10 SOURCES MAXIMUM POUR ÉVITER LES LENTURCES DE CHARGEMENT
+        const limitedStreams = allStreams.slice(0, 10);
+
+        const finalStreams = limitedStreams.map((s, idx) => ({
             url: s.url, name: `▶ Source ${idx + 1}`, title: s._qualText
         }));
         
@@ -798,7 +804,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, async () => {
-    console.log(`Meta-Addon Server démarré sur le port ${PORT}`);
+    console.log(`HybridTV Server démarré sur le port ${PORT}`);
     updateEPG(); 
     setInterval(updateEPG, 3600000); 
 });
