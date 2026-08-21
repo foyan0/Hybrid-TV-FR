@@ -7,7 +7,6 @@ const readline = require('readline');
 const app = express();
 app.use(cors());
 
-// Variables globales pour le programme TV (EPG) et le cache mémoire des flux
 let isUpdatingEPG = false;
 let lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
 let epgData = {}; 
@@ -15,7 +14,6 @@ let channelsCache = {};
 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
-// Décodage du jeton de configuration encodé en Base64 présent dans l'URL
 function parseConfig(encodedConfig) {
     try {
         if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], epg: true };
@@ -26,7 +24,6 @@ function parseConfig(encodedConfig) {
     }
 }
 
-// Normalisation des noms de chaînes pour la fusion multi-sources
 function normalizeChannelName(rawName) {
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     n = n.replace(/\s*\([Tt][Vv]\)\s*/g, '');
@@ -95,7 +92,6 @@ function normalizeChannelName(rawName) {
     return n;
 }
 
-// Génération d'une clé de synchronisation unique pour l'EPG
 function toSyncId(name) {
     if (!name) return '';
     let n = name.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -163,7 +159,6 @@ function toSyncId(name) {
     return n;
 }
 
-// Formattage propre des noms de chaînes
 function getPrettyName(n) {
     if (n === 'L EQUIPE') return "L'Équipe";
     if (n === 'CHASSE ET PECHE') return "Chasse et Pêche";
@@ -178,7 +173,6 @@ function getPrettyName(n) {
     return n.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.substr(1).toLowerCase());
 }
 
-// Rangement des chaînes dans les catégories neutres
 function getChannelPlacements(n) {
     let placements = [];
     if (['FRANCE INFO', 'LA CHAINE METEO', 'CNEWS', 'LCI', 'BFMTV', 'FRANCE 24', 'EURONEWS', 'LCN', '20 MINUTES TV'].includes(n) || n.startsWith('BFM ')) {
@@ -229,7 +223,6 @@ function getChannelPlacements(n) {
     return placements;
 }
 
-// Analyseur de dates XMLTV
 function parseXmltvDate(str) {
     if (!str || str.length < 14) return 0;
     const y = str.substring(0,4), m = str.substring(4,6), d = str.substring(6,8);
@@ -249,7 +242,6 @@ function formatTime(timestamp) {
     }).format(new Date(timestamp)).replace(':', 'h');
 }
 
-// Téléchargement et analyse en continu du programme TV
 async function fetchAndParseEPG(url, isGz) {
     return new Promise(async (resolve, reject) => {
         try {
@@ -352,7 +344,6 @@ function getEpgForChannel(channelName) {
     return epgData[toSyncId(channelName)] || null;
 }
 
-// Récupération dynamique et parallèle des catalogues externes
 async function fetchAddonCatalog(providerUrl) {
     let allMetas = [];
     try {
@@ -451,7 +442,6 @@ async function getChannelsForSources(sourcesList) {
     return tempChannelsData;
 }
 
-// Interface Web avec gestion de configuration et tri numérique
 app.get('/', async (req, res) => {
     let sourcesParam = req.query.sources;
     let sourcesList = sourcesParam ? sourcesParam.split(',') : ['', ''];
@@ -469,7 +459,7 @@ app.get('/', async (req, res) => {
             body { font-family: -apple-system, sans-serif; background: #141414; color: #fff; text-align: center; padding: 40px 20px; }
             .container { max-width: 650px; margin: 0 auto; background: #1f1f1f; padding: 40px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-top: 4px solid #e50914; }
             h1 { color: #fff; font-size: 32px; margin-bottom: 10px; }
-            p { font-size: 15px; color: #aaa; margin-bottom: 25px; line-height: 1.6; }
+            .intro-desc { font-size: 14px; color: #bbb; margin-bottom: 25px; line-height: 1.6; background: #111; padding: 15px; border-radius: 6px; border: 1px solid #333; text-align: left; }
             .section { background: #111; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #333; text-align: left; }
             .source-row { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
             .source-num { font-size: 13px; font-weight: bold; color: #e50914; min-width: 24px; text-align: center; }
@@ -490,7 +480,9 @@ app.get('/', async (req, res) => {
     <body>
         <div class="container">
             <h1>📺 HybridTV</h1>
-            <p>Configurez vos sources et définissez leur ordre de priorité, puis générez votre lien d'add-on.</p>
+            <div class="intro-desc">
+                <b>HybridTV</b> centralise vos différentes sources de flux en un seul add-on unifié. Définissez votre propre ordre de priorité : le système analyse et classe automatiquement les flux pour placer en tête les meilleures résolutions et les sources les plus stables.
+            </div>
             
             <div class="section">
                 <label style="font-size: 14px; color: #ccc; font-weight: bold;">Sources de flux (manifest.json) :</label><br>
@@ -647,7 +639,6 @@ app.get('/', async (req, res) => {
     res.send(html);
 });
 
-// Routage des manifests via le jeton de configuration
 app.get('/:config/manifest.json', (req, res) => {
     const config = parseConfig(req.params.config);
     const confName = config.epg ? 'epg-on' : 'epg-off';
@@ -655,7 +646,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '1.0.4',
+        version: '1.0.5',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -712,12 +703,13 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
     res.json({ metas: paginatedMetas });
 });
 
+// Route meta modifiée pour supprimer le cache agressif et afficher le programme en temps réel
 app.get('/:config/meta/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ meta: {} });
     
     let channelsData = await getChannelsForSources(config.sources);
-    res.setHeader('Cache-Control', 'max-age=1800, public'); 
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate'); // Forçage de la mise à jour en temps réel
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ meta: {} });
     
@@ -782,7 +774,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     if (!channel) return res.json({ streams: [] });
     
     try {
-        // Interrogation simultanée de toutes les sources en parallèle (Promise.all)
         let streamPromises = channel.sources.map(async (source) => {
             try {
                 const streamRes = await axios.get(`${source.providerBase}/stream/tv/${source.metaId}.json`, {
@@ -794,7 +785,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         let score = 0;
                         let up = (s.title || '').toUpperCase() + ' ' + (s.name || '').toUpperCase();
                         
-                        // Calcul du score de qualité et de stabilité
                         if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) {
                             qual = "Ultra Haute Qualité (4K)";
                             score += 300;
@@ -808,12 +798,10 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             score += 50;
                         }
 
-                        // Pénalisation des flux de secours ou de test
                         if (up.includes('BACKUP') || up.includes('SECOURS') || up.includes('ALT') || up.includes('TEST')) {
                             score -= 150;
                         }
                         
-                        // Bonus pour l'ordre de priorité défini par l'utilisateur (Source #1 pèse plus lourd)
                         score += (10 - source.sourceIndex) * 100;
 
                         return { ...s, _qualText: qual, _score: score };
@@ -826,10 +814,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
 
-        // Tri intelligent : Les flux ayant le meilleur score (Qualité + Stabilité + Priorité source) passent en premier
         allStreams.sort((a, b) => b._score - a._score);
-
-        // Limitation stricte aux 8 meilleures sources pour garantir un affichage instantané
         const limitedStreams = allStreams.slice(0, 8);
 
         const finalStreams = limitedStreams.map((s, idx) => ({
