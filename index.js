@@ -1,6 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
+const readline = require('readline');
 
 const app = express();
 app.use(cors());
@@ -9,6 +10,7 @@ app.use(cors());
 let isUpdatingChannels = false;
 let isUpdatingEPG = false;
 let lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
+let lastEpgError = "Aucune tentative";
 
 const ADDON_PROVIDERS = [
     { id: 'vavoo', base: 'https://tvvoo.hayd.uk/cfg-fr', label: 'Vavoo', isPriority: true },
@@ -44,13 +46,11 @@ function normalizeChannelName(rawName) {
     if (n.includes('WILD') && (n.includes('NAT') || n.includes('GEO'))) return 'NATIONAL GEOGRAPHIC WILD';
     if (n.includes('NAT GEO') || n.includes('NATIONAL GEO')) return 'NATIONAL GEOGRAPHIC';
     if (n.includes('CHASSE') && n.includes('PECHE')) return 'CHASSE ET PECHE';
-
     if (n.includes('DISCOVERY')) {
         if (n.includes('SCIENCE') || n.includes('SCI FI')) return 'DISCOVERY SCIENCE';
         if (n.includes('INVESTIGATION') || n.includes('ID')) return 'DISCOVERY INVESTIGATION';
         return 'DISCOVERY CHANNEL';
     }
-
     if (n.includes('PLANETE') && n.includes('CRIME')) return 'PLANETE+ CRIME';
     if (n.includes('PLANETE') && n.includes('AVENTURE')) return 'PLANETE+ AVENTURE';
     if (n.includes('PLANETE')) return 'PLANETE+';
@@ -58,7 +58,6 @@ function normalizeChannelName(rawName) {
     let beinMatch = n.match(/BEIN SPORTS?\s*(MAX)?\s*(\d+)/);
     if (beinMatch) return beinMatch[1] ? `BEIN SPORTS MAX ${beinMatch[2]}` : `BEIN SPORTS ${beinMatch[2]}`;
     if (n.includes('BEIN SPORT')) return 'BEIN SPORTS 1';
-
     if (n === 'CANAL PLUS' || n === 'CANAL') return 'CANAL+';
     if (n === 'CANAL PLUS FOOT' || n === 'FOOT+') return 'CANAL+ FOOT';
     if (n === 'CANAL PLUS SPORT') return 'CANAL+ SPORT';
@@ -72,11 +71,9 @@ function normalizeChannelName(rawName) {
     if (n === 'CANAL PLUS DECALE') return 'CANAL+ DECALE';
     if (n === 'CANAL PLUS BOX OFFICE') return 'CANAL+ BOX OFFICE';
     if (n.includes('CANAL') && (n.includes('ULTRA') || n.includes('4K'))) return 'CANAL+ 4K';
-
     if (n === 'DISNEY CHANNEL 1' || n === 'DISNEY 1') return 'DISNEY CHANNEL +1';
     if (n === 'DISNEY JR') return 'DISNEY JUNIOR';
     if (n === 'J ONE' || n === 'G1') return 'GAME ONE';
-
     return n;
 }
 
@@ -146,7 +143,7 @@ function getChannelPlacements(n) {
     return placements;
 }
 
-// === LECTEUR EPG AVEC SOURCES "ANTI-BLOCAGE" (IPTV-ORG) ===
+// === LECTEUR EPG V52 (Anti-Timeout, Proxy intégré et Diagnostic) ===
 function slugify(str) { return str.toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 
 function parseXmltvDate(str) {
@@ -163,81 +160,80 @@ function parseXmltvDate(str) {
 async function updateEPG() {
     if (isUpdatingEPG) return;
     isUpdatingEPG = true; 
+    lastEpgError = "En cours...";
     
-    // Ces sources GitHub ne bloquent pas les serveurs cloud comme Render
+    // Stratégie Anti-Blocage : 3 sources différentes (De la plus stable à la plus "cachée")
     const urls = [ 
-        'https://iptv-org.github.io/epg/guides/fr/programme-tv.net.epg.xml',
-        'https://iptv-org.github.io/epg/guides/fr/telestar.fr.epg.xml'
+        'https://xmltv.ch/xmltv/xmltv-francophone.xml', // Source 1 : Complète (Sport, Ciné, TNT)
+        'https://xmltv.ch/xmltv/xmltv-tnt.xml',         // Source 2 : Très légère (Seulement la TNT, ultra rapide)
+        'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://xmltv.ch/xmltv/xmltv-francophone.xml') // Source 3 : Proxy furtif
     ];
     let tempEpgData = {}; 
 
     try {
         for (const url of urls) {
             try {
+                // TIMEOUT POUSSÉ À 2 MINUTES (120000 ms) POUR RENDER !
                 const response = await axios.get(url, { 
-                    timeout: 20000,
-                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+                    responseType: 'stream', 
+                    timeout: 120000, 
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/114.0.0.0' }
                 });
-                const xml = response.data;
                 
-                // Si la page est bloquée (HTML) on passe à la source suivante
-                if (typeof xml !== 'string' || !xml.includes('<tv')) {
-                    continue;
-                }
-                
+                const rl = readline.createInterface({ input: response.data, crlfDelay: Infinity });
+
                 let epgChannels = {};
-                
-                // 1. Scan ultra-rapide des chaînes
-                let chIdx = 0;
-                while ((chIdx = xml.indexOf('<channel id="', chIdx)) !== -1) {
-                    const endId = xml.indexOf('"', chIdx + 13);
-                    if (endId === -1) break;
-                    const chId = xml.substring(chIdx + 13, endId);
+                let inChannel = false, chanBlock = '';
+                let inProgramme = false, progBlock = '';
+
+                for await (const line of rl) {
+                    if (line.includes('<channel ')) { inChannel = true; chanBlock = line; }
+                    else if (inChannel) { chanBlock += '\n' + line; }
                     
-                    const nameStart = xml.indexOf('<display-name', endId);
-                    const nameEnd = xml.indexOf('</display-name>', nameStart);
-                    if (nameStart !== -1 && nameEnd !== -1) {
-                        const nameStartTagEnd = xml.indexOf('>', nameStart) + 1;
-                        const chName = xml.substring(nameStartTagEnd, nameEnd);
-                        epgChannels[chId] = normalizeChannelName(chName);
+                    if (inChannel && chanBlock.includes('</channel>')) {
+                        const idM = chanBlock.match(/id="([^"]+)"/);
+                        const nameM = chanBlock.match(/<display-name[^>]*>(.*?)<\/display-name>/);
+                        if (idM && nameM) epgChannels[idM[1]] = normalizeChannelName(nameM[2]);
+                        inChannel = false; chanBlock = '';
                     }
-                    chIdx = nameEnd || chIdx + 10;
-                }
 
-                // 2. Scan ultra-rapide des programmes
-                let pIdx = 0;
-                while ((pIdx = xml.indexOf('<programme start="', pIdx)) !== -1) {
-                    const pEnd = xml.indexOf('</programme>', pIdx);
-                    if (pEnd === -1) break;
-                    
-                    const block = xml.substring(pIdx, pEnd);
-                    pIdx = pEnd + 12;
+                    if (line.includes('<programme ')) { inProgramme = true; progBlock = line; }
+                    else if (inProgramme) { progBlock += '\n' + line; }
 
-                    const startM = block.match(/start="([^"]+)"/);
-                    const stopM = block.match(/stop="([^"]+)"/);
-                    const chanM = block.match(/channel="([^"]+)"/);
-                    const titleM = block.match(/<title[^>]*>([^<]+)<\/title>/);
-                    const descM = block.match(/<desc[^>]*>([\s\S]*?)<\/desc>/);
-                    
-                    if (startM && stopM && chanM && titleM) {
-                        const rawChName = epgChannels[chanM[1]];
-                        if (rawChName) {
-                            if (!tempEpgData[rawChName]) tempEpgData[rawChName] = [];
-                            tempEpgData[rawChName].push({
-                                start: parseXmltvDate(startM[1]),
-                                stop: parseXmltvDate(stopM[1]),
-                                title: titleM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").trim(),
-                                desc: descM ? descM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").trim() : ''
-                            });
+                    if (inProgramme && progBlock.includes('</programme>')) {
+                        const startM = progBlock.match(/start="([^"]+)"/);
+                        const stopM = progBlock.match(/stop="([^"]+)"/);
+                        const chanM = progBlock.match(/channel="([^"]+)"/);
+                        const titleM = progBlock.match(/<title[^>]*>([^<]+)<\/title>/);
+                        const descM = progBlock.match(/<desc[^>]*>([\s\S]*?)<\/desc>/);
+                        
+                        if (startM && stopM && chanM && titleM) {
+                            const rawChName = epgChannels[chanM[1]];
+                            if (rawChName) {
+                                if (!tempEpgData[rawChName]) tempEpgData[rawChName] = [];
+                                tempEpgData[rawChName].push({
+                                    start: parseXmltvDate(startM[1]),
+                                    stop: parseXmltvDate(stopM[1]),
+                                    title: titleM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").trim(),
+                                    desc: descM ? descM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").trim() : ''
+                                });
+                            }
                         }
+                        inProgramme = false; progBlock = '';
                     }
+                }
+                
+                // Si on a réussi à charger plus de 10 chaînes, on s'arrête (pas besoin de tester les URLs de secours)
+                if (Object.keys(tempEpgData).length > 10) {
+                    lastEpgError = "Succès";
+                    break; 
                 }
             } catch (err) {
-                console.log("[EPG] Échec de la source :", url);
+                lastEpgError = err.message; // Capture l'erreur exacte (ex: "timeout of 120000ms exceeded")
+                console.log("[EPG] Échec URL:", url, "->", err.message);
             }
         }
         
-        // Si on a récupéré au moins des données, on valide la mise à jour
         if (Object.keys(tempEpgData).length > 0) {
             epgData = tempEpgData;
             lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
@@ -334,7 +330,7 @@ async function updateStreams() {
     isUpdatingChannels = false; 
 }
 
-// === INTERFACE WEB (AVEC COMPTEUR DE DIAGNOSTIC) ===
+// === INTERFACE WEB (AVEC DIAGNOSTIC PRÉCIS) ===
 app.get('/', (req, res) => {
     const host = req.get('host');
     const manifestUrl = `https://${host}/manifest.json`;
@@ -346,13 +342,13 @@ app.get('/', (req, res) => {
         
     let epgStatus = "";
     if (isUpdatingEPG) {
-        epgStatus = '⏳ Téléchargement du Programme TV en cours...';
+        epgStatus = '⏳ Téléchargement du Programme TV en cours (Peut prendre 2 min)...';
     } else {
         const epgCount = Object.keys(epgData).length;
         if (epgCount > 0) {
             epgStatus = `✅ Programme TV chargé pour <b>${epgCount}</b> chaînes (Maj : ${lastUpdate})`;
         } else {
-            epgStatus = `❌ Échec du téléchargement du Programme TV (Sources bloquées)`;
+            epgStatus = `❌ Échec du téléchargement.<br>Erreur technique : <i>${lastEpgError}</i>`;
         }
     }
     
@@ -405,8 +401,8 @@ app.get('/', (req, res) => {
 app.get('/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v51', 
-        version: '51.0.0',
+        id: 'org.hybridproxy.fr.live.v52', 
+        version: '52.0.0',
         name: 'Hybrid TV FR',
         description: 'L\'expérience IPTV ultime. Tri par IA, Programme TV ultra-rapide, zéro publicité.',
         resources: ['catalog', 'meta', 'stream'],
@@ -484,9 +480,9 @@ app.get('/meta/tv/:id.json', async (req, res) => {
     
     let descriptionText = `▶ Diffusion en cours sur ${channel.displayName}...`;
     if (isUpdatingEPG && Object.keys(epgData).length === 0) {
-        descriptionText = `▶ Programme TV en cours de téléchargement (Actualisez dans 15 sec)...`;
+        descriptionText = `▶ Programme TV en cours de téléchargement (Patientez)...`;
     } else if (Object.keys(epgData).length === 0) {
-        descriptionText = `▶ Le Programme TV est momentanément indisponible (Source bloquée)...`;
+        descriptionText = `▶ Le Programme TV est momentanément indisponible...`;
     }
     
     const epgList = getEpgForChannel(channel.name);
