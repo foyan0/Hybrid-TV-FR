@@ -1,7 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
-const zlib = require('zlib'); // Le décompresseur natif pour EPGShare01
+const zlib = require('zlib');
 
 const app = express();
 app.use(cors());
@@ -148,8 +148,7 @@ function getChannelPlacements(n) {
     return placements;
 }
 
-
-// === LECTEUR EPG V59 (Extraction avec ZLIB sur EPGShare01) ===
+// === LECTEUR EPG V60 (Fazzani + Extracteur Blindé) ===
 function slugify(str) { return str.toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 
 function parseXmltvDate(str) {
@@ -163,40 +162,33 @@ function parseXmltvDate(str) {
     return isNaN(ts) ? 0 : ts;
 }
 
-// L'extracteur Tête-Chercheuse (réutilisable)
 function extractEpgData(xml) {
     let tempEpg = {};
     let epgChannels = {};
     
-    // 1. Scan des chaînes
+    // 1. Scan ultra-sécurisé des chaînes
     let chIdx = 0;
-    while ((chIdx = xml.indexOf('<channel id=', chIdx)) !== -1) {
-        const quote = xml.charAt(chIdx + 12);
-        const endId = xml.indexOf(quote, chIdx + 13);
-        if (endId === -1) break;
-        const chId = xml.substring(chIdx + 13, endId);
+    while ((chIdx = xml.indexOf('<channel ', chIdx)) !== -1) {
+        const endTag = xml.indexOf('</channel>', chIdx);
+        if (endTag === -1) break;
+        const block = xml.substring(chIdx, endTag);
         
-        const nameStart = xml.indexOf('<display-name', endId);
-        if (nameStart === -1) { chIdx = endId; continue; }
+        const idM = block.match(/id=["']([^"']+)["']/);
+        const nameM = block.match(/<display-name[^>]*>([^<]+)<\/display-name>/);
         
-        const nameEnd = xml.indexOf('</display-name>', nameStart);
-        if (nameEnd !== -1) {
-            const nameStartTagEnd = xml.indexOf('>', nameStart) + 1;
-            const chName = xml.substring(nameStartTagEnd, nameEnd);
-            epgChannels[chId] = normalizeChannelName(chName);
+        if (idM && nameM) {
+            epgChannels[idM[1]] = normalizeChannelName(nameM[1]);
         }
-        chIdx = nameEnd || chIdx + 10;
+        chIdx = endTag + 10;
     }
 
-    // 2. Scan des programmes
+    // 2. Scan ultra-sécurisé des programmes
     let pIdx = 0;
-    while ((pIdx = xml.indexOf('<programme start=', pIdx)) !== -1) {
+    while ((pIdx = xml.indexOf('<programme ', pIdx)) !== -1) {
         const pEnd = xml.indexOf('</programme>', pIdx);
         if (pEnd === -1) break;
-        
         const block = xml.substring(pIdx, pEnd);
-        pIdx = pEnd + 12;
-
+        
         const startM = block.match(/start=["']([^"']+)["']/);
         const stopM = block.match(/stop=["']([^"']+)["']/);
         const chanM = block.match(/channel=["']([^"']+)["']/);
@@ -215,6 +207,7 @@ function extractEpgData(xml) {
                 });
             }
         }
+        pIdx = pEnd + 12;
     }
     return tempEpg;
 }
@@ -224,53 +217,59 @@ async function updateEPG() {
     isUpdatingEPG = true; 
     let tempEpgData = {};
     
-    // TENTATIVE 1 : La source mondiale compressée (La plus stable)
-    try {
-        lastEpgError = "Téléchargement depuis EPGShare01...";
-        const response = await axios.get('https://epgshare01.online/epgshare01/epg_ripper_FR1.xml.gz', { 
-            responseType: 'arraybuffer', // Indispensable pour lire le fichier Zippé
-            timeout: 60000, 
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-        });
-        
-        // Décompression du fichier .gz
-        const unzipped = await new Promise((resolve, reject) => {
-            zlib.gunzip(response.data, (err, buffer) => {
-                if (err) reject(err);
-                else resolve(buffer);
-            });
-        });
-        
-        const xml = unzipped.toString('utf-8');
-        tempEpgData = extractEpgData(xml);
-    } catch (err) {
-        console.log("[EPG] Échec EPGShare01 :", err.message);
-    }
+    // Les meilleures sources du net (Fazzani en priorité 1)
+    const urls = [ 
+        'https://raw.githubusercontent.com/Fazzani/grabber/master/guide.xml', // Ultra complet, ne bloque jamais
+        'https://xmltvfr.fr/xmltv/xmltv_francophone.xml',
+        'https://epgshare01.online/epgshare01/epg_ripper_FR1.xml.gz'
+    ];
 
-    // TENTATIVE 2 : La source française en texte clair (Si la 1ere échoue)
-    if (Object.keys(tempEpgData).length < 10) {
-        try {
-            lastEpgError = "Téléchargement depuis XMLTV.fr...";
-            const response = await axios.get('https://xmltvfr.fr/xmltv/xmltv_tnt.xml', { 
-                timeout: 30000, 
-                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-            });
-            const xml = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
-            tempEpgData = extractEpgData(xml);
-        } catch (err) {
-            lastEpgError = `Échec total. Dernière erreur: ${err.message}`;
-            console.log("[EPG] Échec XMLTV.fr :", err.message);
+    try {
+        for (const url of urls) {
+            try {
+                lastEpgError = `Test de la source: ${url.substring(0, 30)}...`;
+                const isGz = url.endsWith('.gz');
+                
+                const response = await axios.get(url, { 
+                    responseType: isGz ? 'arraybuffer' : 'text',
+                    timeout: 60000, 
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+                });
+                
+                let xml = '';
+                if (isGz) {
+                    const unzipped = await new Promise((resolve, reject) => {
+                        zlib.gunzip(response.data, (err, buffer) => {
+                            if (err) reject(err); else resolve(buffer);
+                        });
+                    });
+                    xml = unzipped.toString('utf-8');
+                } else {
+                    xml = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+                }
+                
+                tempEpgData = extractEpgData(xml);
+                
+                // Si on a plus de 50 chaînes, la source est bonne, on s'arrête
+                if (Object.keys(tempEpgData).length > 50) {
+                    break;
+                }
+            } catch (err) {
+                console.log("[EPG] Échec URL:", url, err.message);
+            }
         }
+        
+        if (Object.keys(tempEpgData).length > 10) {
+            epgData = tempEpgData;
+            lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
+            lastEpgError = "Succès";
+        } else {
+            lastEpgError = "Toutes les sources ont échoué ou ont été bloquées.";
+        }
+        
+    } finally {
+        isUpdatingEPG = false; 
     }
-    
-    // Validation
-    if (Object.keys(tempEpgData).length > 10) {
-        epgData = tempEpgData;
-        lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
-        lastEpgError = "Succès";
-    }
-    
-    isUpdatingEPG = false; 
 }
 
 function getEpgForChannel(channelName) {
@@ -281,14 +280,23 @@ function getEpgForChannel(channelName) {
     if (foundKey) return epgData[foundKey];
 
     const aliases = {
-        "TF1": ["TF1FR", "TF1HD"], "FRANCE2": ["FRANCETV2", "FRANCE2HD"], "M6": ["M6FR", "M6HD"],
-        "CNEWS": ["CNEWSFR"], "BFMTV": ["BFMTVFR", "BFM"], "ARTE": ["ARTEHD"], "W9": ["W9HD"],
-        "TMC": ["TMCHD"], "TFX": ["TFXHD"], "NRJ12": ["NRJ12HD"], "C8": ["C8HD"], "GULLI": ["GULLIHD"]
+        "TF1": ["TF1FR", "TF1HD", "TF1.fr"],
+        "FRANCE2": ["FRANCETV2", "FRANCE2HD", "France2.fr"],
+        "M6": ["M6FR", "M6HD", "M6.fr"],
+        "CNEWS": ["CNEWSFR", "CNews.fr"], 
+        "BFMTV": ["BFMTVFR", "BFM", "BFMTV.fr"], 
+        "ARTE": ["ARTEHD", "Arte.fr"], 
+        "W9": ["W9HD", "W9.fr"],
+        "TMC": ["TMCHD", "TMC.fr"], 
+        "TFX": ["TFXHD", "TFX.fr"], 
+        "NRJ12": ["NRJ12HD", "NRJ12.fr"], 
+        "C8": ["C8HD", "C8.fr"], 
+        "GULLI": ["GULLIHD", "Gulli.fr"]
     };
 
     if (aliases[targetSlug]) {
         for (const alias of aliases[targetSlug]) {
-            foundKey = Object.keys(epgData).find(k => slugify(k) === alias);
+            foundKey = Object.keys(epgData).find(k => slugify(k) === slugify(alias));
             if (foundKey) return epgData[foundKey];
         }
     }
@@ -362,9 +370,8 @@ async function updateStreams() {
             }
         });
 
-        if (tempChannelsData.length > 0) {
-            channelsData = tempChannelsData;
-        }
+        if (tempChannelsData.length > 0) channelsData = tempChannelsData;
+
     } catch (err) {}
     isUpdatingChannels = false; 
 }
@@ -414,7 +421,7 @@ app.get('/', (req, res) => {
     <body>
         <div class="container">
             <h1>📺 Hybrid TV FR</h1>
-            <p>Votre add-on télévisuel haute-performance.<br>Propulsé par un cache mémoire et des mises à jour invisibles.</p>
+            <p>Votre add-on télévisuel haute-performance.<br>Propulsé par le Fazzani Grabber.</p>
             
             <a href="${stremioUrl}" class="btn">▶ Ajouter à Stremio</a>
             <button onclick="copyLink()" class="btn btn-secondary">📋 Copier le lien</button>
@@ -440,10 +447,10 @@ app.get('/', (req, res) => {
 app.get('/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v59', 
-        version: '59.0.0',
+        id: 'org.hybridproxy.fr.live.v60', 
+        version: '60.0.0',
         name: 'Hybrid TV FR',
-        description: 'L\'expérience IPTV ultime. Tri par IA, Programme TV ultra-rapide, zéro publicité.',
+        description: 'L\'expérience IPTV ultime. Tri par IA, Programme TV détaillé, zéro publicité.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -518,6 +525,7 @@ app.get('/catalog/tv/:id/:extra', async (req, res) => {
     res.json({ metas: paginatedMetas });
 });
 
+// === LE NOUVEAU FORMATTAGE DE NUVIO (LA GRILLE TV) ===
 app.get('/meta/tv/:id.json', async (req, res) => {
     await waitForChannels();
     res.setHeader('Cache-Control', 'max-age=1800, public'); 
@@ -532,12 +540,46 @@ app.get('/meta/tv/:id.json', async (req, res) => {
     }
     
     const epgList = getEpgForChannel(channel.name);
-    if (epgList) {
+    if (epgList && epgList.length > 0) {
         const now = Date.now();
-        const currentProg = epgList.find(p => now >= p.start && now <= p.stop);
-        if (currentProg) {
-            descriptionText = `🔴 EN DIRECT : ${currentProg.title}`;
-            if (currentProg.desc) descriptionText += `\n\n${currentProg.desc}`;
+        // On trie les programmes par heure pour être sûr
+        epgList.sort((a, b) => a.start - b.start);
+        
+        // On cherche le programme en cours
+        const currentIndex = epgList.findIndex(p => now >= p.start && now <= p.stop);
+        
+        if (currentIndex !== -1) {
+            const currentProg = epgList[currentIndex];
+            const sTime = new Date(currentProg.start).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
+            const eTime = new Date(currentProg.stop).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
+            
+            // Le Titre en haut (Sert de sous-titre dans l'interface Nuvio)
+            descriptionText = `🔴 EN DIRECT (${sTime} - ${eTime}) : ${currentProg.title}`;
+            
+            // Le résumé en dessous
+            if (currentProg.desc) {
+                descriptionText += `\n\n${currentProg.desc}`;
+            }
+
+            // Les 5 prochains programmes à suivre
+            const upcoming = epgList.slice(currentIndex + 1, currentIndex + 6);
+            if (upcoming.length > 0) {
+                descriptionText += `\n\n📺 À SUIVRE :`;
+                upcoming.forEach(p => {
+                    const uTime = new Date(p.start).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
+                    descriptionText += `\n⏰ ${uTime} - ${p.title}`;
+                });
+            }
+        } else {
+            // Si on a le programme mais qu'il y a un "trou" à l'heure actuelle
+            const nextProgs = epgList.filter(p => p.start > now).slice(0, 5);
+            if (nextProgs.length > 0) {
+                descriptionText = `▶ Aucun programme renseigné en ce moment.\n\n📺 À VENIR :`;
+                nextProgs.forEach(p => {
+                    const uTime = new Date(p.start).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
+                    descriptionText += `\n⏰ ${uTime} - ${p.title}`;
+                });
+            }
         }
     }
 
