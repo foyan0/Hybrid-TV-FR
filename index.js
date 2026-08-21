@@ -11,7 +11,7 @@ app.use(cors());
 let isUpdatingEPG = false;
 let lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
 let epgData = {}; 
-let channelsCache = {}; // Cache mémoire pour éviter les lenteurs
+let channelsCache = {}; 
 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
@@ -348,12 +348,17 @@ function getEpgForChannel(channelName) {
     return epgData[toSyncId(channelName)] || null;
 }
 
-// === CACHE ET RÉCUPÉRATION DES CANAUX AVEC TIMEOUT RAPIDE ===
+// === NORMALISATEUR DE LIENS DE MANIFEST (Règle le bug des "0 éléments trouvés") ===
 async function fetchAddonCatalog(providerUrl) {
     let allMetas = [];
     try {
-        const manifestRes = await axios.get(`${providerUrl}/manifest.json`, { timeout: 5000 });
-        const base = providerUrl.replace(/\/manifest\.json$/, '');
+        let cleanUrl = providerUrl.trim();
+        if (!cleanUrl.endsWith('manifest.json')) {
+            cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
+        }
+        const base = cleanUrl.replace(/\/manifest\.json$/, '');
+
+        const manifestRes = await axios.get(cleanUrl, { timeout: 6000 });
         
         for (const catalog of manifestRes.data.catalogs || []) {
             let skip = 0; let hasMore = true; let pageCount = 0; let seenIds = new Set(); 
@@ -361,7 +366,7 @@ async function fetchAddonCatalog(providerUrl) {
                 pageCount++;
                 try {
                     let url = skip > 0 ? `${base}/catalog/${catalog.type}/${catalog.id}/skip=${skip}.json` : `${base}/catalog/${catalog.type}/${catalog.id}.json`;
-                    let res = await axios.get(url, { timeout: 5000 });
+                    let res = await axios.get(url, { timeout: 6000 });
                     if (res.data && res.data.metas && res.data.metas.length > 0) {
                         let newAdded = 0;
                         res.data.metas.forEach(m => {
@@ -388,7 +393,9 @@ async function getChannelsForSources(sourcesList) {
         if (!providerUrl) continue;
         
         const metas = await fetchAddonCatalog(providerUrl);
-        const base = providerUrl.replace(/\/manifest\.json$/, '');
+        let cleanUrl = providerUrl.trim();
+        if (!cleanUrl.endsWith('manifest.json')) cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
+        const base = cleanUrl.replace(/\/manifest\.json$/, '');
 
         metas.forEach(meta => {
             let dName = normalizeChannelName(meta.name);
@@ -427,8 +434,10 @@ async function getChannelsForSources(sourcesList) {
     return tempChannelsData;
 }
 
-// === INTERFACE WEB AVEC GESTION DU CONFIG TOKEN ===
+// === INTERFACE WEB AVEC ZONE D'IMPORT/EXPORT ===
 app.get('/', async (req, res) => {
+    let sourcesParam = req.query.sources;
+    let sourcesList = sourcesParam ? sourcesParam.split(',') : ['', ''];
     let epgCount = Object.keys(epgData).length;
     let epgStatus = epgCount > 0 ? `✅ Programme téléchargé pour <b>${epgCount}</b> chaînes` : `⏳ Programme TV en cours de chargement...`;
 
@@ -455,17 +464,25 @@ app.get('/', async (req, res) => {
             .btn-danger { background: #800; padding: 8px 12px; font-size: 13px; border-radius: 6px; cursor: pointer; color: #fff; border: none; }
             .stats { margin-top: 25px; font-size: 14px; color: #888; background: #111; padding: 15px; border-radius: 6px; line-height: 1.8; text-align: left; }
             input[type="text"].main-link { width: 100%; padding: 12px; margin-top: 15px; background: #111; color: #fff; border: 1px solid #444; border-radius: 6px; text-align: center; font-size: 14px; box-sizing: border-box; }
+            textarea.export-box { width: 100%; height: 60px; padding: 8px; background: #222; border: 1px solid #444; color: #aaa; border-radius: 6px; font-size: 12px; box-sizing: border-box; resize: none; margin-top: 5px; }
         </style>
     </head>
     <body>
         <div class="container">
             <h1>📺 Hybrid TV FR</h1>
-            <p>Ajoutez les liens de vos manifests d'add-ons ci-dessous, puis cliquez sur générer pour obtenir votre lien universel sécurisé.</p>
+            <p>Configurez vos sources, puis générez votre lien d'add-on universel et sécurisé.</p>
             
             <div class="section">
                 <label style="font-size: 14px; color: #ccc; font-weight: bold;">Sources de flux (manifest.json) :</label><br><br>
                 <div id="sourcesContainer"></div>
                 <button type="button" onclick="addSourceField()" class="btn btn-small">+ Ajouter une source</button>
+            </div>
+
+            <div class="section">
+                <label style="font-size: 14px; color: #ccc; font-weight: bold;">🔑 Code de Sauvegarde / Partage :</label><br>
+                <span style="font-size: 12px; color: #777;">Copiez ce code pour sauvegarder vos sources, ou collez un code reçu pour l'importer :</span>
+                <textarea id="exportTokenBox" class="export-box" placeholder="Code de configuration..."></textarea>
+                <button type="button" onclick="importToken()" class="btn btn-small" style="margin-top: 5px;">📥 Importer le code</button>
             </div>
 
             <div class="section" style="text-align: center;">
@@ -490,9 +507,7 @@ app.get('/', async (req, res) => {
         </div>
 
         <script>
-            // Restauration automatique depuis le navigateur (localStorage)
-            let savedSources = localStorage.getItem('hybrid_sources');
-            let sources = savedSources ? JSON.parse(savedSources) : ['', ''];
+            let sources = ${JSON.stringify(sourcesList)};
 
             function renderSources() {
                 const container = document.getElementById('sourcesContainer');
@@ -507,6 +522,7 @@ app.get('/', async (req, res) => {
                     \`;
                     container.appendChild(div);
                 });
+                updateExportToken();
             }
 
             function addSourceField() {
@@ -529,6 +545,34 @@ app.get('/', async (req, res) => {
                     if (el) sources[index] = el.value.trim();
                 });
                 localStorage.setItem('hybrid_sources', JSON.stringify(sources));
+                updateExportToken();
+            }
+
+            function updateExportToken() {
+                const validSources = sources.filter(s => s.length > 0);
+                const isEpg = document.getElementById("epgToggle").checked;
+                const configObj = { sources: validSources, epg: isEpg };
+                const token = btoa(JSON.stringify(configObj));
+                document.getElementById('exportTokenBox').value = token;
+            }
+
+            function importToken() {
+                const token = document.getElementById('exportTokenBox').value.trim();
+                try {
+                    const jsonStr = atob(token);
+                    const config = JSON.parse(jsonStr);
+                    if (config.sources && Array.isArray(config.sources)) {
+                        sources = config.sources;
+                        if (sources.length === 0) sources = ['', ''];
+                        if (config.epg !== undefined) document.getElementById("epgToggle").checked = config.epg;
+                        renderSources();
+                        alert("Configuration importée avec succès !");
+                    } else {
+                        alert("Code invalide.");
+                    }
+                } catch(e) {
+                    alert("Erreur : Ce code de sauvegarde est corrompu ou invalide.");
+                }
             }
 
             function generateLink() {
@@ -538,19 +582,19 @@ app.get('/', async (req, res) => {
                     alert("Veuillez entrer au moins un lien de source !");
                     return;
                 }
-                const isEpg = document.getElementById("epgToggle").checked;
-                
-                // Création du Token de configuration encodé en Base64 (Le "Code")
-                const configObj = { sources: validSources, epg: isEpg };
-                const configToken = btoa(JSON.stringify(configObj));
-                
+                const token = document.getElementById('exportTokenBox').value;
                 const base = window.location.protocol + "//" + window.location.host;
-                const url = base + "/" + configToken + "/manifest.json";
+                const url = base + "/" + token + "/manifest.json";
                 
                 document.getElementById("manifestLink").value = url;
-                alert("Lien généré et sauvegardé avec succès !");
+                alert("Lien généré avec succès !");
             }
 
+            // Chargement initial mémoire locale si dispo
+            let savedSources = localStorage.getItem('hybrid_sources');
+            if (savedSources && !${sourcesParam ? 'true' : 'false'}) {
+                sources = JSON.parse(savedSources);
+            }
             renderSources();
 
             function copyLink() {
@@ -570,7 +614,7 @@ app.get('/', async (req, res) => {
     res.send(html);
 });
 
-// === ROUTAGE DES MANIFESTS PAR CONFIG TOKEN ===
+// === ROUTAGE PAR CONFIG TOKEN ===
 app.get('/:config/manifest.json', (req, res) => {
     const config = parseConfig(req.params.config);
     const confName = config.epg ? 'epg-on' : 'epg-off';
@@ -578,7 +622,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridproxy.fr.meta.' + confName, 
-        version: '2.1.0',
+        version: '2.1.1',
         name: config.epg ? 'Hybrid TV FR' : 'Hybrid TV FR (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon sécurisée.',
         resources: ['catalog', 'meta', 'stream'],
@@ -597,7 +641,6 @@ app.get('/:config/manifest.json', (req, res) => {
     });
 });
 
-// === CATALOGUES PAR CONFIG TOKEN ===
 app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ metas: [] });
@@ -636,7 +679,6 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
     res.json({ metas: paginatedMetas });
 });
 
-// === Méta (Programme TV) ===
 app.get('/:config/meta/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ meta: {} });
@@ -694,7 +736,6 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
     });
 });
 
-// === STREAMS RAPIDES AVEC TIMEOUT ===
 app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
