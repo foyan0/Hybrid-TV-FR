@@ -165,13 +165,22 @@ async function updateEPG() {
     if (isUpdatingEPG) return;
     isUpdatingEPG = true; 
     
-    const urls = [ 'https://allfrtv.github.io/xmltv/xmltv.xml' ];
+    // Ajout d'une source de secours au cas où la première est instable
+    const urls = [ 
+        'https://allfrtv.github.io/xmltv/xmltv.xml',
+        'https://xmltv.ch/xmltv/xmltv-francophone.xml'
+    ];
     let tempEpgData = {}; 
 
     try {
         for (const url of urls) {
             try {
-                const response = await axios.get(url, { responseType: 'stream', timeout: 30000 });
+                // Ajout d'un faux navigateur (User-Agent) pour éviter que Github Pages ne bloque la connexion de Render
+                const response = await axios.get(url, { 
+                    responseType: 'stream', 
+                    timeout: 30000,
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+                });
                 const rl = readline.createInterface({ input: response.data, crlfDelay: Infinity });
 
                 let epgChannels = {};
@@ -227,6 +236,9 @@ async function updateEPG() {
             } catch (err) {
                 console.log("[EPG] Échec de la source :", url);
             }
+            
+            // Si on a récupéré les programmes avec succès (plus de 50 chaînes), on ne tire pas sur la source de secours
+            if (Object.keys(tempEpgData).length > 50) break;
         }
         
         if (Object.keys(tempEpgData).length > 0) {
@@ -325,7 +337,7 @@ async function updateStreams() {
     isUpdatingChannels = false; 
 }
 
-// === INTERFACE WEB (MISE À JOUR) ===
+// === INTERFACE WEB ===
 app.get('/', (req, res) => {
     const host = req.get('host');
     const manifestUrl = `https://${host}/manifest.json`;
@@ -388,8 +400,8 @@ app.get('/', (req, res) => {
 app.get('/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v48.1', 
-        version: '48.1.0',
+        id: 'org.hybridproxy.fr.live.v49', 
+        version: '49.0.0',
         name: 'Hybrid TV FR',
         description: 'L\'expérience IPTV ultime. Tri par IA, Programme TV ultra-rapide, zéro publicité.',
         resources: ['catalog', 'meta', 'stream'],
@@ -468,6 +480,8 @@ app.get('/meta/tv/:id.json', async (req, res) => {
     let descriptionText = `▶ Diffusion en cours sur ${channel.displayName}...`;
     if (isUpdatingEPG && Object.keys(epgData).length === 0) {
         descriptionText = `▶ Programme TV en cours de téléchargement (Actualisez dans 15 sec)...`;
+    } else if (Object.keys(epgData).length === 0) {
+        descriptionText = `▶ Le Programme TV est momentanément indisponible...`;
     }
     
     const epgList = getEpgForChannel(channel.name);
