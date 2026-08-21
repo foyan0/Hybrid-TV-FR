@@ -7,12 +7,24 @@ const readline = require('readline');
 const app = express();
 app.use(cors());
 
-// Variables globales EPG
+// Variables globales EPG et Cache
 let isUpdatingEPG = false;
 let lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
 let epgData = {}; 
+let channelsCache = {}; // Cache mémoire pour éviter les lenteurs
 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
+
+// === DÉCODAGE DU TOKEN DE CONFIGURATION ===
+function parseConfig(encodedConfig) {
+    try {
+        if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], epg: true };
+        const jsonStr = Buffer.from(encodedConfig, 'base64').toString('utf8');
+        return JSON.parse(jsonStr);
+    } catch (e) {
+        return { sources: [], epg: true };
+    }
+}
 
 // === NORMALISATION AGRESSIVE ===
 function normalizeChannelName(rawName) {
@@ -336,20 +348,20 @@ function getEpgForChannel(channelName) {
     return epgData[toSyncId(channelName)] || null;
 }
 
-// === RÉCUPÉRATION DYNAMIQUE DES SOURCES ===
+// === CACHE ET RÉCUPÉRATION DES CANAUX AVEC TIMEOUT RAPIDE ===
 async function fetchAddonCatalog(providerUrl) {
     let allMetas = [];
     try {
-        const manifestRes = await axios.get(`${providerUrl}/manifest.json`, { timeout: 8000 });
+        const manifestRes = await axios.get(`${providerUrl}/manifest.json`, { timeout: 5000 });
         const base = providerUrl.replace(/\/manifest\.json$/, '');
         
         for (const catalog of manifestRes.data.catalogs || []) {
             let skip = 0; let hasMore = true; let pageCount = 0; let seenIds = new Set(); 
-            while (hasMore && pageCount < 10) {
+            while (hasMore && pageCount < 6) {
                 pageCount++;
                 try {
                     let url = skip > 0 ? `${base}/catalog/${catalog.type}/${catalog.id}/skip=${skip}.json` : `${base}/catalog/${catalog.type}/${catalog.id}.json`;
-                    let res = await axios.get(url, { timeout: 8000 });
+                    let res = await axios.get(url, { timeout: 5000 });
                     if (res.data && res.data.metas && res.data.metas.length > 0) {
                         let newAdded = 0;
                         res.data.metas.forEach(m => {
@@ -365,6 +377,11 @@ async function fetchAddonCatalog(providerUrl) {
 }
 
 async function getChannelsForSources(sourcesList) {
+    const cacheKey = sourcesList.join('|');
+    if (channelsCache[cacheKey] && (Date.now() - channelsCache[cacheKey].timestamp < 3600000)) {
+        return channelsCache[cacheKey].data;
+    }
+
     let tempChannelsMap = {};
     for (let i = 0; i < sourcesList.length; i++) {
         const providerUrl = sourcesList[i].trim();
@@ -405,15 +422,13 @@ async function getChannelsForSources(sourcesList) {
             tempChannelsData.push(ch);
         }
     });
+
+    channelsCache[cacheKey] = { data: tempChannelsData, timestamp: Date.now() };
     return tempChannelsData;
 }
 
-// === INTERFACE WEB DYNAMIQUE CORRIGÉE ===
+// === INTERFACE WEB AVEC GESTION DU CONFIG TOKEN ===
 app.get('/', async (req, res) => {
-    let sourcesParam = req.query.sources;
-    // Si l'utilisateur n'a rien mis, on propose des champs vides pour qu'il saisisse ses propres liens en toute liberté
-    let sourcesList = sourcesParam ? sourcesParam.split(',') : ['', ''];
-    
     let epgCount = Object.keys(epgData).length;
     let epgStatus = epgCount > 0 ? `✅ Programme téléchargé pour <b>${epgCount}</b> chaînes` : `⏳ Programme TV en cours de chargement...`;
 
@@ -445,7 +460,7 @@ app.get('/', async (req, res) => {
     <body>
         <div class="container">
             <h1>📺 Hybrid TV FR</h1>
-            <p>Ajoutez les liens de vos manifests d'add-ons ci-dessous, puis cliquez sur générer pour obtenir votre lien universel.</p>
+            <p>Ajoutez les liens de vos manifests d'add-ons ci-dessous, puis cliquez sur générer pour obtenir votre lien universel sécurisé.</p>
             
             <div class="section">
                 <label style="font-size: 14px; color: #ccc; font-weight: bold;">Sources de flux (manifest.json) :</label><br><br>
@@ -475,7 +490,9 @@ app.get('/', async (req, res) => {
         </div>
 
         <script>
-            let sources = ${JSON.stringify(sourcesList)};
+            // Restauration automatique depuis le navigateur (localStorage)
+            let savedSources = localStorage.getItem('hybrid_sources');
+            let sources = savedSources ? JSON.parse(savedSources) : ['', ''];
 
             function renderSources() {
                 const container = document.getElementById('sourcesContainer');
@@ -511,6 +528,7 @@ app.get('/', async (req, res) => {
                     const el = document.getElementById('src_' + index);
                     if (el) sources[index] = el.value.trim();
                 });
+                localStorage.setItem('hybrid_sources', JSON.stringify(sources));
             }
 
             function generateLink() {
@@ -521,14 +539,16 @@ app.get('/', async (req, res) => {
                     return;
                 }
                 const isEpg = document.getElementById("epgToggle").checked;
-                const conf = isEpg ? "epg-on" : "epg-off";
+                
+                // Création du Token de configuration encodé en Base64 (Le "Code")
+                const configObj = { sources: validSources, epg: isEpg };
+                const configToken = btoa(JSON.stringify(configObj));
                 
                 const base = window.location.protocol + "//" + window.location.host;
-                const query = "?sources=" + encodeURIComponent(validSources.join(','));
+                const url = base + "/" + configToken + "/manifest.json";
                 
-                const url = base + "/" + conf + "/manifest.json" + query;
                 document.getElementById("manifestLink").value = url;
-                alert("Lien généré avec succès !");
+                alert("Lien généré et sauvegardé avec succès !");
             }
 
             renderSources();
@@ -550,14 +570,17 @@ app.get('/', async (req, res) => {
     res.send(html);
 });
 
-// === ROUTAGE DES MANIFESTS DYNAMIQUES ===
-function handleManifest(req, res, conf) {
+// === ROUTAGE DES MANIFESTS PAR CONFIG TOKEN ===
+app.get('/:config/manifest.json', (req, res) => {
+    const config = parseConfig(req.params.config);
+    const confName = config.epg ? 'epg-on' : 'epg-off';
+    
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.meta.' + conf, 
-        version: '2.0.1',
-        name: conf === 'epg-on' ? 'Hybrid TV FR' : 'Hybrid TV FR (Sans Programme TV)',
-        description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
+        id: 'org.hybridproxy.fr.meta.' + confName, 
+        version: '2.1.0',
+        name: config.epg ? 'Hybrid TV FR' : 'Hybrid TV FR (Sans Programme TV)',
+        description: 'L\'expérience IPTV ultime. Édition Meta-Addon sécurisée.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -572,19 +595,14 @@ function handleManifest(req, res, conf) {
             { type: 'tv', id: 'vavoo_autres', name: '📂 Autres' }
         ]
     });
-}
+});
 
-app.get('/manifest.json', (req, res) => handleManifest(req, res, 'epg-on'));
-app.get('/:conf/manifest.json', (req, res) => handleManifest(req, res, req.params.conf));
-
-// === CATALOGUES DYNAMIQUES ===
-app.get(['/:conf?/catalog/tv/:id.json', '/:conf?/catalog/tv/:id/:extra'], async (req, res) => {
-    let sourcesParam = req.query.sources;
-    if (!sourcesParam) return res.json({ metas: [] });
+// === CATALOGUES PAR CONFIG TOKEN ===
+app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], async (req, res) => {
+    const config = parseConfig(req.params.config);
+    if (!config.sources || config.sources.length === 0) return res.json({ metas: [] });
     
-    let sourcesList = sourcesParam.split(',');
-    let channelsData = await getChannelsForSources(sourcesList);
-
+    let channelsData = await getChannelsForSources(config.sources);
     if (channelsData.length === 0) { 
         res.setHeader('Cache-Control', 'no-cache'); 
         return res.json({ metas: [] }); 
@@ -619,21 +637,18 @@ app.get(['/:conf?/catalog/tv/:id.json', '/:conf?/catalog/tv/:id/:extra'], async 
 });
 
 // === Méta (Programme TV) ===
-app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
-    const isEpgOn = !req.params.conf || req.params.conf === 'epg-on';
-    let sourcesParam = req.query.sources;
-    if (!sourcesParam) return res.json({ meta: {} });
+app.get('/:config/meta/tv/:id.json', async (req, res) => {
+    const config = parseConfig(req.params.config);
+    if (!config.sources || config.sources.length === 0) return res.json({ meta: {} });
     
-    let sourcesList = sourcesParam.split(',');
-    let channelsData = await getChannelsForSources(sourcesList);
-
+    let channelsData = await getChannelsForSources(config.sources);
     res.setHeader('Cache-Control', 'max-age=1800, public'); 
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ meta: {} });
     
     let descriptionText = `▶ Diffusion en cours sur ${channel.displayName}...`;
     
-    if (isEpgOn) {
+    if (config.epg) {
         if (Object.keys(epgData).length === 0) {
             descriptionText = `▶ Le Programme TV est en cours de chargement...`;
         } else {
@@ -679,14 +694,12 @@ app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
     });
 });
 
-// === STREAMS ===
-app.get('/:conf?/stream/tv/:id.json', async (req, res) => {
-    let sourcesParam = req.query.sources;
-    if (!sourcesParam) return res.json({ streams: [] });
+// === STREAMS RAPIDES AVEC TIMEOUT ===
+app.get('/:config/stream/tv/:id.json', async (req, res) => {
+    const config = parseConfig(req.params.config);
+    if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
     
-    let sourcesList = sourcesParam.split(',');
-    let channelsData = await getChannelsForSources(sourcesList);
-
+    let channelsData = await getChannelsForSources(config.sources);
     res.setHeader('Cache-Control', 'max-age=1800, public'); 
     const rawIp = req.headers['x-forwarded-for'];
     const clientIp = rawIp ? rawIp.split(',')[0].trim() : req.socket.remoteAddress;
@@ -699,7 +712,7 @@ app.get('/:conf?/stream/tv/:id.json', async (req, res) => {
         for (const source of channel.sources) {
             try {
                 const streamRes = await axios.get(`${source.providerBase}/stream/tv/${source.metaId}.json`, {
-                    headers: { 'X-Forwarded-For': clientIp }, timeout: 8000 
+                    headers: { 'X-Forwarded-For': clientIp }, timeout: 5000 
                 });
                 if (streamRes.data && streamRes.data.streams) {
                     const mappedStreams = streamRes.data.streams.map(s => {
