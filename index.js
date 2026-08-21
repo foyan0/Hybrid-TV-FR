@@ -36,11 +36,11 @@ function normalizeChannelName(rawName) {
     return n.replace(/\s+/g, ' ').trim();
 }
 
-// === LE TRADUCTEUR UNIVERSEL POUR L'EPG (Le fix pour Canal+ et TF1) ===
+// === TRADUCTEUR UNIVERSEL EPG (Garantit que Canal+ et TF1 "matchent") ===
 function toSyncId(name) {
     if (!name) return '';
     let n = name.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    n = n.replace(/[^A-Z0-9]/g, ''); // Garde que les lettres et chiffres attachés
+    n = n.replace(/[^A-Z0-9]/g, ''); 
     if (n.startsWith('TF1')) return 'TF1';
     if (n.startsWith('FRANCE2')) return 'FRANCE2';
     if (n.startsWith('FRANCE3')) return 'FRANCE3';
@@ -143,7 +143,7 @@ function getChannelPlacements(n) {
     return placements;
 }
 
-// === LECTEUR EPG V62 (Traduction Universelle des Chaînes) ===
+// === EXTRACTEUR EPG V63 (ZLIB + RACACAX) ===
 function parseXmltvDate(str) {
     if (!str || str.length < 14) return 0;
     const y = str.substring(0,4), m = str.substring(4,6), d = str.substring(6,8);
@@ -157,7 +157,7 @@ function parseXmltvDate(str) {
 
 function extractEpgData(xml) {
     let sourceEpg = {};
-    let idToSyncKey = {}; // Table de traduction locale
+    let idToSyncKey = {}; 
     
     // Scan des chaînes
     let chIdx = 0;
@@ -174,7 +174,6 @@ function extractEpgData(xml) {
         if (nameEnd !== -1) {
             const nameStartTagEnd = xml.indexOf('>', nameStart) + 1;
             const chName = xml.substring(nameStartTagEnd, nameEnd);
-            // On transforme le nom de la chaîne en clé universelle (ex: "TF1 HD" -> "TF1")
             idToSyncKey[chId] = toSyncId(chName);
         }
         chIdx = nameEnd || chIdx + 10;
@@ -214,20 +213,25 @@ async function updateEPG() {
     if (isUpdatingEPG) return;
     isUpdatingEPG = true; 
     let tempEpgData = {};
+    let errorLog = [];
     
+    // RACACAX (Le nouveau AllFrTV in-bloquable) + Fazzani
     const urls = [ 
-        { url: 'https://epgshare01.online/epgshare01/epg_ripper_FR1.xml.gz', isGz: true },
-        { url: 'https://xmltvfr.fr/xmltv/xmltv_francophone.xml', isGz: false }
+        { url: 'https://racacaxtv.github.io/xmltv/xmltv.xml', isGz: false }, 
+        { url: 'https://raw.githubusercontent.com/Fazzani/grabber/master/guide.xml', isGz: false },
+        { url: 'https://epgshare01.online/epgshare01/epg_ripper_FR1.xml.gz', isGz: true }
     ];
 
     try {
         for (const source of urls) {
             try {
-                lastEpgError = `Fusion en cours...`;
                 const response = await axios.get(source.url, { 
                     responseType: source.isGz ? 'arraybuffer' : 'text',
-                    timeout: 45000, 
-                    headers: { 'User-Agent': 'Mozilla/5.0' }
+                    timeout: 60000, 
+                    headers: { 
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': '*/*'
+                    }
                 });
                 
                 let xml = '';
@@ -243,7 +247,7 @@ async function updateEPG() {
                 }
                 
                 const parsedEpg = extractEpgData(xml);
-                xml = null; // Libération RAM
+                xml = null; 
                 
                 for (const channelKey in parsedEpg) {
                     if (!tempEpgData[channelKey] && parsedEpg[channelKey].length > 0) {
@@ -251,8 +255,13 @@ async function updateEPG() {
                     }
                 }
                 
+                // Plus de 100 chaînes = on a tout le bouquet FR !
                 if (Object.keys(tempEpgData).length > 100) break;
-            } catch (err) {}
+            } catch (err) {
+                // On enregistre l'erreur exacte pour la page web
+                const domain = source.url.split('/')[2];
+                errorLog.push(`${domain}: ${err.message}`);
+            }
         }
         
         if (Object.keys(tempEpgData).length > 10) {
@@ -260,7 +269,7 @@ async function updateEPG() {
             lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
             lastEpgError = "Succès";
         } else {
-            lastEpgError = "Sources EPG hors ligne.";
+            lastEpgError = "Erreurs: " + errorLog.join(" | ");
         }
         
     } finally {
@@ -268,7 +277,6 @@ async function updateEPG() {
     }
 }
 
-// Fonction de recherche Ultra-Rapide via la Clé Universelle
 function getEpgForChannel(channelName) {
     if (!epgData || Object.keys(epgData).length === 0) return null;
     const syncKey = toSyncId(channelName);
@@ -347,13 +355,13 @@ app.get('/', (req, res) => {
     let channelsStatus = isUpdatingChannels ? '⏳ Recherche des chaînes en cours...' : `✅ <b>${channelsData.length}</b> chaînes actives`;
     let epgStatus = "";
     if (isUpdatingEPG) {
-        epgStatus = `⏳ ${lastEpgError}`;
+        epgStatus = `⏳ Téléchargement EPG en cours...`;
     } else {
         const epgCount = Object.keys(epgData).length;
         if (epgCount > 0) {
-            epgStatus = `✅ Programme TV chargé pour <b>${epgCount}</b> chaînes (Version 62)`;
+            epgStatus = `✅ Programme TV chargé pour <b>${epgCount}</b> chaînes (Racacax V63)`;
         } else {
-            epgStatus = `❌ Échec du téléchargement.<br>Erreur technique : <i>${lastEpgError}</i>`;
+            epgStatus = `❌ Échec du téléchargement.<br><span style="color:#ff6b6b; font-size:12px;">Détails : ${lastEpgError}</span>`;
         }
     }
     
@@ -397,7 +405,7 @@ app.get('/', (req, res) => {
             <div class="stats">
                 ${channelsStatus}<br>
                 ${epgStatus}<br>
-                🕒 Dernière synchronisation : ${lastUpdate}
+                🕒 Dernière synchronisation EPG : ${lastUpdate}
             </div>
         </div>
         <script>
@@ -426,12 +434,12 @@ app.get('/', (req, res) => {
     res.send(html);
 });
 
-// === ROUTAGE INTELLIGENT (POUR ESQUIVER LE CACHE DE NUVIO) ===
+// === ROUTAGE INTELLIGENT (POUR PIÉGER LE CACHE DE NUVIO) ===
 function handleManifest(req, res, conf) {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v62.' + conf, 
-        version: '62.0.0',
+        id: 'org.hybridproxy.fr.live.v63.' + conf, 
+        version: '63.0.0',
         name: conf === 'epg-on' ? 'Hybrid TV FR' : 'Hybrid TV FR (Sans EPG)',
         description: 'L\'expérience IPTV ultime. Édition Magazine TV Ultime.',
         resources: ['catalog', 'meta', 'stream'],
@@ -511,7 +519,7 @@ app.get('/:conf?/catalog/tv/:id/:extra', async (req, res) => {
     res.json({ metas: paginatedMetas });
 });
 
-// === LA NOUVELLE MISE EN PAGE INVERSÉE (Le "À Suivre" en premier) ===
+// === LA MISE EN PAGE INVERSÉE ===
 app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
     const isEpgOn = !req.params.conf || req.params.conf === 'epg-on';
     await waitForChannels();
@@ -539,10 +547,10 @@ app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
                     const sTime = new Date(currentProg.start).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
                     const eTime = new Date(currentProg.stop).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
                     
-                    // 1. LE DIRECT EN HAUT
+                    // 1. LE TITRE EN HAUT (Sans résumé)
                     descriptionText = `🔴 EN DIRECT (${sTime} - ${eTime}) : ${currentProg.title}`;
                     
-                    // 2. LE "À SUIVRE" DIRECTEMENT EN DESSOUS (Horaires des prochains programmes)
+                    // 2. LE MENU À SUIVRE IMMÉDIATEMENT EN DESSOUS
                     const upcoming = epgList.slice(currentIndex + 1, currentIndex + 6);
                     if (upcoming.length > 0) {
                         descriptionText += `\n\n📺 À SUIVRE :`;
@@ -552,7 +560,7 @@ app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
                         });
                     }
 
-                    // 3. LE GROS RÉSUMÉ CACHÉ TOUT EN BAS (Pour ceux qui veulent vraiment le lire)
+                    // 3. LE GROS RÉSUMÉ CACHÉ TOUT EN BAS
                     if (currentProg.desc) {
                         descriptionText += `\n\n📝 RÉSUMÉ DU DIRECT :\n${currentProg.desc}`;
                     }
