@@ -37,13 +37,13 @@ function normalizeChannelName(rawName) {
     return n.replace(/\s+/g, ' ').trim();
 }
 
-// === TRADUCTEUR UNIVERSEL V67 (STRICT : Fini le bug BBC News / CNews) ===
+// === TRADUCTEUR UNIVERSEL (STRICT : Évite le bug BBC News / CNews) ===
 function toSyncId(name) {
     if (!name) return '';
     let n = name.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     n = n.replace(/[^A-Z0-9]/g, ''); 
     
-    // MATCHS STRICTS UNIQUEMENT
+    // RECONNAISSANCE STRICTE POUR ÉVITER LES MÉLANGES
     if (n === 'TF1' || n === 'TF1HD' || n === 'TF1FR' || n === 'TF14K') return 'TF1';
     if (n === 'TF1SERIESFILMS' || n === 'TF1SERIES') return 'TF1SERIESFILMS';
     
@@ -183,13 +183,12 @@ function parseXmltvDate(str) {
     return isNaN(ts) ? 0 : ts;
 }
 
-// Formateur d'heure universel et stable (pour corriger le décalage UTC des serveurs cloud)
 function formatTime(timestamp) {
     return new Intl.DateTimeFormat('fr-FR', {
         timeZone: 'Europe/Paris',
         hour: '2-digit',
         minute: '2-digit'
-    }).format(new Date(timestamp)).replace(':', 'h');
+    }).format(new Date(timestamp)).replace(':', 'h'); // Remplace 13:15 par 13h15
 }
 
 async function fetchAndParseEPG(url, isGz) {
@@ -197,7 +196,7 @@ async function fetchAndParseEPG(url, isGz) {
         try {
             const response = await axios.get(url, {
                 responseType: 'stream',
-                timeout: 45000,
+                timeout: 60000,
                 headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36' }
             });
 
@@ -257,7 +256,7 @@ async function fetchAndParseEPG(url, isGz) {
             const timeoutId = setTimeout(() => { 
                 stream.destroy(); 
                 reject(new Error("Timeout")); 
-            }, 45000);
+            }, 60000);
 
             rl.on('close', () => {
                 clearTimeout(timeoutId);
@@ -272,18 +271,17 @@ async function fetchAndParseEPG(url, isGz) {
     });
 }
 
+// LE RETOUR DE LA MÉGA-BASE (Une seule requête, plus de ban Cloudflare)
 async function updateEPG() {
     if (isUpdatingEPG) return;
     isUpdatingEPG = true; 
     let tempEpgData = {};
     let successCount = 0;
     
+    // On met le fichier "francophone" (qui contient TF1, Canal, C8, GameOne, BeIN, etc.)
     const sources = [
-        { url: 'https://raw.githubusercontent.com/epgshare01/share01/master/epg_ripper_FR1.xml.gz', isGz: true },
-        { url: 'https://xmltvfr.fr/xmltv/xmltv_tnt.xml', isGz: false },
-        { url: 'https://xmltvfr.fr/xmltv/xmltv_canalsat.xml', isGz: false },
-        { url: 'https://xmltvfr.fr/xmltv/xmltv_suisse.xml', isGz: false },
-        { url: 'https://raw.githubusercontent.com/acidjesuz/EPG/master/guide.xml', isGz: false }
+        { url: 'https://xmltvfr.fr/xmltv/xmltv_francophone.xml', isGz: false },
+        { url: 'https://epgshare01.online/epgshare01/epg_ripper_FR1.xml.gz', isGz: true }
     ];
 
     try {
@@ -291,27 +289,25 @@ async function updateEPG() {
             try {
                 const parsedEpg = await fetchAndParseEPG(source.url, source.isGz);
                 
-                let added = false;
                 for (const channelKey in parsedEpg) {
                     if (!tempEpgData[channelKey] && parsedEpg[channelKey].length > 0) {
                         tempEpgData[channelKey] = parsedEpg[channelKey];
-                        added = true;
                     }
                 }
-                if (added) successCount++;
                 
-                // Si on a plus de 150 chaînes (c'est à dire le maximum de la TV FR pertinente), on arrête
-                if (Object.keys(tempEpgData).length > 150) break;
+                successCount++;
+                // Si on a plus de 100 chaînes, la mission est accomplie, on arrête !
+                if (Object.keys(tempEpgData).length > 100) break;
                 
             } catch (err) {
-                console.log(`[EPG] Source ignorée: ${source.url.substring(0, 30)}...`);
+                console.log(`[EPG] Source passée: ${source.url.substring(0, 30)}...`);
             }
         }
         
         if (Object.keys(tempEpgData).length > 10) {
             epgData = tempEpgData;
             lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
-            lastEpgError = `(Données fusionnées depuis ${successCount} source${successCount > 1 ? 's' : ''})`;
+            lastEpgError = `(Données lues depuis ${successCount} source${successCount > 1 ? 's' : ''})`;
         } else {
             lastEpgError = "Toutes les sources EPG ont échoué.";
         }
@@ -482,8 +478,8 @@ app.get('/', (req, res) => {
 function handleManifest(req, res, conf) {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v67.' + conf, 
-        version: '67.0.0',
+        id: 'org.hybridproxy.fr.live.v68.' + conf, 
+        version: '68.0.0',
         name: conf === 'epg-on' ? 'Hybrid TV FR' : 'Hybrid TV FR (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition TV FR.',
         resources: ['catalog', 'meta', 'stream'],
@@ -563,7 +559,7 @@ app.get('/:conf?/catalog/tv/:id/:extra', async (req, res) => {
     res.json({ metas: paginatedMetas });
 });
 
-// === FILTRE ANTI-DOUBLONS INTÉGRÉ ===
+// === FILTRE ANTI-DOUBLONS INTÉGRÉ (Règle le bug "Dr House 13h15") ===
 app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
     const isEpgOn = !req.params.conf || req.params.conf === 'epg-on';
     await waitForChannels();
@@ -593,19 +589,20 @@ app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
                     
                     descriptionText = `🔴 EN DIRECT (${sTime} - ${eTime}) : ${currentProg.title}`;
                     
-                    // On prend la suite des programmes
                     const rawUpcoming = epgList.slice(currentIndex + 1);
                     let filteredUpcoming = [];
                     let seenTimes = new Set();
-                    seenTimes.add(sTime); // On interdit à un autre programme de s'afficher sur la même minute
+                    seenTimes.add(sTime); // Empêche de doubler l'heure du programme actuel
                     
                     for (let p of rawUpcoming) {
                         const uTime = formatTime(p.start);
+                        // Filtre Anti-Doublons : Si l'heure a déjà été affichée, on ignore cette ligne !
                         if (!seenTimes.has(uTime)) {
                             seenTimes.add(uTime);
                             filteredUpcoming.push(`${uTime} ${p.title}`);
                         }
-                        if (filteredUpcoming.length === 4) break; // Les 4 prochains, compactés
+                        // On récupère les 4 PROCHAINS programmes uniques
+                        if (filteredUpcoming.length === 4) break; 
                     }
                     
                     if (filteredUpcoming.length > 0) {
