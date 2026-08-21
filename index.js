@@ -37,38 +37,43 @@ function normalizeChannelName(rawName) {
     return n.replace(/\s+/g, ' ').trim();
 }
 
-// === TRADUCTEUR UNIVERSEL V66 (Reconnaissance Parfaite) ===
+// === TRADUCTEUR UNIVERSEL V67 (STRICT : Fini le bug BBC News / CNews) ===
 function toSyncId(name) {
     if (!name) return '';
     let n = name.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     n = n.replace(/[^A-Z0-9]/g, ''); 
     
-    if (n.includes('TF1')) return 'TF1';
-    if (n.includes('FRANCE2')) return 'FRANCE2';
-    if (n.includes('FRANCE3')) return 'FRANCE3';
-    if (n.includes('FRANCE4')) return 'FRANCE4';
-    if (n.includes('FRANCE5')) return 'FRANCE5';
-    if (n.includes('M6')) return 'M6';
-    if (n.includes('ARTE')) return 'ARTE';
-    if (n.includes('C8')) return 'C8';
-    if (n.includes('W9')) return 'W9';
-    if (n.includes('TMC')) return 'TMC';
-    if (n.includes('TFX')) return 'TFX';
-    if (n.includes('NRJ12')) return 'NRJ12';
-    if (n.includes('LCP')) return 'LCP';
-    if (n.includes('BFMTV') || n === 'BFM') return 'BFMTV';
-    if (n.includes('CNEWS')) return 'CNEWS';
-    if (n.includes('CSTAR')) return 'CSTAR';
-    if (n.includes('GULLI')) return 'GULLI';
-    if (n.includes('GAMEONE')) return 'GAMEONE';
+    // MATCHS STRICTS UNIQUEMENT
+    if (n === 'TF1' || n === 'TF1HD' || n === 'TF1FR' || n === 'TF14K') return 'TF1';
+    if (n === 'TF1SERIESFILMS' || n === 'TF1SERIES') return 'TF1SERIESFILMS';
     
-    if (n.includes('BEINSPORT')) {
+    if (n === 'FRANCE2' || n === 'FRANCETV2' || n === 'FRANCE2HD' || n === 'FRANCE2UHD') return 'FRANCE2';
+    if (n === 'FRANCE3' || n === 'FRANCE3HD' || n === 'FRANCETV3') return 'FRANCE3';
+    if (n === 'FRANCE4' || n === 'FRANCE4HD') return 'FRANCE4';
+    if (n === 'FRANCE5' || n === 'FRANCE5HD') return 'FRANCE5';
+    
+    if (n === 'M6' || n === 'M6HD' || n === 'M6FR' || n === 'M64K') return 'M6';
+    if (n === 'ARTE' || n === 'ARTEHD' || n === 'ARTEFR') return 'ARTE';
+    if (n === 'C8' || n === 'C8HD') return 'C8';
+    if (n === 'W9' || n === 'W9HD') return 'W9';
+    if (n === 'TMC' || n === 'TMCHD') return 'TMC';
+    if (n === 'TFX' || n === 'TFXHD') return 'TFX';
+    if (n === 'NRJ12' || n === 'NRJ12HD') return 'NRJ12';
+    if (n === 'LCP' || n === 'LCPAN' || n === 'PUBLICSENAT') return 'LCP';
+    
+    if (n === 'BFMTV' || n === 'BFMTVHD' || n === 'BFMTVFR' || n === 'BFM') return 'BFMTV';
+    if (n === 'CNEWS' || n === 'CNEWSHD' || n === 'CNEWSFR') return 'CNEWS';
+    if (n === 'CSTAR' || n === 'CSTARHD' || n === 'CSTARHITS') return 'CSTAR';
+    if (n === 'GULLI' || n === 'GULLIHD') return 'GULLI';
+    if (n === 'GAMEONE' || n === 'GAMEONEHD' || n === 'GAMEONEFR') return 'GAMEONE';
+    
+    if (n.startsWith('BEINSPORT')) {
         if (n.includes('1')) return 'BEINSPORTS1';
         if (n.includes('2')) return 'BEINSPORTS2';
         if (n.includes('3')) return 'BEINSPORTS3';
     }
     
-    if (n.includes('CANAL')) {
+    if (n.startsWith('CANAL')) {
         if (n.includes('SPORT360')) return 'CANALSPORT360';
         if (n.includes('SPORT')) return 'CANALSPORT';
         if (n.includes('CINEMA')) return 'CANALCINEMA';
@@ -79,22 +84,22 @@ function toSyncId(name) {
         if (n.includes('FOOT')) return 'CANALFOOT';
         if (n.includes('BOXOFFICE')) return 'CANALBOXOFFICE';
         if (n.includes('DECALE')) return 'CANALDECALE';
-        return 'CANAL'; // Si c'est juste Canal+ ou Canal+ France
+        if (n === 'CANALPLUS' || n === 'CANAL' || n === 'CANALPLUSFRANCE' || n === 'CANALHD' || n === 'CANALPLUSHD') return 'CANAL'; 
     }
 
-    if (n.includes('DISCOVERY')) {
+    if (n.startsWith('DISCOVERY')) {
         if (n.includes('SCIENCE')) return 'DISCOVERYSCIENCE';
-        if (n.includes('INVESTIGATION')) return 'DISCOVERYINVESTIGATION';
+        if (n.includes('INVESTIGATION') || n.includes('ID')) return 'DISCOVERYINVESTIGATION';
         return 'DISCOVERYCHANNEL';
     }
     
-    if (n.includes('PLANETE')) {
+    if (n.startsWith('PLANETE')) {
         if (n.includes('CRIME')) return 'PLANETECRIME';
         if (n.includes('AVENTURE')) return 'PLANETEAVENTURE';
-        return 'PLANETE';
+        if (n === 'PLANETE' || n === 'PLANETEPLUS' || n === 'PLANETEHD') return 'PLANETE';
     }
     
-    if (n.includes('NATIONALGEOGRAPHIC')) {
+    if (n.startsWith('NATIONALGEOGRAPHIC') || n.startsWith('NATGEO')) {
         if (n.includes('WILD')) return 'NATIONALGEOGRAPHICWILD';
         return 'NATIONALGEOGRAPHIC';
     }
@@ -166,7 +171,7 @@ function getChannelPlacements(n) {
     return placements;
 }
 
-// === EXTRACTEUR EPG EN STREAMING (Zéro coupure mémoire) ===
+// === EXTRACTEUR EPG EN STREAMING ===
 function parseXmltvDate(str) {
     if (!str || str.length < 14) return 0;
     const y = str.substring(0,4), m = str.substring(4,6), d = str.substring(6,8);
@@ -178,12 +183,21 @@ function parseXmltvDate(str) {
     return isNaN(ts) ? 0 : ts;
 }
 
+// Formateur d'heure universel et stable (pour corriger le décalage UTC des serveurs cloud)
+function formatTime(timestamp) {
+    return new Intl.DateTimeFormat('fr-FR', {
+        timeZone: 'Europe/Paris',
+        hour: '2-digit',
+        minute: '2-digit'
+    }).format(new Date(timestamp)).replace(':', 'h');
+}
+
 async function fetchAndParseEPG(url, isGz) {
     return new Promise(async (resolve, reject) => {
         try {
             const response = await axios.get(url, {
                 responseType: 'stream',
-                timeout: 120000, // 2 Minutes autorisées pour télécharger la grosse base
+                timeout: 45000,
                 headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36' }
             });
 
@@ -242,8 +256,8 @@ async function fetchAndParseEPG(url, isGz) {
 
             const timeoutId = setTimeout(() => { 
                 stream.destroy(); 
-                reject(new Error("Timeout du stream")); 
-            }, 120000);
+                reject(new Error("Timeout")); 
+            }, 45000);
 
             rl.on('close', () => {
                 clearTimeout(timeoutId);
@@ -258,43 +272,46 @@ async function fetchAndParseEPG(url, isGz) {
     });
 }
 
-// === TÉLÉCHARGEMENT ANTI-SPAM (Un seul très gros fichier) ===
 async function updateEPG() {
     if (isUpdatingEPG) return;
     isUpdatingEPG = true; 
     let tempEpgData = {};
+    let successCount = 0;
     
-    // On ne tape QU'UNE SEULE FOIS pour éviter le banissement Cloudflare
-    // Ce méga-fichier contient plus de 1000 chaînes francophones (TNT, Canal, BeIN, Suisse, Belgique incluses)
     const sources = [
-        { url: 'https://xmltvfr.fr/xmltv/xmltv_francophone.xml', isGz: false },
-        { url: 'https://epgshare01.online/epgshare01/epg_ripper_FR1.xml.gz', isGz: true }
+        { url: 'https://raw.githubusercontent.com/epgshare01/share01/master/epg_ripper_FR1.xml.gz', isGz: true },
+        { url: 'https://xmltvfr.fr/xmltv/xmltv_tnt.xml', isGz: false },
+        { url: 'https://xmltvfr.fr/xmltv/xmltv_canalsat.xml', isGz: false },
+        { url: 'https://xmltvfr.fr/xmltv/xmltv_suisse.xml', isGz: false },
+        { url: 'https://raw.githubusercontent.com/acidjesuz/EPG/master/guide.xml', isGz: false }
     ];
 
     try {
         for (const source of sources) {
             try {
-                lastEpgError = `Connexion à la méga-base ${source.url.includes('xmltvfr') ? 'XMLTV' : 'EPGShare'}...`;
                 const parsedEpg = await fetchAndParseEPG(source.url, source.isGz);
                 
+                let added = false;
                 for (const channelKey in parsedEpg) {
                     if (!tempEpgData[channelKey] && parsedEpg[channelKey].length > 0) {
                         tempEpgData[channelKey] = parsedEpg[channelKey];
+                        added = true;
                     }
                 }
+                if (added) successCount++;
                 
-                // Si on a récolté au moins 100 chaînes de TV, la mission est accomplie, on arrête !
-                if (Object.keys(tempEpgData).length > 100) break;
+                // Si on a plus de 150 chaînes (c'est à dire le maximum de la TV FR pertinente), on arrête
+                if (Object.keys(tempEpgData).length > 150) break;
                 
             } catch (err) {
-                console.log(`[EPG] Source passée: ${source.url.substring(0, 30)}...`);
+                console.log(`[EPG] Source ignorée: ${source.url.substring(0, 30)}...`);
             }
         }
         
         if (Object.keys(tempEpgData).length > 10) {
             epgData = tempEpgData;
             lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
-            lastEpgError = `Succès massif (${Object.keys(tempEpgData).length} chaînes trouvées)`;
+            lastEpgError = `(Données fusionnées depuis ${successCount} source${successCount > 1 ? 's' : ''})`;
         } else {
             lastEpgError = "Toutes les sources EPG ont échoué.";
         }
@@ -382,11 +399,11 @@ app.get('/', (req, res) => {
     let channelsStatus = isUpdatingChannels ? '⏳ Recherche des chaînes en cours...' : `✅ <b>${channelsData.length}</b> chaînes actives`;
     let epgStatus = "";
     if (isUpdatingEPG) {
-        epgStatus = `⏳ ${lastEpgError}`;
+        epgStatus = `⏳ Téléchargement du Programme TV en cours...`;
     } else {
         const epgCount = Object.keys(epgData).length;
         if (epgCount > 0) {
-            epgStatus = `✅ Programme TV chargé pour <b>${epgCount}</b> chaînes (${lastEpgError})`;
+            epgStatus = `✅ Programme TV chargé pour <b>${epgCount}</b> chaînes ${lastEpgError}`;
         } else {
             epgStatus = `❌ Échec du téléchargement.<br><span style="color:#ff6b6b; font-size:12px;">Détails : ${lastEpgError}</span>`;
         }
@@ -416,12 +433,12 @@ app.get('/', (req, res) => {
     <body>
         <div class="container">
             <h1>📺 Hybrid TV FR</h1>
-            <p>Votre add-on télévisuel haute-performance.<br>Édition "Optimisation Spatiale".</p>
+            <p>Votre add-on télévisuel haute-performance.<br>Propulsé par un cache mémoire et des mises à jour invisibles.</p>
             
             <div class="options">
                 <label style="cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px;">
                     <input type="checkbox" id="epgToggle" checked onchange="updateLinks()" style="width: 20px; height: 20px; margin: 0; cursor: pointer;">
-                    <b style="font-size: 16px;">Activer le Programme TV (EPG)</b>
+                    <b style="font-size: 16px;">Activer le Programme TV</b>
                 </label>
             </div>
             
@@ -432,7 +449,7 @@ app.get('/', (req, res) => {
             <div class="stats">
                 ${channelsStatus}<br>
                 ${epgStatus}<br>
-                🕒 Dernière synchronisation EPG : ${lastUpdate}
+                🕒 Dernière synchronisation du Programme TV : ${lastUpdate}
             </div>
         </div>
         <script>
@@ -465,10 +482,10 @@ app.get('/', (req, res) => {
 function handleManifest(req, res, conf) {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v66.' + conf, 
-        version: '66.0.0',
-        name: conf === 'epg-on' ? 'Hybrid TV FR' : 'Hybrid TV FR (Sans EPG)',
-        description: 'L\'expérience IPTV ultime. Affichage TV optimisé.',
+        id: 'org.hybridproxy.fr.live.v67.' + conf, 
+        version: '67.0.0',
+        name: conf === 'epg-on' ? 'Hybrid TV FR' : 'Hybrid TV FR (Sans Programme TV)',
+        description: 'L\'expérience IPTV ultime. Édition TV FR.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -546,7 +563,7 @@ app.get('/:conf?/catalog/tv/:id/:extra', async (req, res) => {
     res.json({ metas: paginatedMetas });
 });
 
-// === LA MAGIE DE LA V66 : ESPACE OPTIMISÉ POUR NUVIO ===
+// === FILTRE ANTI-DOUBLONS INTÉGRÉ ===
 app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
     const isEpgOn = !req.params.conf || req.params.conf === 'epg-on';
     await waitForChannels();
@@ -571,37 +588,48 @@ app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
                 
                 if (currentIndex !== -1) {
                     const currentProg = epgList[currentIndex];
-                    const sTime = new Date(currentProg.start).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
-                    const eTime = new Date(currentProg.stop).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
+                    const sTime = formatTime(currentProg.start);
+                    const eTime = formatTime(currentProg.stop);
                     
-                    // Ligne 1 : Le Direct
                     descriptionText = `🔴 EN DIRECT (${sTime} - ${eTime}) : ${currentProg.title}`;
                     
-                    // Ligne 2 : Les 4 prochains programmes alignés sur une seule ligne (Pas de coupure !)
-                    const upcoming = epgList.slice(currentIndex + 1, currentIndex + 5);
-                    if (upcoming.length > 0) {
-                        descriptionText += `\n📺 À SUIVRE :\n`; // Un seul saut de ligne !
-                        
-                        // Le fameux séparateur "|" pour compacter l'espace
-                        const upcomingTexts = upcoming.map(p => {
-                            const uTime = new Date(p.start).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
-                            return `${uTime} ${p.title}`;
-                        });
-                        
-                        descriptionText += upcomingTexts.join('  |  ');
+                    // On prend la suite des programmes
+                    const rawUpcoming = epgList.slice(currentIndex + 1);
+                    let filteredUpcoming = [];
+                    let seenTimes = new Set();
+                    seenTimes.add(sTime); // On interdit à un autre programme de s'afficher sur la même minute
+                    
+                    for (let p of rawUpcoming) {
+                        const uTime = formatTime(p.start);
+                        if (!seenTimes.has(uTime)) {
+                            seenTimes.add(uTime);
+                            filteredUpcoming.push(`${uTime} ${p.title}`);
+                        }
+                        if (filteredUpcoming.length === 4) break; // Les 4 prochains, compactés
+                    }
+                    
+                    if (filteredUpcoming.length > 0) {
+                        descriptionText += `\n📺 À SUIVRE :\n`;
+                        descriptionText += filteredUpcoming.join('  |  ');
                     }
                     
                 } else {
-                    const nextProgs = epgList.filter(p => p.start > now).slice(0, 4);
-                    if (nextProgs.length > 0) {
+                    const rawUpcoming = epgList.filter(p => p.start > now);
+                    let filteredUpcoming = [];
+                    let seenTimes = new Set();
+                    
+                    for (let p of rawUpcoming) {
+                        const uTime = formatTime(p.start);
+                        if (!seenTimes.has(uTime)) {
+                            seenTimes.add(uTime);
+                            filteredUpcoming.push(`${uTime} ${p.title}`);
+                        }
+                        if (filteredUpcoming.length === 4) break;
+                    }
+
+                    if (filteredUpcoming.length > 0) {
                         descriptionText = `▶ Aucun programme renseigné en ce moment.\n📺 À VENIR :\n`;
-                        
-                        const nextTexts = nextProgs.map(p => {
-                            const uTime = new Date(p.start).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
-                            return `${uTime} ${p.title}`;
-                        });
-                        
-                        descriptionText += nextTexts.join('  |  ');
+                        descriptionText += filteredUpcoming.join('  |  ');
                     }
                 }
             }
