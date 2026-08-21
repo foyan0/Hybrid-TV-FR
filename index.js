@@ -146,8 +146,7 @@ function getChannelPlacements(n) {
     return placements;
 }
 
-// === NOUVEAU LECTEUR EPG (L'Extracteur "Tête Chercheuse") ===
-// Ce lecteur télécharge tout mais scanne le texte massivement sans utiliser de RAM inutile
+// === LECTEUR EPG AVEC SOURCES "ANTI-BLOCAGE" (IPTV-ORG) ===
 function slugify(str) { return str.toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 
 function parseXmltvDate(str) {
@@ -165,22 +164,26 @@ async function updateEPG() {
     if (isUpdatingEPG) return;
     isUpdatingEPG = true; 
     
-    // On utilise la source la plus rapide et fiable en priorité
+    // Ces sources GitHub ne bloquent pas les serveurs cloud comme Render
     const urls = [ 
-        'https://xmltv.ch/xmltv/xmltv-francophone.xml',
-        'https://allfrtv.github.io/xmltv/xmltv.xml'
+        'https://iptv-org.github.io/epg/guides/fr/programme-tv.net.epg.xml',
+        'https://iptv-org.github.io/epg/guides/fr/telestar.fr.epg.xml'
     ];
     let tempEpgData = {}; 
 
     try {
         for (const url of urls) {
             try {
-                // On télécharge le fichier complet (pas de streaming)
                 const response = await axios.get(url, { 
                     timeout: 20000,
                     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
                 });
                 const xml = response.data;
+                
+                // Si la page est bloquée (HTML) on passe à la source suivante
+                if (typeof xml !== 'string' || !xml.includes('<tv')) {
+                    continue;
+                }
                 
                 let epgChannels = {};
                 
@@ -232,11 +235,9 @@ async function updateEPG() {
             } catch (err) {
                 console.log("[EPG] Échec de la source :", url);
             }
-            
-            // Si on a récupéré les programmes avec succès (plus de 50 chaînes), on arrête là.
-            if (Object.keys(tempEpgData).length > 50) break;
         }
         
+        // Si on a récupéré au moins des données, on valide la mise à jour
         if (Object.keys(tempEpgData).length > 0) {
             epgData = tempEpgData;
             lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
@@ -333,7 +334,7 @@ async function updateStreams() {
     isUpdatingChannels = false; 
 }
 
-// === INTERFACE WEB ===
+// === INTERFACE WEB (AVEC COMPTEUR DE DIAGNOSTIC) ===
 app.get('/', (req, res) => {
     const host = req.get('host');
     const manifestUrl = `https://${host}/manifest.json`;
@@ -343,9 +344,17 @@ app.get('/', (req, res) => {
         ? '⏳ Recherche des chaînes en cours...' 
         : `✅ <b>${channelsData.length}</b> chaînes actives`;
         
-    let epgStatus = isUpdatingEPG 
-        ? '⏳ Téléchargement du Programme TV en cours...' 
-        : `🕒 Dernier téléchargement Programme TV : ${lastUpdate}`;
+    let epgStatus = "";
+    if (isUpdatingEPG) {
+        epgStatus = '⏳ Téléchargement du Programme TV en cours...';
+    } else {
+        const epgCount = Object.keys(epgData).length;
+        if (epgCount > 0) {
+            epgStatus = `✅ Programme TV chargé pour <b>${epgCount}</b> chaînes (Maj : ${lastUpdate})`;
+        } else {
+            epgStatus = `❌ Échec du téléchargement du Programme TV (Sources bloquées)`;
+        }
+    }
     
     const html = `
     <!DOCTYPE html>
@@ -396,8 +405,8 @@ app.get('/', (req, res) => {
 app.get('/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v50', 
-        version: '50.0.0',
+        id: 'org.hybridproxy.fr.live.v51', 
+        version: '51.0.0',
         name: 'Hybrid TV FR',
         description: 'L\'expérience IPTV ultime. Tri par IA, Programme TV ultra-rapide, zéro publicité.',
         resources: ['catalog', 'meta', 'stream'],
@@ -477,7 +486,7 @@ app.get('/meta/tv/:id.json', async (req, res) => {
     if (isUpdatingEPG && Object.keys(epgData).length === 0) {
         descriptionText = `▶ Programme TV en cours de téléchargement (Actualisez dans 15 sec)...`;
     } else if (Object.keys(epgData).length === 0) {
-        descriptionText = `▶ Le Programme TV est momentanément indisponible...`;
+        descriptionText = `▶ Le Programme TV est momentanément indisponible (Source bloquée)...`;
     }
     
     const epgList = getEpgForChannel(channel.name);
