@@ -41,12 +41,9 @@ function normalizeChannelName(rawName) {
     if (n === 'LCN') return 'LCN';
     if (n === '20 MINUTES') return '20 MINUTES TV';
     if (n === 'SCI FI') return 'SYFY';
-
     if (n === 'L EQUIPE' || n === 'LA CHAINE L EQUIPE') return 'L EQUIPE';
-
     if (n.includes('WILD') && (n.includes('NAT') || n.includes('GEO'))) return 'NATIONAL GEOGRAPHIC WILD';
     if (n.includes('NAT GEO') || n.includes('NATIONAL GEO')) return 'NATIONAL GEOGRAPHIC';
-
     if (n.includes('CHASSE') && n.includes('PECHE')) return 'CHASSE ET PECHE';
 
     if (n.includes('DISCOVERY')) {
@@ -150,7 +147,7 @@ function getChannelPlacements(n) {
     return placements;
 }
 
-// === LECTEUR EPG AVANCÉ ("BUFFER" POUR NE RATER AUCUN PROGRAMME) ===
+// === LECTEUR EPG AVANCÉ V48 (Rapide, sans entonnoir, anti-crash) ===
 function slugify(str) { return str.toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 
 function parseXmltvDate(str) {
@@ -166,83 +163,87 @@ function parseXmltvDate(str) {
 
 async function updateEPG() {
     if (isUpdatingEPG) return;
-    isUpdatingEPG = true;
+    isUpdatingEPG = true; // On verrouille
     
-    // Fichiers d'une fiabilité totale pour la TNT et le câble
-    const urls = [
-        'https://allfrtv.github.io/xmltv/xmltv.xml',
-        'https://xmltv.ch/xmltv/xmltv-francophone.xml'
-    ];
+    // Une seule source fiable, compacte (15Mo) et ultra complète pour la France
+    const urls = [ 'https://allfrtv.github.io/xmltv/xmltv.xml' ];
     let tempEpgData = {}; 
 
-    for (const url of urls) {
-        try {
-            const response = await axios.get(url, { responseType: 'stream', timeout: 30000 });
-            const rl = readline.createInterface({ input: response.data, crlfDelay: Infinity });
+    try {
+        for (const url of urls) {
+            try {
+                const response = await axios.get(url, { responseType: 'stream', timeout: 30000 });
+                const rl = readline.createInterface({ input: response.data, crlfDelay: Infinity });
 
-            let epgChannels = {};
-            let buffer = ''; // Le fameux entonnoir qui corrige le bug des lignes coupées
+                let epgChannels = {};
+                let inChannel = false, chanBlock = '';
+                let inProgramme = false, progBlock = '';
 
-            for await (const line of rl) {
-                buffer += line + '\n';
-                
-                // 1. Aspiration des chaînes (Peu importe les sauts de ligne)
-                while (buffer.includes('<channel ') && buffer.includes('</channel>')) {
-                    const sIdx = buffer.indexOf('<channel ');
-                    const eIdx = buffer.indexOf('</channel>') + 10;
-                    const block = buffer.substring(sIdx, eIdx);
+                for await (const line of rl) {
                     
-                    const idM = block.match(/id="([^"]+)"/);
-                    const nameM = block.match(/<display-name[^>]*>(.*?)<\/display-name>/);
-                    if (idM && nameM) {
-                        epgChannels[idM[1]] = normalizeChannelName(nameM[2]);
+                    // --- GESTION DES CHAÎNES ---
+                    if (line.includes('<channel ')) { 
+                        inChannel = true; 
+                        chanBlock = line; 
+                    } else if (inChannel) { 
+                        chanBlock += '\n' + line; 
                     }
-                    // On retire le bloc traité de l'entonnoir
-                    buffer = buffer.substring(0, sIdx) + buffer.substring(eIdx);
-                }
-                
-                // 2. Aspiration des programmes
-                while (buffer.includes('<programme ') && buffer.includes('</programme>')) {
-                    const sIdx = buffer.indexOf('<programme ');
-                    const eIdx = buffer.indexOf('</programme>') + 12;
-                    const block = buffer.substring(sIdx, eIdx);
                     
-                    const startM = block.match(/start="([^"]+)"/);
-                    const stopM = block.match(/stop="([^"]+)"/);
-                    const chanM = block.match(/channel="([^"]+)"/);
-                    const titleM = block.match(/<title[^>]*>([^<]+)<\/title>/);
-                    const descM = block.match(/<desc[^>]*>([\s\S]*?)<\/desc>/);
-                    
-                    if (startM && stopM && chanM && titleM) {
-                        const rawChName = epgChannels[chanM[1]];
-                        if (rawChName) {
-                            if (!tempEpgData[rawChName]) tempEpgData[rawChName] = [];
-                            tempEpgData[rawChName].push({
-                                start: parseXmltvDate(startM[1]),
-                                stop: parseXmltvDate(stopM[1]),
-                                title: titleM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").trim(),
-                                desc: descM ? descM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").trim() : ''
-                            });
+                    if (inChannel && chanBlock.includes('</channel>')) {
+                        const idM = chanBlock.match(/id="([^"]+)"/);
+                        const nameM = chanBlock.match(/<display-name[^>]*>(.*?)<\/display-name>/);
+                        if (idM && nameM) epgChannels[idM[1]] = normalizeChannelName(nameM[2]);
+                        inChannel = false; 
+                        chanBlock = '';
+                    }
+
+                    // --- GESTION DES PROGRAMMES ---
+                    if (line.includes('<programme ')) { 
+                        inProgramme = true; 
+                        progBlock = line; 
+                    } else if (inProgramme) { 
+                        progBlock += '\n' + line; 
+                    }
+
+                    // On vérifie immédiatement (permet de gérer le multi-ligne OU les programmes écrits sur 1 seule ligne)
+                    if (inProgramme && progBlock.includes('</programme>')) {
+                        const startM = progBlock.match(/start="([^"]+)"/);
+                        const stopM = progBlock.match(/stop="([^"]+)"/);
+                        const chanM = progBlock.match(/channel="([^"]+)"/);
+                        const titleM = progBlock.match(/<title[^>]*>([^<]+)<\/title>/);
+                        const descM = progBlock.match(/<desc[^>]*>([\s\S]*?)<\/desc>/);
+                        
+                        if (startM && stopM && chanM && titleM) {
+                            const rawChName = epgChannels[chanM[1]];
+                            if (rawChName) {
+                                if (!tempEpgData[rawChName]) tempEpgData[rawChName] = [];
+                                tempEpgData[rawChName].push({
+                                    start: parseXmltvDate(startM[1]),
+                                    stop: parseXmltvDate(stopM[1]),
+                                    title: titleM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").trim(),
+                                    desc: descM ? descM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").trim() : ''
+                                });
+                            }
                         }
+                        inProgramme = false; 
+                        progBlock = '';
                     }
-                    buffer = buffer.substring(0, sIdx) + buffer.substring(eIdx);
                 }
-                
-                // On empêche l'entonnoir de déborder
-                if (buffer.length > 20000) {
-                    buffer = buffer.substring(buffer.length - 10000);
-                }
+            } catch (err) {
+                console.log("[EPG] Échec de la source :", url);
             }
-        } catch (err) {
-            console.error("[EPG] Impossible d'analyser la source:", url);
         }
+        
+        // Si tout s'est bien passé, on remplace le cache mémoire
+        if (Object.keys(tempEpgData).length > 0) {
+            epgData = tempEpgData;
+            lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
+        }
+        
+    } finally {
+        // LE VERROU DE SÉCURITÉ : Quoi qu'il arrive (succès, erreur, fichier coupé), on libère l'add-on.
+        isUpdatingEPG = false; 
     }
-    
-    if (Object.keys(tempEpgData).length > 0) {
-        epgData = tempEpgData;
-        lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
-    }
-    isUpdatingEPG = false;
 }
 
 function getEpgForChannel(channelName) {
@@ -368,7 +369,7 @@ app.get('/', (req, res) => {
             
             <div class="stats">
                 ✅ <b>${channelsData.length}</b> chaînes actives<br>
-                🕒 Dernière synchronisation : ${lastUpdate}
+                🕒 Dernière synchronisation EPG : ${lastUpdate}
             </div>
         </div>
         <script>
@@ -386,8 +387,8 @@ app.get('/', (req, res) => {
 app.get('/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v47', 
-        version: '47.0.0',
+        id: 'org.hybridproxy.fr.live.v48', 
+        version: '48.0.0',
         name: 'Hybrid TV FR',
         description: 'L\'expérience IPTV ultime. Tri par IA, EPG ultra-rapide, zéro publicité.',
         resources: ['catalog', 'meta', 'stream'],
@@ -463,10 +464,9 @@ app.get('/meta/tv/:id.json', async (req, res) => {
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ meta: {} });
     
-    // Si l'EPG est toujours en cours de téléchargement sur Render (prend 1 min au boot)
     let descriptionText = `▶ Diffusion en cours sur ${channel.displayName}...`;
-    if (Object.keys(epgData).length === 0) {
-        descriptionText = `▶ EPG en cours de téléchargement (Actualisez dans 1 min)...`;
+    if (isUpdatingEPG && Object.keys(epgData).length === 0) {
+        descriptionText = `▶ EPG en cours de téléchargement (Actualisez dans 15 sec)...`;
     }
     
     const epgList = getEpgForChannel(channel.name);
