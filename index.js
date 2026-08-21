@@ -642,7 +642,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '1.0.0',
+        version: '1.0.2',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -744,6 +744,7 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
                     
                     if (filteredUpcoming.length > 0) {
                         descriptionText += `\n📺 À SUIVRE :\n`;
+                        filteredUpcoming.join('  |  ');
                         descriptionText += filteredUpcoming.join('  |  ');
                     }
                 }
@@ -769,30 +770,33 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     if (!channel) return res.json({ streams: [] });
     
     try {
-        let allStreams = [];
-        for (const source of channel.sources) {
+        // Requêtes en parallèle (Promise.all) pour un chargement instantané de tous les flux
+        let streamPromises = channel.sources.map(async (source) => {
             try {
                 const streamRes = await axios.get(`${source.providerBase}/stream/tv/${source.metaId}.json`, {
-                    headers: { 'X-Forwarded-For': clientIp }, timeout: 5000 
+                    headers: { 'X-Forwarded-For': clientIp }, timeout: 4000 
                 });
                 if (streamRes.data && streamRes.data.streams) {
-                    const mappedStreams = streamRes.data.streams.map(s => {
+                    return streamRes.data.streams.map(s => {
                         let qual = "Qualité Standard (SD)";
                         let up = (s.title || '').toUpperCase();
                         if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) qual = "Ultra Haute Qualité (4K)";
                         else if (up.includes('FHD') || up.includes('1080') || up.includes('HD') || up.includes('720')) qual = "Haute Qualité (HD/FHD)";
                         return { ...s, _qualText: qual, _sourceIndex: source.sourceIndex };
                     });
-                    allStreams = allStreams.concat(mappedStreams);
                 }
             } catch (err) {}
-        }
-        
-        // Tri strict des flux en fonction de l'ordre numérique défini sur la page d'administration
+            return [];
+        });
+
+        let results = await Promise.all(streamPromises);
+        let allStreams = [].concat(...results);
+
+        // Tri strict selon l'ordre numérique défini sur la page d'administration
         allStreams.sort((a, b) => a._sourceIndex - b._sourceIndex);
 
-        // LIMITATION À 10 SOURCES MAXIMUM POUR ÉVITER LES LENTURCES DE CHARGEMENT
-        const limitedStreams = allStreams.slice(0, 10);
+        // Limitation stricte aux 8 meilleures sources pour garantir un affichage instantané
+        const limitedStreams = allStreams.slice(0, 8);
 
         const finalStreams = limitedStreams.map((s, idx) => ({
             url: s.url, name: `▶ Source ${idx + 1}`, title: s._qualText
