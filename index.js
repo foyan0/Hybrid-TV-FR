@@ -22,7 +22,7 @@ let channelsData = [];
 let epgData = {}; 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
-// === NORMALISATION ===
+// === NORMALISATION AGRESSIVE (POUR FUSIONNER LES NOUVEAUX DOUBLONS) ===
 function normalizeChannelName(rawName) {
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     n = n.replace(/\s*\([Tt][Vv]\)\s*/g, '');
@@ -31,27 +31,78 @@ function normalizeChannelName(rawName) {
     n = n.replace(/^(FR|BE|CH|CA|VIP)\s*[:|/-]+\s*/, '');
     n = n.replace(/^FR\s+/, '');
     
+    // Suppression agressive des tags de qualité
     const tags = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'VAVOO', 'DIRECT', 'RAW', 'ACCESS'];
     n = n.replace(/[^A-Z0-9+ ]/g, ' '); 
     tags.forEach(tag => { n = n.replace(new RegExp(`\\b${tag}\\b`, 'g'), ' '); });
-    return n.replace(/\s+/g, ' ').trim();
+    n = n.replace(/\bHD\b/g, ' '); // Sécurité supplémentaire pour "HD"
+    n = n.replace(/\s+/g, ' ').trim();
+
+    // Raccords Spéciaux (Les bugs identifiés)
+    if (n.includes('BFM') && !n.includes('BUSINESS') && !n.includes('PARIS') && !n.includes('LYON')) return 'BFMTV';
+    if (n.includes('CNEWS') || n.includes('C NEWS')) return 'CNEWS';
+    if (n.includes('FRANCEINFO') || n.includes('FRANCE INFO')) return 'FRANCE INFO';
+    if (n.includes('METEO')) return 'LA CHAINE METEO';
+    if (n === 'LCN') return 'LCN';
+    if (n.includes('20 MINUTES')) return '20 MINUTES TV';
+    if (n === 'SCI FI' || n === 'SYFY') return 'SYFY';
+    if (n.includes('L EQUIPE') || n.includes('LEQUIPE')) return 'L EQUIPE';
+    if (n.includes('WILD') && (n.includes('NAT') || n.includes('GEO'))) return 'NATIONAL GEOGRAPHIC WILD';
+    if (n.includes('NAT GEO') || n.includes('NATIONAL GEO')) return 'NATIONAL GEOGRAPHIC';
+    if (n.includes('CHASSE') && n.includes('PECHE')) return 'CHASSE ET PECHE';
+    if (n.includes('MTV') && !n.includes('HITS')) return 'MTV';
+
+    if (n.includes('DISCOVERY')) {
+        if (n.includes('SCIENCE') || n.includes('SCI FI')) return 'DISCOVERY SCIENCE';
+        if (n.includes('INVESTIGATION') || n.includes('ID')) return 'DISCOVERY INVESTIGATION';
+        return 'DISCOVERY CHANNEL';
+    }
+
+    if (n.includes('PLANETE')) {
+        if (n.includes('CRIME') || n.includes('CI')) return 'PLANETE+ CRIME';
+        if (n.includes('AVENTURE') || n.includes('AE')) return 'PLANETE+ AVENTURE';
+        return 'PLANETE+';
+    }
+
+    let beinMatch = n.match(/BEIN SPORTS?\s*(MAX)?\s*(\d+)/);
+    if (beinMatch) return beinMatch[1] ? `BEIN SPORTS MAX ${beinMatch[2]}` : `BEIN SPORTS ${beinMatch[2]}`;
+    if (n.includes('BEIN SPORT')) return 'BEIN SPORTS 1';
+
+    if (n.startsWith('CANAL') || n === 'CANAL') {
+        if (n.includes('FOOT')) return 'CANAL+ FOOT';
+        if (n.includes('SPORT 360') || n.includes('360')) return 'CANAL+ SPORT 360';
+        if (n.includes('SPORT')) return 'CANAL+ SPORT';
+        if (n.includes('CINEMA')) return 'CANAL+ CINEMA';
+        if (n.includes('GRAND ECRAN') || n.includes('ECRAN')) return 'CANAL+ GRAND ECRAN';
+        if (n.includes('SERIES')) return 'CANAL+ SERIES';
+        if (n.includes('DOC')) return 'CANAL+ DOCS';
+        if (n.includes('FAMILY')) return 'CANAL+ FAMILY';
+        if (n.includes('KIDS')) return 'CANAL+ KIDS';
+        if (n.includes('DECALE')) return 'CANAL+ DECALE';
+        if (n.includes('BOX OFFICE')) return 'CANAL+ BOX OFFICE';
+        if (n.includes('4K') || n.includes('ULTRA')) return 'CANAL+ 4K';
+        return 'CANAL+';
+    }
+
+    if (n === 'DISNEY CHANNEL 1' || n === 'DISNEY 1' || n === 'DISNEYCHANNEL') return 'DISNEY CHANNEL';
+    if (n === 'DISNEY JR') return 'DISNEY JUNIOR';
+    if (n === 'J ONE' || n === 'G1') return 'GAME ONE';
+
+    return n;
 }
 
-// === TRADUCTEUR UNIVERSEL (STRICT : Évite le bug BBC News / CNews) ===
+// === TRADUCTEUR UNIVERSEL EPG (Pour fusionner Canal+, TF1, etc. sans faille) ===
 function toSyncId(name) {
     if (!name) return '';
     let n = name.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     n = n.replace(/[^A-Z0-9]/g, ''); 
     
-    // RECONNAISSANCE STRICTE POUR ÉVITER LES MÉLANGES
     if (n === 'TF1' || n === 'TF1HD' || n === 'TF1FR' || n === 'TF14K') return 'TF1';
     if (n === 'TF1SERIESFILMS' || n === 'TF1SERIES') return 'TF1SERIESFILMS';
-    
     if (n === 'FRANCE2' || n === 'FRANCETV2' || n === 'FRANCE2HD' || n === 'FRANCE2UHD') return 'FRANCE2';
     if (n === 'FRANCE3' || n === 'FRANCE3HD' || n === 'FRANCETV3') return 'FRANCE3';
     if (n === 'FRANCE4' || n === 'FRANCE4HD') return 'FRANCE4';
     if (n === 'FRANCE5' || n === 'FRANCE5HD') return 'FRANCE5';
-    
     if (n === 'M6' || n === 'M6HD' || n === 'M6FR' || n === 'M64K') return 'M6';
     if (n === 'ARTE' || n === 'ARTEHD' || n === 'ARTEFR') return 'ARTE';
     if (n === 'C8' || n === 'C8HD') return 'C8';
@@ -66,6 +117,7 @@ function toSyncId(name) {
     if (n === 'CSTAR' || n === 'CSTARHD' || n === 'CSTARHITS') return 'CSTAR';
     if (n === 'GULLI' || n === 'GULLIHD') return 'GULLI';
     if (n === 'GAMEONE' || n === 'GAMEONEHD' || n === 'GAMEONEFR') return 'GAMEONE';
+    if (n.startsWith('MTV') && !n.includes('HITS')) return 'MTV';
     
     if (n.startsWith('BEINSPORT')) {
         if (n.includes('1')) return 'BEINSPORTS1';
@@ -188,7 +240,7 @@ function formatTime(timestamp) {
         timeZone: 'Europe/Paris',
         hour: '2-digit',
         minute: '2-digit'
-    }).format(new Date(timestamp)).replace(':', 'h'); // Remplace 13:15 par 13h15
+    }).format(new Date(timestamp)).replace(':', 'h');
 }
 
 async function fetchAndParseEPG(url, isGz) {
@@ -271,14 +323,12 @@ async function fetchAndParseEPG(url, isGz) {
     });
 }
 
-// LE RETOUR DE LA MÉGA-BASE (Une seule requête, plus de ban Cloudflare)
+// === TÉLÉCHARGEMENT EPG MASSIF (La méga-source) ===
 async function updateEPG() {
     if (isUpdatingEPG) return;
     isUpdatingEPG = true; 
     let tempEpgData = {};
-    let successCount = 0;
     
-    // On met le fichier "francophone" (qui contient TF1, Canal, C8, GameOne, BeIN, etc.)
     const sources = [
         { url: 'https://xmltvfr.fr/xmltv/xmltv_francophone.xml', isGz: false },
         { url: 'https://epgshare01.online/epgshare01/epg_ripper_FR1.xml.gz', isGz: true }
@@ -295,19 +345,15 @@ async function updateEPG() {
                     }
                 }
                 
-                successCount++;
-                // Si on a plus de 100 chaînes, la mission est accomplie, on arrête !
                 if (Object.keys(tempEpgData).length > 100) break;
                 
-            } catch (err) {
-                console.log(`[EPG] Source passée: ${source.url.substring(0, 30)}...`);
-            }
+            } catch (err) {}
         }
         
         if (Object.keys(tempEpgData).length > 10) {
             epgData = tempEpgData;
             lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
-            lastEpgError = `(Données lues depuis ${successCount} source${successCount > 1 ? 's' : ''})`;
+            lastEpgError = ""; 
         } else {
             lastEpgError = "Toutes les sources EPG ont échoué.";
         }
@@ -373,7 +419,10 @@ async function updateStreams() {
 
                 if (!tempChannelsMap[id]) {
                     tempChannelsMap[id] = { id, name: dName, displayName: getPrettyName(dName), sources: [], poster: meta.poster || DEFAULT_POSTER };
+                } else if (meta.poster && tempChannelsMap[id].poster === DEFAULT_POSTER) {
+                    tempChannelsMap[id].poster = meta.poster; // Force le bon logo (ex: CNews)
                 }
+                
                 const sourceExists = tempChannelsMap[id].sources.find(s => s.metaId === meta.id && s.provider.id === provider.id);
                 if (!sourceExists) tempChannelsMap[id].sources.push({ type: 'addon', metaId: meta.id, provider: provider });
             });
@@ -399,7 +448,7 @@ app.get('/', (req, res) => {
     } else {
         const epgCount = Object.keys(epgData).length;
         if (epgCount > 0) {
-            epgStatus = `✅ Programme TV chargé pour <b>${epgCount}</b> chaînes ${lastEpgError}`;
+            epgStatus = `✅ Programme TV chargé pour <b>${epgCount}</b> chaînes`;
         } else {
             epgStatus = `❌ Échec du téléchargement.<br><span style="color:#ff6b6b; font-size:12px;">Détails : ${lastEpgError}</span>`;
         }
@@ -429,7 +478,7 @@ app.get('/', (req, res) => {
     <body>
         <div class="container">
             <h1>📺 Hybrid TV FR</h1>
-            <p>Votre add-on télévisuel haute-performance.<br>Propulsé par un cache mémoire et des mises à jour invisibles.</p>
+            <p>Votre add-on télévisuel haute-performance.<br>Édition Version 1.0.</p>
             
             <div class="options">
                 <label style="cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px;">
@@ -478,8 +527,8 @@ app.get('/', (req, res) => {
 function handleManifest(req, res, conf) {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v68.' + conf, 
-        version: '68.0.0',
+        id: 'org.hybridproxy.fr.live.v1.' + conf, 
+        version: '1.0.0',
         name: conf === 'epg-on' ? 'Hybrid TV FR' : 'Hybrid TV FR (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition TV FR.',
         resources: ['catalog', 'meta', 'stream'],
@@ -559,7 +608,7 @@ app.get('/:conf?/catalog/tv/:id/:extra', async (req, res) => {
     res.json({ metas: paginatedMetas });
 });
 
-// === FILTRE ANTI-DOUBLONS INTÉGRÉ (Règle le bug "Dr House 13h15") ===
+// === LE LECTEUR AVEC FILTRE ANTI-DOUBLON ABSOLU ===
 app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
     const isEpgOn = !req.params.conf || req.params.conf === 'epg-on';
     await waitForChannels();
@@ -592,16 +641,14 @@ app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
                     const rawUpcoming = epgList.slice(currentIndex + 1);
                     let filteredUpcoming = [];
                     let seenTimes = new Set();
-                    seenTimes.add(sTime); // Empêche de doubler l'heure du programme actuel
+                    seenTimes.add(sTime); // Empêche de doubler l'heure du direct
                     
                     for (let p of rawUpcoming) {
                         const uTime = formatTime(p.start);
-                        // Filtre Anti-Doublons : Si l'heure a déjà été affichée, on ignore cette ligne !
                         if (!seenTimes.has(uTime)) {
                             seenTimes.add(uTime);
                             filteredUpcoming.push(`${uTime} ${p.title}`);
                         }
-                        // On récupère les 4 PROCHAINS programmes uniques
                         if (filteredUpcoming.length === 4) break; 
                     }
                     
