@@ -352,7 +352,7 @@ function getEpgForChannel(channelName) {
     return epgData[toSyncId(channelName)] || null;
 }
 
-// Récupération dynamique des catalogues externes
+// Récupération dynamique et parallèle des catalogues externes
 async function fetchAddonCatalog(providerUrl) {
     let allMetas = [];
     try {
@@ -362,25 +362,39 @@ async function fetchAddonCatalog(providerUrl) {
         }
         const base = cleanUrl.replace(/\/manifest\.json$/, '');
 
-        const manifestRes = await axios.get(cleanUrl, { timeout: 5000 });
+        const manifestRes = await axios.get(cleanUrl, { timeout: 4000 });
+        const catalogs = manifestRes.data.catalogs || [];
         
-        for (const catalog of manifestRes.data.catalogs || []) {
-            let skip = 0; let hasMore = true; let pageCount = 0; let seenIds = new Set(); 
-            while (hasMore && pageCount < 5) {
+        // Interrogation parallèle de toutes les catégories du fournisseur
+        const catalogPromises = catalogs.map(async (catalog) => {
+            let catMetas = [];
+            let skip = 0; let hasMore = true; let pageCount = 0;
+            while (hasMore && pageCount < 4) {
                 pageCount++;
                 try {
                     let url = skip > 0 ? `${base}/catalog/${catalog.type}/${catalog.id}/skip=${skip}.json` : `${base}/catalog/${catalog.type}/${catalog.id}.json`;
-                    let res = await axios.get(url, { timeout: 5000 });
+                    let res = await axios.get(url, { timeout: 4000 });
                     if (res.data && res.data.metas && res.data.metas.length > 0) {
-                        let newAdded = 0;
-                        res.data.metas.forEach(m => {
-                            if (!seenIds.has(m.id)) { seenIds.add(m.id); allMetas.push({ ...m, _providerBase: base }); newAdded++; }
-                        });
-                        if (newAdded === 0) hasMore = false; else skip += res.data.metas.length; 
-                    } else { hasMore = false; }
-                } catch (e) { hasMore = false; }
+                        catMetas.push(...res.data.metas);
+                        skip += res.data.metas.length;
+                    } else {
+                        hasMore = false;
+                    }
+                } catch (e) {
+                    hasMore = false;
+                }
             }
-        }
+            return catMetas;
+        });
+
+        const results = await Promise.all(catalogPromises);
+        let seenIds = new Set();
+        results.flat().forEach(m => {
+            if (m && m.id && !seenIds.has(m.id)) {
+                seenIds.add(m.id);
+                allMetas.push({ ...m, _providerBase: base });
+            }
+        });
     } catch (err) {}
     return allMetas;
 }
@@ -642,7 +656,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '1.0.2',
+        version: '1.0.3',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -744,7 +758,6 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
                     
                     if (filteredUpcoming.length > 0) {
                         descriptionText += `\n📺 À SUIVRE :\n`;
-                        filteredUpcoming.join('  |  ');
                         descriptionText += filteredUpcoming.join('  |  ');
                     }
                 }
@@ -770,7 +783,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     if (!channel) return res.json({ streams: [] });
     
     try {
-        // Requêtes en parallèle (Promise.all) pour un chargement instantané de tous les flux
+        // Interrogation simultanée de toutes les sources en parallèle (Promise.all)
         let streamPromises = channel.sources.map(async (source) => {
             try {
                 const streamRes = await axios.get(`${source.providerBase}/stream/tv/${source.metaId}.json`, {
