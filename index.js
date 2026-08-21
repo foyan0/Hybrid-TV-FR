@@ -147,7 +147,7 @@ function getChannelPlacements(n) {
     return placements;
 }
 
-// === LECTEUR EPG V55 (LE VRAI FIX : Fichier Texte Pur) ===
+// === LECTEUR EPG V56 (Le Blindage avec Proxys) ===
 function slugify(str) { return str.toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 
 function parseXmltvDate(str) {
@@ -166,31 +166,43 @@ async function updateEPG() {
     isUpdatingEPG = true; 
     lastEpgError = "Téléchargement en cours (Patientez environ 30 sec)...";
     
-    // Les sources qui fonctionnent à 100% sur Render
+    // Le tableau des serveurs de la dernière chance
     const urls = [ 
-        'https://allfrtv.github.io/xmltv/xmltv.xml',
-        'https://xmltv.ch/xmltv/xmltv-francophone.xml'
+        // 1. Le Proxy qui contourne le Cloudflare Suisse (Fichier TNT très léger)
+        'https://api.codetabs.com/v1/proxy?quest=https://xmltv.ch/xmltv/xmltv-tnt.xml',
+        // 2. Le Serveur Mondial EPGShare (Hyper stable, compressé auto)
+        'https://epgshare01.online/epgshare01/epg_ripper_FR1.xml.gz',
+        // 3. Le Proxy sur le fichier complet (Au cas où)
+        'https://api.codetabs.com/v1/proxy?quest=https://xmltv.ch/xmltv/xmltv-francophone.xml'
     ];
+    
     let tempEpgData = {}; 
 
     try {
         for (const url of urls) {
             try {
-                // IMPORTANT : Plus de responseType = stream ! On télécharge en texte clair.
                 const response = await axios.get(url, { 
                     timeout: 60000, 
-                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+                    headers: { 
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                    }
                 });
                 
-                // On s'assure que c'est bien une chaîne de caractères
                 const xml = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+                
+                // Si la page renvoyée ne contient pas de balises XML, c'est une page d'erreur de Cloudflare
+                if (!xml.includes('<channel ') || !xml.includes('<programme ')) {
+                    lastEpgError = "Fichier bloqué ou invalide sur cette source.";
+                    continue;
+                }
                 
                 let epgChannels = {};
                 
-                // 1. Scan ultra-rapide des chaînes
+                // 1. Scan des chaînes
                 let chIdx = 0;
                 while ((chIdx = xml.indexOf('<channel id=', chIdx)) !== -1) {
-                    const quote = xml.charAt(chIdx + 12); // Gère les guillemets simples ou doubles
+                    const quote = xml.charAt(chIdx + 12); 
                     const endId = xml.indexOf(quote, chIdx + 13);
                     if (endId === -1) break;
                     const chId = xml.substring(chIdx + 13, endId);
@@ -207,7 +219,7 @@ async function updateEPG() {
                     chIdx = nameEnd || chIdx + 10;
                 }
 
-                // 2. Scan ultra-rapide des programmes
+                // 2. Scan des programmes
                 let pIdx = 0;
                 while ((pIdx = xml.indexOf('<programme start=', pIdx)) !== -1) {
                     const pEnd = xml.indexOf('</programme>', pIdx);
@@ -236,12 +248,14 @@ async function updateEPG() {
                     }
                 }
             } catch (err) {
-                lastEpgError = err.message;
-                console.log("[EPG] Échec URL:", url, "->", err.message);
+                lastEpgError = `Échec avec ${url.substring(0, 35)}... -> ${err.message}`;
             }
             
-            // Si on a chargé plus de 50 chaînes, ça suffit, on arrête la boucle
-            if (Object.keys(tempEpgData).length > 50) break;
+            // Si on a chargé un nombre raisonnable de chaînes (au moins 15), on a gagné, on s'arrête.
+            if (Object.keys(tempEpgData).length > 15) {
+                lastEpgError = "Succès";
+                break;
+            }
         }
         
         // Si les données sont récupérées, on valide
@@ -249,8 +263,6 @@ async function updateEPG() {
             epgData = tempEpgData;
             lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
             lastEpgError = "Succès";
-        } else if (lastEpgError.includes("Téléchargement")) {
-            lastEpgError = "Le fichier a été téléchargé, mais aucune donnée lisible n'a été trouvée.";
         }
         
     } finally {
@@ -362,7 +374,7 @@ app.get('/', (req, res) => {
         if (epgCount > 0) {
             epgStatus = `✅ Programme TV chargé pour <b>${epgCount}</b> chaînes (Maj : ${lastUpdate})`;
         } else {
-            epgStatus = `❌ Échec du téléchargement.<br>Erreur technique : <i>${lastEpgError}</i>`;
+            epgStatus = `❌ Échec du téléchargement.<br>Dernière erreur : <i>${lastEpgError}</i>`;
         }
     }
     
@@ -415,8 +427,8 @@ app.get('/', (req, res) => {
 app.get('/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v55', 
-        version: '55.0.0',
+        id: 'org.hybridproxy.fr.live.v56', 
+        version: '56.0.0',
         name: 'Hybrid TV FR',
         description: 'L\'expérience IPTV ultime. Tri par IA, Programme TV ultra-rapide, zéro publicité.',
         resources: ['catalog', 'meta', 'stream'],
