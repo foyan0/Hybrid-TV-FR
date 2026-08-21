@@ -147,7 +147,7 @@ function getChannelPlacements(n) {
     return placements;
 }
 
-// === LECTEUR EPG AVANCÉ V48 (Rapide, sans entonnoir, anti-crash) ===
+// === LECTEUR EPG ===
 function slugify(str) { return str.toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 
 function parseXmltvDate(str) {
@@ -163,9 +163,8 @@ function parseXmltvDate(str) {
 
 async function updateEPG() {
     if (isUpdatingEPG) return;
-    isUpdatingEPG = true; // On verrouille
+    isUpdatingEPG = true; 
     
-    // Une seule source fiable, compacte (15Mo) et ultra complète pour la France
     const urls = [ 'https://allfrtv.github.io/xmltv/xmltv.xml' ];
     let tempEpgData = {}; 
 
@@ -180,8 +179,6 @@ async function updateEPG() {
                 let inProgramme = false, progBlock = '';
 
                 for await (const line of rl) {
-                    
-                    // --- GESTION DES CHAÎNES ---
                     if (line.includes('<channel ')) { 
                         inChannel = true; 
                         chanBlock = line; 
@@ -197,7 +194,6 @@ async function updateEPG() {
                         chanBlock = '';
                     }
 
-                    // --- GESTION DES PROGRAMMES ---
                     if (line.includes('<programme ')) { 
                         inProgramme = true; 
                         progBlock = line; 
@@ -205,7 +201,6 @@ async function updateEPG() {
                         progBlock += '\n' + line; 
                     }
 
-                    // On vérifie immédiatement (permet de gérer le multi-ligne OU les programmes écrits sur 1 seule ligne)
                     if (inProgramme && progBlock.includes('</programme>')) {
                         const startM = progBlock.match(/start="([^"]+)"/);
                         const stopM = progBlock.match(/stop="([^"]+)"/);
@@ -234,14 +229,12 @@ async function updateEPG() {
             }
         }
         
-        // Si tout s'est bien passé, on remplace le cache mémoire
         if (Object.keys(tempEpgData).length > 0) {
             epgData = tempEpgData;
             lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
         }
         
     } finally {
-        // LE VERROU DE SÉCURITÉ : Quoi qu'il arrive (succès, erreur, fichier coupé), on libère l'add-on.
         isUpdatingEPG = false; 
     }
 }
@@ -332,11 +325,19 @@ async function updateStreams() {
     isUpdatingChannels = false; 
 }
 
-// === ROUTES STREMIO ===
+// === INTERFACE WEB (MISE À JOUR) ===
 app.get('/', (req, res) => {
     const host = req.get('host');
     const manifestUrl = `https://${host}/manifest.json`;
     const stremioUrl = `stremio://${host}/manifest.json`;
+    
+    let channelsStatus = isUpdatingChannels 
+        ? '⏳ Recherche des chaînes en cours...' 
+        : `✅ <b>${channelsData.length}</b> chaînes actives`;
+        
+    let epgStatus = isUpdatingEPG 
+        ? '⏳ Téléchargement du Programme TV en cours...' 
+        : `🕒 Dernier téléchargement Programme TV : ${lastUpdate}`;
     
     const html = `
     <!DOCTYPE html>
@@ -354,7 +355,7 @@ app.get('/', (req, res) => {
             .btn:hover { background: #f40612; transform: scale(1.05); }
             .btn-secondary { background: #333; }
             .btn-secondary:hover { background: #444; }
-            .stats { margin-top: 30px; font-size: 14px; color: #888; background: #111; padding: 15px; border-radius: 6px; }
+            .stats { margin-top: 30px; font-size: 14px; color: #888; background: #111; padding: 15px; border-radius: 6px; line-height: 1.8; }
             input { width: 100%; padding: 12px; margin-top: 20px; background: #111; color: #fff; border: 1px solid #444; border-radius: 6px; text-align: center; font-size: 14px; box-sizing: border-box; }
         </style>
     </head>
@@ -364,12 +365,12 @@ app.get('/', (req, res) => {
             <p>Votre add-on télévisuel haute-performance.<br>Propulsé par un cache mémoire et des mises à jour invisibles.</p>
             
             <a href="${stremioUrl}" class="btn">▶ Ajouter à Stremio</a>
-            <button onclick="copyLink()" class="btn btn-secondary">📋 Copier le lien pour Nuvio</button>
+            <button onclick="copyLink()" class="btn btn-secondary">📋 Copier le lien</button>
             <input type="text" id="manifestLink" value="${manifestUrl}" readonly>
             
             <div class="stats">
-                ✅ <b>${channelsData.length}</b> chaînes actives<br>
-                🕒 Dernière synchronisation EPG : ${lastUpdate}
+                ${channelsStatus}<br>
+                ${epgStatus}
             </div>
         </div>
         <script>
@@ -387,10 +388,10 @@ app.get('/', (req, res) => {
 app.get('/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v48', 
-        version: '48.0.0',
+        id: 'org.hybridproxy.fr.live.v48.1', 
+        version: '48.1.0',
         name: 'Hybrid TV FR',
-        description: 'L\'expérience IPTV ultime. Tri par IA, EPG ultra-rapide, zéro publicité.',
+        description: 'L\'expérience IPTV ultime. Tri par IA, Programme TV ultra-rapide, zéro publicité.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -466,7 +467,7 @@ app.get('/meta/tv/:id.json', async (req, res) => {
     
     let descriptionText = `▶ Diffusion en cours sur ${channel.displayName}...`;
     if (isUpdatingEPG && Object.keys(epgData).length === 0) {
-        descriptionText = `▶ EPG en cours de téléchargement (Actualisez dans 15 sec)...`;
+        descriptionText = `▶ Programme TV en cours de téléchargement (Actualisez dans 15 sec)...`;
     }
     
     const epgList = getEpgForChannel(channel.name);
