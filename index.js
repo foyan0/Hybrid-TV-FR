@@ -15,14 +15,14 @@ let lastEpgError = "Téléchargement initial en cours...";
 
 const ADDON_PROVIDERS = [
     { id: 'vavoo', base: 'https://tvvoo.hayd.uk/cfg-fr', label: 'Vavoo', isPriority: true },
-    { id: 'mio', base: 'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiLCJCRV9GUiJdLCjI','jIjoiRlIiLCJCRV9GUiJdLCJjYXRlZ29yaWVzIjp7IkZSIjpbIkdlbmVyYWwg8J+7oiIsIlNwb3J0cyDimq3igIsiLCJEb2N1bWVudGFpcmVzIPCfijrQuiIsIkZpbG1zIPCfjqwiLCJJbmZvcm1hdGlvbnMg8J+7oiIsIkVuZmFudHMgv5G2IiwiTXVzaWMg8J+OtSJdfSwiZW5hYmxlU2VhcmNoIjpmYWxzZX0', label: 'Mio', isPriority: false }
+    { id: 'mio', base: 'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiLCJCRV9GUiJdLCJjYXRlZ29yaWVzIjp7IkZSIjpbIkdlbmVyYWwg8J+7oiIsIlNwb3J0cyDimq3igIsiLCJEb2N1bWVudGFpcmVzIPCfijrQuiIsIkZpbG1zIPCfjqwiLCJJbmZvcm1hdGlvbnMg8J+7oiIsIkVuZmFudHMgv5G2IiwiTXVzaWMg8J+OtSJdfSwiZW5hYmxlU2VhcmNoIjpmYWxzZX0', label: 'Mio', isPriority: false }
 ];
 
 let channelsData = []; 
 let epgData = {}; 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
-// === LOGOS CARRÉS STRICTS SPÉCIAUX NUVIO ===
+// === FORÇAGE DES LOGOS CARRÉS (La variable qui manquait !) ===
 const CUSTOM_LOGOS = {
     'TF1': 'https://upload.wikimedia.org/wikipedia/commons/2/2b/TF1_logo_2013.png',
     'FRANCE 2': 'https://upload.wikimedia.org/wikipedia/commons/e/e8/France_2_logo_2018.png',
@@ -37,7 +37,7 @@ const CUSTOM_LOGOS = {
     'PLANETE+ AVENTURE': 'https://upload.wikimedia.org/wikipedia/commons/c/cd/Plan%C3%A8te%2B_Aventure_2021.svg'
 };
 
-// === NORMALISATION ===
+// === NORMALISATION AGRESSIVE ===
 function normalizeChannelName(rawName) {
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     n = n.replace(/\s*\([Tt][Vv]\)\s*/g, '');
@@ -46,14 +46,17 @@ function normalizeChannelName(rawName) {
     n = n.replace(/^(FR|BE|CH|CA|VIP)\s*[:|/-]+\s*/, '');
     n = n.replace(/^FR\s+/, '');
     
+    // CENSURE : On bloque la fausse chaîne Disney+ qui pollue le bouquet
     if (n === 'DISNEY+' || n === 'DISNEY PLUS') return '';
 
+    // Suppression agressive des tags de qualité
     const tags = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'VAVOO', 'DIRECT', 'RAW', 'ACCESS'];
     n = n.replace(/[^A-Z0-9+ ]/g, ' '); 
     tags.forEach(tag => { n = n.replace(new RegExp(`\\b${tag}\\b`, 'g'), ' '); });
     n = n.replace(/\bHD\b/g, ' '); 
     n = n.replace(/\s+/g, ' ').trim();
 
+    // Raccords Spéciaux (Les bugs identifiés)
     if (n.includes('BFM') && !n.includes('BUSINESS') && !n.includes('PARIS') && !n.includes('LYON')) return 'BFMTV';
     if (n.includes('CNEWS') || n.includes('C NEWS')) return 'CNEWS';
     if (n.includes('FRANCEINFO') || n.includes('FRANCE INFO')) return 'FRANCE INFO';
@@ -435,7 +438,7 @@ async function updateStreams() {
                     tempChannelsMap[id] = { id, name: dName, displayName: getPrettyName(dName), sources: [], poster: finalPoster };
                 } else {
                     if (CUSTOM_LOGOS[dName]) {
-                        tempChannelsMap[id].poster = CUSTOM_LOGOS[dName]; // Forçage prioritaire du carré VIP
+                        tempChannelsMap[id].poster = CUSTOM_LOGOS[dName]; 
                     } else if (meta.poster && tempChannelsMap[id].poster === DEFAULT_POSTER) {
                         tempChannelsMap[id].poster = meta.poster; 
                     }
@@ -466,7 +469,7 @@ app.get('/', (req, res) => {
     } else {
         const epgCount = Object.keys(epgData).length;
         if (epgCount > 0) {
-            epgStatus = `✅ Programme TV chargé pour <b>${epgCount}</b> chaînes`;
+            epgStatus = `✅ Programme téléchargé pour <b>${epgCount}</b> chaînes`;
         } else {
             epgStatus = `❌ Échec du téléchargement.<br><span style="color:#ff6b6b; font-size:12px;">Détails : ${lastEpgError}</span>`;
         }
@@ -545,8 +548,8 @@ app.get('/', (req, res) => {
 function handleManifest(req, res, conf) {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v1.' + conf, 
-        version: '1.1.1',
+        id: 'org.hybridproxy.fr.live.v1.0.0.' + conf, 
+        version: '1.0.0',
         name: conf === 'epg-on' ? 'Hybrid TV FR' : 'Hybrid TV FR (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition TV FR.',
         resources: ['catalog', 'meta', 'stream'],
