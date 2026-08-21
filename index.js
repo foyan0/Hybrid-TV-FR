@@ -415,7 +415,7 @@ async function getChannelsForSources(sourcesList) {
                     type: 'addon', 
                     metaId: meta.id, 
                     providerBase: base,
-                    sourceIndex: i // Stocke l'index exact (0 = 1ère position, 1 = 2ème, etc.)
+                    sourceIndex: i // Respecte l'ordre exact de la liste (0 = n°1, 1 = n°2, etc.)
                 });
             }
         });
@@ -424,7 +424,7 @@ async function getChannelsForSources(sourcesList) {
     let tempChannelsData = [];
     Object.values(tempChannelsMap).forEach(ch => {
         if (ch.sources.length > 0) {
-            // Tri strict selon l'ordre exact des flèches sur le site web
+            // Tri strict selon l'ordre exact sur le site web
             ch.sources.sort((a, b) => a.sourceIndex - b.sourceIndex);
             ch.placements = getChannelPlacements(ch.name);
             tempChannelsData.push(ch);
@@ -435,7 +435,7 @@ async function getChannelsForSources(sourcesList) {
     return tempChannelsData;
 }
 
-// === INTERFACE WEB AVEC GESTION DE L'ORDRE STRICT ===
+// === INTERFACE WEB AVEC NUMÉROTATION DES PRIORITÉS ===
 app.get('/', async (req, res) => {
     let sourcesParam = req.query.sources;
     let sourcesList = sourcesParam ? sourcesParam.split(',') : ['', ''];
@@ -456,6 +456,7 @@ app.get('/', async (req, res) => {
             p { font-size: 15px; color: #aaa; margin-bottom: 25px; line-height: 1.6; }
             .section { background: #111; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #333; text-align: left; }
             .source-row { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
+            .source-num { font-size: 13px; font-weight: bold; color: #e50914; min-width: 24px; text-align: center; }
             .source-row input { flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px; }
             .btn { display: inline-block; background: #e50914; color: #fff; padding: 12px 24px; text-decoration: none; font-size: 14px; font-weight: bold; border-radius: 8px; margin: 5px; cursor: pointer; border: none; transition: 0.2s; }
             .btn:hover { background: #f40612; transform: scale(1.02); }
@@ -477,7 +478,7 @@ app.get('/', async (req, res) => {
             
             <div class="section">
                 <label style="font-size: 14px; color: #ccc; font-weight: bold;">Sources de flux (manifest.json) :</label><br>
-                <span style="font-size: 11px; color: #666; display: block; margin-bottom: 12px;">La source tout en haut sera lue en première par l'add-on.</span>
+                <span style="font-size: 11px; color: #777; display: block; margin-bottom: 12px;">L'ordre de priorité s'effectue du haut vers le bas (la source n°1 est lue en premier, suivie de la n°2, etc.).</span>
                 <div id="sourcesContainer"></div>
                 <button type="button" onclick="addSourceField()" class="btn btn-small">+ Ajouter une source</button>
             </div>
@@ -521,6 +522,7 @@ app.get('/', async (req, res) => {
                     const div = document.createElement('div');
                     div.className = 'source-row';
                     div.innerHTML = \`
+                        <span class="source-num">#\${index + 1}</span>
                         <input type="text" id="src_\${index}" value="\${src}" placeholder="https://votre-source.com/manifest.json">
                         \${index > 0 ? '<button type="button" onclick="moveSource(' + index + ', -1)" class="btn-small">▲</button>' : ''}
                         \${index < sources.length - 1 ? '<button type="button" onclick="moveSource(' + index + ', 1)" class="btn-small">▼</button>' : ''}
@@ -637,7 +639,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '2.1.3',
+        version: '2.1.5',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -783,7 +785,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             } catch (err) {}
         }
         
-        // Tri strict des flux vidéo basé sur l'ordre exact des flèches sur le site web
+        // Tri strict des flux vidéo selon l'ordre numérique des sources sur le site
         allStreams.sort((a, b) => a._sourceIndex - b._sourceIndex);
 
         const finalStreams = allStreams.map((s, idx) => ({
