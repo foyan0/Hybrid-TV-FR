@@ -93,13 +93,11 @@ function getPrettyName(n) {
 
 function getChannelPlacements(n) {
     let placements = [];
-
     if (['FRANCE INFO', 'LA CHAINE METEO', 'CNEWS', 'LCI', 'BFMTV', 'FRANCE 24', 'EURONEWS', 'LCN', '20 MINUTES TV'].includes(n) || n.startsWith('BFM ')) {
         let idx = 50;
         if(n === 'FRANCE INFO') idx = 1; else if(n === 'LA CHAINE METEO') idx = 2; else if(n === 'CNEWS') idx = 3; else if(n === 'LCI') idx = 4; else if(n === 'BFMTV') idx = 5; else if(n === 'FRANCE 24') idx = 6; else if(n === 'EURONEWS') idx = 7; else if(n.startsWith('BFM ')) idx = 20; 
         placements.push({ category: 'vavoo_info', index: idx });
     }
-
     let jeuIdx = -1;
     if (n === 'CARTOON NETWORK') jeuIdx = 1; else if (n === 'DISNEY CHANNEL') jeuIdx = 2; else if (n === 'GULLI') jeuIdx = 3; else if (n === 'NICKELODEON') jeuIdx = 4; else if (n === 'GAME ONE') jeuIdx = 5; else if (n === 'DISNEY XD') jeuIdx = 6; else if (n === 'BOOMERANG') jeuIdx = 7; else if (n === 'CANAL+ KIDS') jeuIdx = 8; else if (n === 'CANAL J') jeuIdx = 9; else if (n === 'DISNEY JUNIOR') jeuIdx = 10; else if (n === 'NICKELODEON TEEN') jeuIdx = 11; else if (n === 'NICKELODEON JUNIOR') jeuIdx = 12; else if (n === 'NICKTOONS') jeuIdx = 13; else if (n === 'DISNEY CHANNEL +1') jeuIdx = 50; else if (n.includes('NICKELODEON') && (n.includes('+') || n.includes('14') || n.includes('1'))) jeuIdx = 51;
     if (jeuIdx !== -1) placements.push({ category: 'vavoo_jeunesse', index: jeuIdx });
@@ -143,7 +141,7 @@ function getChannelPlacements(n) {
     return placements;
 }
 
-// === LECTEUR EPG V52 (Anti-Timeout, Proxy intégré et Diagnostic) ===
+// === LECTEUR EPG V53 (IPTV-ORG SUR GITHUB - ANTI-BLOCAGE) ===
 function slugify(str) { return str.toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 
 function parseXmltvDate(str) {
@@ -160,24 +158,23 @@ function parseXmltvDate(str) {
 async function updateEPG() {
     if (isUpdatingEPG) return;
     isUpdatingEPG = true; 
-    lastEpgError = "En cours...";
+    lastEpgError = "En cours de synchronisation avec GitHub...";
     
-    // Stratégie Anti-Blocage : 3 sources différentes (De la plus stable à la plus "cachée")
+    // Ces sources ne bloquent jamais Render (Hébergées sur Github)
     const urls = [ 
-        'https://xmltv.ch/xmltv/xmltv-francophone.xml', // Source 1 : Complète (Sport, Ciné, TNT)
-        'https://xmltv.ch/xmltv/xmltv-tnt.xml',         // Source 2 : Très légère (Seulement la TNT, ultra rapide)
-        'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://xmltv.ch/xmltv/xmltv-francophone.xml') // Source 3 : Proxy furtif
+        'https://iptv-org.github.io/epg/guides/fr/programme-tv.net.epg.xml',
+        'https://iptv-org.github.io/epg/guides/fr/telestar.fr.epg.xml'
     ];
     let tempEpgData = {}; 
 
     try {
         for (const url of urls) {
             try {
-                // TIMEOUT POUSSÉ À 2 MINUTES (120000 ms) POUR RENDER !
+                // Timeout de 120s par sécurité
                 const response = await axios.get(url, { 
                     responseType: 'stream', 
                     timeout: 120000, 
-                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/114.0.0.0' }
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
                 });
                 
                 const rl = readline.createInterface({ input: response.data, crlfDelay: Infinity });
@@ -222,21 +219,19 @@ async function updateEPG() {
                         inProgramme = false; progBlock = '';
                     }
                 }
-                
-                // Si on a réussi à charger plus de 10 chaînes, on s'arrête (pas besoin de tester les URLs de secours)
-                if (Object.keys(tempEpgData).length > 10) {
-                    lastEpgError = "Succès";
-                    break; 
-                }
             } catch (err) {
-                lastEpgError = err.message; // Capture l'erreur exacte (ex: "timeout of 120000ms exceeded")
+                lastEpgError = err.message;
                 console.log("[EPG] Échec URL:", url, "->", err.message);
             }
         }
         
+        // Si les données sont récupérées, on met à jour
         if (Object.keys(tempEpgData).length > 0) {
             epgData = tempEpgData;
             lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
+            lastEpgError = "Succès";
+        } else {
+            lastEpgError = "Erreur de formatage XML sur Github";
         }
         
     } finally {
@@ -330,7 +325,7 @@ async function updateStreams() {
     isUpdatingChannels = false; 
 }
 
-// === INTERFACE WEB (AVEC DIAGNOSTIC PRÉCIS) ===
+// === INTERFACE WEB ===
 app.get('/', (req, res) => {
     const host = req.get('host');
     const manifestUrl = `https://${host}/manifest.json`;
@@ -401,8 +396,8 @@ app.get('/', (req, res) => {
 app.get('/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v52', 
-        version: '52.0.0',
+        id: 'org.hybridproxy.fr.live.v53', 
+        version: '53.0.0',
         name: 'Hybrid TV FR',
         description: 'L\'expérience IPTV ultime. Tri par IA, Programme TV ultra-rapide, zéro publicité.',
         resources: ['catalog', 'meta', 'stream'],
