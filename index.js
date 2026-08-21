@@ -365,7 +365,6 @@ async function fetchAddonCatalog(providerUrl) {
         const manifestRes = await axios.get(cleanUrl, { timeout: 4000 });
         const catalogs = manifestRes.data.catalogs || [];
         
-        // Interrogation parallèle de toutes les catégories du fournisseur
         const catalogPromises = catalogs.map(async (catalog) => {
             let catMetas = [];
             let skip = 0; let hasMore = true; let pageCount = 0;
@@ -656,7 +655,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '1.0.3',
+        version: '1.0.4',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -792,10 +791,32 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                 if (streamRes.data && streamRes.data.streams) {
                     return streamRes.data.streams.map(s => {
                         let qual = "Qualité Standard (SD)";
-                        let up = (s.title || '').toUpperCase();
-                        if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) qual = "Ultra Haute Qualité (4K)";
-                        else if (up.includes('FHD') || up.includes('1080') || up.includes('HD') || up.includes('720')) qual = "Haute Qualité (HD/FHD)";
-                        return { ...s, _qualText: qual, _sourceIndex: source.sourceIndex };
+                        let score = 0;
+                        let up = (s.title || '').toUpperCase() + ' ' + (s.name || '').toUpperCase();
+                        
+                        // Calcul du score de qualité et de stabilité
+                        if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) {
+                            qual = "Ultra Haute Qualité (4K)";
+                            score += 300;
+                        } else if (up.includes('FHD') || up.includes('1080')) {
+                            qual = "Haute Qualité (FHD)";
+                            score += 200;
+                        } else if (up.includes('HD') || up.includes('720')) {
+                            qual = "Haute Qualité (HD)";
+                            score += 150;
+                        } else {
+                            score += 50;
+                        }
+
+                        // Pénalisation des flux de secours ou de test
+                        if (up.includes('BACKUP') || up.includes('SECOURS') || up.includes('ALT') || up.includes('TEST')) {
+                            score -= 150;
+                        }
+                        
+                        // Bonus pour l'ordre de priorité défini par l'utilisateur (Source #1 pèse plus lourd)
+                        score += (10 - source.sourceIndex) * 100;
+
+                        return { ...s, _qualText: qual, _score: score };
                     });
                 }
             } catch (err) {}
@@ -805,8 +826,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
 
-        // Tri strict selon l'ordre numérique défini sur la page d'administration
-        allStreams.sort((a, b) => a._sourceIndex - b._sourceIndex);
+        // Tri intelligent : Les flux ayant le meilleur score (Qualité + Stabilité + Priorité source) passent en premier
+        allStreams.sort((a, b) => b._score - a._score);
 
         // Limitation stricte aux 8 meilleures sources pour garantir un affichage instantané
         const limitedStreams = allStreams.slice(0, 8);
