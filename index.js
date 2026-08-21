@@ -481,7 +481,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <h1>📺 HybridTV</h1>
             <div class="intro-desc">
-                <b>HybridTV</b> centralise vos différentes sources de flux en un seul add-on unifié. Définissez votre propre ordre de priorité : le système analyse et classe automatiquement les flux pour placer en tête les meilleures résolutions et les sources les plus stables.
+                <b>HybridTV</b> centralise vos sources de flux en une véritable bibliothèque thématisée et triée sur le volet. Fini le désordre : tout est classé par catégories logiques (TNT, Sport, Cinéma, etc.) avec une sélection automatique de la meilleure qualité et des sources les plus stables selon vos priorités.
             </div>
             
             <div class="section">
@@ -646,7 +646,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '1.0.5',
+        version: '1.0.6',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -703,13 +703,12 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
     res.json({ metas: paginatedMetas });
 });
 
-// Route meta modifiée pour supprimer le cache agressif et afficher le programme en temps réel
 app.get('/:config/meta/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ meta: {} });
     
     let channelsData = await getChannelsForSources(config.sources);
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate'); // Forçage de la mise à jour en temps réel
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate'); 
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ meta: {} });
     
