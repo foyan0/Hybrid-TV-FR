@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
 const zlib = require('zlib');
+const readline = require('readline');
 
 const app = express();
 app.use(cors());
@@ -36,7 +37,6 @@ function normalizeChannelName(rawName) {
     return n.replace(/\s+/g, ' ').trim();
 }
 
-// === TRADUCTEUR UNIVERSEL EPG (Pour fusionner Canal+, TF1, etc. sans faille) ===
 function toSyncId(name) {
     if (!name) return '';
     let n = name.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -143,7 +143,7 @@ function getChannelPlacements(n) {
     return placements;
 }
 
-// === EXTRACTEUR EPG V64 ===
+// === EXTRACTEUR EPG V65 (Stream continu, sans synopsis, 0% RAM) ===
 function parseXmltvDate(str) {
     if (!str || str.length < 14) return 0;
     const y = str.substring(0,4), m = str.substring(4,6), d = str.substring(6,8);
@@ -155,59 +155,82 @@ function parseXmltvDate(str) {
     return isNaN(ts) ? 0 : ts;
 }
 
-function extractEpgData(xml) {
-    let sourceEpg = {};
-    let idToSyncKey = {}; 
-    
-    let chIdx = 0;
-    while ((chIdx = xml.indexOf('<channel id=', chIdx)) !== -1) {
-        const quote = xml.charAt(chIdx + 12);
-        const endId = xml.indexOf(quote, chIdx + 13);
-        if (endId === -1) break;
-        const chId = xml.substring(chIdx + 13, endId);
-        
-        const nameStart = xml.indexOf('<display-name', endId);
-        if (nameStart === -1) { chIdx = endId; continue; }
-        
-        const nameEnd = xml.indexOf('</display-name>', nameStart);
-        if (nameEnd !== -1) {
-            const nameStartTagEnd = xml.indexOf('>', nameStart) + 1;
-            const chName = xml.substring(nameStartTagEnd, nameEnd);
-            idToSyncKey[chId] = toSyncId(chName);
-        }
-        chIdx = nameEnd || chIdx + 10;
-    }
+// Le parseur magique : Il lit au fur et à mesure sans saturer la mémoire de Render
+async function fetchAndParseEPG(url, isGz) {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const response = await axios.get(url, {
+                responseType: 'stream',
+                timeout: 45000,
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+            });
 
-    let pIdx = 0;
-    while ((pIdx = xml.indexOf('<programme start=', pIdx)) !== -1) {
-        const pEnd = xml.indexOf('</programme>', pIdx);
-        if (pEnd === -1) break;
-        const block = xml.substring(pIdx, pEnd);
-        
-        const startM = block.match(/start=["']([^"']+)["']/);
-        const stopM = block.match(/stop=["']([^"']+)["']/);
-        const chanM = block.match(/channel=["']([^"']+)["']/);
-        const titleM = block.match(/<title[^>]*>([^<]+)<\/title>/);
-        const descM = block.match(/<desc[^>]*>([\s\S]*?)<\/desc>/);
-        
-        if (startM && stopM && chanM && titleM) {
-            const syncKey = idToSyncKey[chanM[1]];
-            if (syncKey) {
-                if (!sourceEpg[syncKey]) sourceEpg[syncKey] = [];
-                sourceEpg[syncKey].push({
-                    start: parseXmltvDate(startM[1]),
-                    stop: parseXmltvDate(stopM[1]),
-                    title: titleM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").replace(/&quot;/g, '"').trim(),
-                    desc: descM ? descM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").replace(/&quot;/g, '"').trim() : ''
-                });
+            let stream = response.data;
+            if (isGz) {
+                const unzip = zlib.createGunzip();
+                stream = stream.pipe(unzip);
             }
-        }
-        pIdx = pEnd + 12;
-    }
-    return sourceEpg;
+
+            const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+
+            let localChannels = {}; 
+            let localEpg = {};      
+            
+            let inChannel = false, chanBlock = '';
+            let inProgramme = false, progBlock = '';
+
+            rl.on('line', (line) => {
+                // On saute les résumés et images, on gagne un temps fou et on évite les bugs Nuvio !
+                if (line.includes('<desc') || line.includes('<icon')) return;
+
+                if (line.includes('<channel ')) { inChannel = true; chanBlock = line; }
+                else if (inChannel) { chanBlock += '\n' + line; }
+                
+                if (inChannel && chanBlock.includes('</channel>')) {
+                    const idM = chanBlock.match(/id=["']([^"']+)["']/);
+                    const nameM = chanBlock.match(/<display-name[^>]*>([^<]+)<\/display-name>/);
+                    if (idM && nameM) {
+                        localChannels[idM[1]] = toSyncId(normalizeChannelName(nameM[1]));
+                    }
+                    inChannel = false; chanBlock = '';
+                }
+
+                if (line.includes('<programme ')) { inProgramme = true; progBlock = line; }
+                else if (inProgramme) { progBlock += '\n' + line; }
+
+                if (inProgramme && progBlock.includes('</programme>')) {
+                    const startM = progBlock.match(/start=["']([^"']+)["']/);
+                    const stopM = progBlock.match(/stop=["']([^"']+)["']/);
+                    const chanM = progBlock.match(/channel=["']([^"']+)["']/);
+                    const titleM = progBlock.match(/<title[^>]*>([^<]+)<\/title>/);
+                    
+                    if (startM && stopM && chanM && titleM) {
+                        const syncKey = localChannels[chanM[1]];
+                        if (syncKey) {
+                            if (!localEpg[syncKey]) localEpg[syncKey] = [];
+                            localEpg[syncKey].push({
+                                start: parseXmltvDate(startM[1]),
+                                stop: parseXmltvDate(stopM[1]),
+                                title: titleM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").replace(/&quot;/g, '"').trim()
+                                // Plus de synopsis !
+                            });
+                        }
+                    }
+                    inProgramme = false; progBlock = '';
+                }
+            });
+
+            rl.on('close', () => resolve(localEpg));
+            rl.on('error', (err) => reject(err));
+
+            // Sécurité anti-gel
+            setTimeout(() => { stream.destroy(); reject(new Error("Timeout du stream")); }, 45000);
+
+        } catch (err) { reject(err); }
+    });
 }
 
-// L'ESSAIM : On tape plusieurs petites cibles ultra-stables
+// L'ESSAIM "Censure-Bypass" : On commence par la Suisse et la Belgique pour esquiver le blocage de TF1/Canal
 async function updateEPG() {
     if (isUpdatingEPG) return;
     isUpdatingEPG = true; 
@@ -215,43 +238,20 @@ async function updateEPG() {
     let successCount = 0;
     
     const sources = [
-        // 1. EPGShare01 (Nouvelle adresse GitHub garantie in-bloquable)
-        { url: 'https://raw.githubusercontent.com/epgshare01/share01/master/epg_ripper_FR1.xml.gz', isGz: true },
-        // 2. Petits fichiers ciblés de XMLTVfr (Ils ne font jamais planter les serveurs)
-        { url: 'https://xmltvfr.fr/xmltv/xmltv_tnt.xml', isGz: false },
-        { url: 'https://xmltvfr.fr/xmltv/xmltv_canalsat.xml', isGz: false },
-        { url: 'https://xmltvfr.fr/xmltv/xmltv_suisse.xml', isGz: false },
-        // 3. GitHub de secours ultra-massif
-        { url: 'https://raw.githubusercontent.com/acidjesuz/EPG/master/guide.xml', isGz: false }
+        { url: 'https://xmltvfr.fr/xmltv/xmltv_suisse.xml', isGz: false },    // Ramène TF1, M6, Canal+ (Diffusés légalement en Suisse)
+        { url: 'https://xmltvfr.fr/xmltv/xmltv_belgique.xml', isGz: false },  // Ramène TF1, C8, etc.
+        { url: 'https://xmltvfr.fr/xmltv/xmltv_tnt.xml', isGz: false },       // La TNT de base qui marchait pour toi
+        { url: 'https://raw.githubusercontent.com/davidmrs/epg/master/guide.xml', isGz: false }, // Giga-base Github
+        { url: 'https://xmltvfr.fr/xmltv/xmltv_francophone.xml', isGz: false } // Catch-all massif
     ];
 
     try {
         for (const source of sources) {
             try {
-                const response = await axios.get(source.url, { 
-                    responseType: source.isGz ? 'arraybuffer' : 'text',
-                    timeout: 20000, // Petit délai : si ça traîne, on passe au fichier suivant
-                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-                });
-                
-                let xml = '';
-                if (source.isGz) {
-                    const unzipped = await new Promise((resolve, reject) => {
-                        zlib.gunzip(response.data, (err, buffer) => {
-                            if (err) reject(err); else resolve(buffer);
-                        });
-                    });
-                    xml = unzipped.toString('utf-8');
-                } else {
-                    xml = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
-                }
-                
-                const parsedEpg = extractEpgData(xml);
-                xml = null; 
+                const parsedEpg = await fetchAndParseEPG(source.url, source.isGz);
                 
                 let added = false;
                 for (const channelKey in parsedEpg) {
-                    // On ajoute seulement les chaînes qui n'ont pas encore été trouvées
                     if (!tempEpgData[channelKey] && parsedEpg[channelKey].length > 0) {
                         tempEpgData[channelKey] = parsedEpg[channelKey];
                         added = true;
@@ -259,13 +259,14 @@ async function updateEPG() {
                 }
                 if (added) successCount++;
                 
+                // Si on a plus de 150 chaînes, on a largement de quoi faire, on arrête.
+                if (Object.keys(tempEpgData).length > 150) break;
+                
             } catch (err) {
-                // On ignore silencieusement le 404, on passe simplement au fichier suivant
-                console.log(`[EPG] Source ignorée: ${source.url.substring(0, 30)}...`);
+                console.log(`[EPG] Source passée: ${source.url.substring(0, 30)}...`);
             }
         }
         
-        // Si on a récolté les programmes d'au moins 10 chaînes, la mission est accomplie
         if (Object.keys(tempEpgData).length > 10) {
             epgData = tempEpgData;
             lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
@@ -391,7 +392,7 @@ app.get('/', (req, res) => {
     <body>
         <div class="container">
             <h1>📺 Hybrid TV FR</h1>
-            <p>Votre add-on télévisuel haute-performance.<br>Édition "Magazine TV" Ultime - Serveur Essaim.</p>
+            <p>Votre add-on télévisuel haute-performance.<br>Édition Épurée & Serveur Suisse (Anti-Censure).</p>
             
             <div class="options">
                 <label style="cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px;">
@@ -436,14 +437,14 @@ app.get('/', (req, res) => {
     res.send(html);
 });
 
-// === ROUTAGE INTELLIGENT (POUR PIÉGER LE CACHE DE NUVIO) ===
+// === ROUTAGE INTELLIGENT ===
 function handleManifest(req, res, conf) {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v64.' + conf, 
-        version: '64.0.0',
+        id: 'org.hybridproxy.fr.live.v65.' + conf, 
+        version: '65.0.0',
         name: conf === 'epg-on' ? 'Hybrid TV FR' : 'Hybrid TV FR (Sans EPG)',
-        description: 'L\'expérience IPTV ultime. Édition Magazine TV Ultime.',
+        description: 'L\'expérience IPTV ultime. Affichage Épuré Nuvio.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -521,7 +522,7 @@ app.get('/:conf?/catalog/tv/:id/:extra', async (req, res) => {
     res.json({ metas: paginatedMetas });
 });
 
-// === LA MISE EN PAGE INVERSÉE ET ÉPURÉE ===
+// === LA MISE EN PAGE NUVIO (ZÉRO SYNOPSIS, QUE DU "À SUIVRE") ===
 app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
     const isEpgOn = !req.params.conf || req.params.conf === 'epg-on';
     await waitForChannels();
@@ -549,10 +550,8 @@ app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
                     const sTime = new Date(currentProg.start).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
                     const eTime = new Date(currentProg.stop).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
                     
-                    // 1. LE DIRECT EN HAUT
                     descriptionText = `🔴 EN DIRECT (${sTime} - ${eTime}) : ${currentProg.title}`;
                     
-                    // 2. LE "À SUIVRE" EN DESSOUS (Visible immédiatement)
                     const upcoming = epgList.slice(currentIndex + 1, currentIndex + 6);
                     if (upcoming.length > 0) {
                         descriptionText += `\n\n📺 À SUIVRE :`;
@@ -560,11 +559,6 @@ app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
                             const uTime = new Date(p.start).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
                             descriptionText += `\n⏰ ${uTime} - ${p.title}`;
                         });
-                    }
-
-                    // 3. LE GROS RÉSUMÉ TOUT EN BAS
-                    if (currentProg.desc) {
-                        descriptionText += `\n\n📝 RÉSUMÉ DU DIRECT :\n${currentProg.desc}`;
                     }
                     
                 } else {
