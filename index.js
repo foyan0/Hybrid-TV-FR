@@ -415,7 +415,7 @@ async function getChannelsForSources(sourcesList) {
                     type: 'addon', 
                     metaId: meta.id, 
                     providerBase: base,
-                    isPriority: i === 0 // Le premier de la liste sur le site a la priorité absolue
+                    sourceIndex: i // Stocke l'index exact (0 = 1ère position, 1 = 2ème, etc.)
                 });
             }
         });
@@ -424,7 +424,8 @@ async function getChannelsForSources(sourcesList) {
     let tempChannelsData = [];
     Object.values(tempChannelsMap).forEach(ch => {
         if (ch.sources.length > 0) {
-            ch.sources.sort((a, b) => (b.isPriority ? 1 : 0) - (a.isPriority ? 1 : 0));
+            // Tri strict selon l'ordre exact des flèches sur le site web
+            ch.sources.sort((a, b) => a.sourceIndex - b.sourceIndex);
             ch.placements = getChannelPlacements(ch.name);
             tempChannelsData.push(ch);
         }
@@ -434,7 +435,7 @@ async function getChannelsForSources(sourcesList) {
     return tempChannelsData;
 }
 
-// === INTERFACE WEB AVEC TRI DES SOURCES (MONTER / DESCENDRE) ===
+// === INTERFACE WEB AVEC GESTION DE L'ORDRE STRICT ===
 app.get('/', async (req, res) => {
     let sourcesParam = req.query.sources;
     let sourcesList = sourcesParam ? sourcesParam.split(',') : ['', ''];
@@ -476,7 +477,7 @@ app.get('/', async (req, res) => {
             
             <div class="section">
                 <label style="font-size: 14px; color: #ccc; font-weight: bold;">Sources de flux (manifest.json) :</label><br>
-                <span style="font-size: 11px; color: #666; display: block; margin-bottom: 12px;">La 1ère source de la liste sera lue en priorité par l'add-on.</span>
+                <span style="font-size: 11px; color: #666; display: block; margin-bottom: 12px;">La source tout en haut sera lue en première par l'add-on.</span>
                 <div id="sourcesContainer"></div>
                 <button type="button" onclick="addSourceField()" class="btn btn-small">+ Ajouter une source</button>
             </div>
@@ -775,18 +776,15 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         let up = (s.title || '').toUpperCase();
                         if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) qual = "Ultra Haute Qualité (4K)";
                         else if (up.includes('FHD') || up.includes('1080') || up.includes('HD') || up.includes('720')) qual = "Haute Qualité (HD/FHD)";
-                        return { ...s, _qualText: qual, _isPriority: source.isPriority };
+                        return { ...s, _qualText: qual, _sourceIndex: source.sourceIndex };
                     });
                     allStreams = allStreams.concat(mappedStreams);
                 }
             } catch (err) {}
         }
         
-        allStreams.sort((a, b) => {
-            if (a._isPriority && !b._isPriority) return -1;
-            if (!a._isPriority && b._isPriority) return 1;
-            return 0;
-        });
+        // Tri strict des flux vidéo basé sur l'ordre exact des flèches sur le site web
+        allStreams.sort((a, b) => a._sourceIndex - b._sourceIndex);
 
         const finalStreams = allStreams.map((s, idx) => ({
             url: s.url, name: `▶ Source ${idx + 1}`, title: s._qualText
