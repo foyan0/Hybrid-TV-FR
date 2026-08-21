@@ -348,7 +348,7 @@ function getEpgForChannel(channelName) {
     return epgData[toSyncId(channelName)] || null;
 }
 
-// === NORMALISATEUR DE LIENS DE MANIFEST (Règle le bug des "0 éléments trouvés") ===
+// === NORMALISATEUR DE LIENS DE MANIFEST ===
 async function fetchAddonCatalog(providerUrl) {
     let allMetas = [];
     try {
@@ -358,15 +358,15 @@ async function fetchAddonCatalog(providerUrl) {
         }
         const base = cleanUrl.replace(/\/manifest\.json$/, '');
 
-        const manifestRes = await axios.get(cleanUrl, { timeout: 6000 });
+        const manifestRes = await axios.get(cleanUrl, { timeout: 5000 });
         
         for (const catalog of manifestRes.data.catalogs || []) {
             let skip = 0; let hasMore = true; let pageCount = 0; let seenIds = new Set(); 
-            while (hasMore && pageCount < 6) {
+            while (hasMore && pageCount < 5) {
                 pageCount++;
                 try {
                     let url = skip > 0 ? `${base}/catalog/${catalog.type}/${catalog.id}/skip=${skip}.json` : `${base}/catalog/${catalog.type}/${catalog.id}.json`;
-                    let res = await axios.get(url, { timeout: 6000 });
+                    let res = await axios.get(url, { timeout: 5000 });
                     if (res.data && res.data.metas && res.data.metas.length > 0) {
                         let newAdded = 0;
                         res.data.metas.forEach(m => {
@@ -415,7 +415,7 @@ async function getChannelsForSources(sourcesList) {
                     type: 'addon', 
                     metaId: meta.id, 
                     providerBase: base,
-                    isPriority: i === 0 
+                    isPriority: i === 0 // Le premier de la liste sur le site a la priorité absolue
                 });
             }
         });
@@ -434,7 +434,7 @@ async function getChannelsForSources(sourcesList) {
     return tempChannelsData;
 }
 
-// === INTERFACE WEB AVEC ZONE D'IMPORT/EXPORT ===
+// === INTERFACE WEB AVEC TRI DES SOURCES (MONTER / DESCENDRE) ===
 app.get('/', async (req, res) => {
     let sourcesParam = req.query.sources;
     let sourcesList = sourcesParam ? sourcesParam.split(',') : ['', ''];
@@ -447,21 +447,23 @@ app.get('/', async (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Hybrid TV FR</title>
+        <title>HybridTV</title>
         <style>
             body { font-family: -apple-system, sans-serif; background: #141414; color: #fff; text-align: center; padding: 40px 20px; }
             .container { max-width: 650px; margin: 0 auto; background: #1f1f1f; padding: 40px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-top: 4px solid #e50914; }
             h1 { color: #fff; font-size: 32px; margin-bottom: 10px; }
             p { font-size: 15px; color: #aaa; margin-bottom: 25px; line-height: 1.6; }
             .section { background: #111; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #333; text-align: left; }
-            .source-row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+            .source-row { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
             .source-row input { flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px; }
             .btn { display: inline-block; background: #e50914; color: #fff; padding: 12px 24px; text-decoration: none; font-size: 14px; font-weight: bold; border-radius: 8px; margin: 5px; cursor: pointer; border: none; transition: 0.2s; }
             .btn:hover { background: #f40612; transform: scale(1.02); }
             .btn-secondary { background: #333; }
             .btn-secondary:hover { background: #444; }
-            .btn-small { background: #444; padding: 8px 12px; font-size: 13px; border-radius: 6px; cursor: pointer; color: #fff; border: none; }
-            .btn-danger { background: #800; padding: 8px 12px; font-size: 13px; border-radius: 6px; cursor: pointer; color: #fff; border: none; }
+            .btn-small { background: #444; padding: 8px 10px; font-size: 12px; border-radius: 6px; cursor: pointer; color: #fff; border: none; }
+            .btn-small:hover { background: #555; }
+            .btn-danger { background: #800; padding: 8px 10px; font-size: 12px; border-radius: 6px; cursor: pointer; color: #fff; border: none; }
+            .btn-danger:hover { background: #a00; }
             .stats { margin-top: 25px; font-size: 14px; color: #888; background: #111; padding: 15px; border-radius: 6px; line-height: 1.8; text-align: left; }
             input[type="text"].main-link { width: 100%; padding: 12px; margin-top: 15px; background: #111; color: #fff; border: 1px solid #444; border-radius: 6px; text-align: center; font-size: 14px; box-sizing: border-box; }
             textarea.export-box { width: 100%; height: 60px; padding: 8px; background: #222; border: 1px solid #444; color: #aaa; border-radius: 6px; font-size: 12px; box-sizing: border-box; resize: none; margin-top: 5px; }
@@ -469,11 +471,12 @@ app.get('/', async (req, res) => {
     </head>
     <body>
         <div class="container">
-            <h1>📺 Hybrid TV FR</h1>
-            <p>Configurez vos sources, puis générez votre lien d'add-on universel et sécurisé.</p>
+            <h1>📺 HybridTV</h1>
+            <p>Configurez vos sources et définissez leur ordre de priorité, puis générez votre lien d'add-on.</p>
             
             <div class="section">
-                <label style="font-size: 14px; color: #ccc; font-weight: bold;">Sources de flux (manifest.json) :</label><br><br>
+                <label style="font-size: 14px; color: #ccc; font-weight: bold;">Sources de flux (manifest.json) :</label><br>
+                <span style="font-size: 11px; color: #666; display: block; margin-bottom: 12px;">La 1ère source de la liste sera lue en priorité par l'add-on.</span>
                 <div id="sourcesContainer"></div>
                 <button type="button" onclick="addSourceField()" class="btn btn-small">+ Ajouter une source</button>
             </div>
@@ -518,11 +521,23 @@ app.get('/', async (req, res) => {
                     div.className = 'source-row';
                     div.innerHTML = \`
                         <input type="text" id="src_\${index}" value="\${src}" placeholder="https://votre-source.com/manifest.json">
-                        \${sources.length > 1 ? '<button type="button" onclick="removeSource(' + index + ')" class="btn btn-danger">✕</button>' : ''}
+                        \${index > 0 ? '<button type="button" onclick="moveSource(' + index + ', -1)" class="btn-small">▲</button>' : ''}
+                        \${index < sources.length - 1 ? '<button type="button" onclick="moveSource(' + index + ', 1)" class="btn-small">▼</button>' : ''}
+                        \${sources.length > 1 ? '<button type="button" onclick="removeSource(' + index + ')" class="btn-danger">✕</button>' : ''}
                     \`;
                     container.appendChild(div);
                 });
                 updateExportToken();
+            }
+
+            function moveSource(index, direction) {
+                saveInputs();
+                const newIndex = index + direction;
+                if (newIndex < 0 || newIndex >= sources.length) return;
+                const temp = sources[index];
+                sources[index] = sources[newIndex];
+                sources[newIndex] = temp;
+                renderSources();
             }
 
             function addSourceField() {
@@ -590,7 +605,6 @@ app.get('/', async (req, res) => {
                 alert("Lien généré avec succès !");
             }
 
-            // Chargement initial mémoire locale si dispo
             let savedSources = localStorage.getItem('hybrid_sources');
             if (savedSources && !${sourcesParam ? 'true' : 'false'}) {
                 sources = JSON.parse(savedSources);
@@ -621,10 +635,10 @@ app.get('/:config/manifest.json', (req, res) => {
     
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.meta.' + confName, 
-        version: '2.1.1',
-        name: config.epg ? 'Hybrid TV FR' : 'Hybrid TV FR (Sans Programme TV)',
-        description: 'L\'expérience IPTV ultime. Édition Meta-Addon sécurisée.',
+        id: 'org.hybridtv.meta.' + confName, 
+        version: '2.1.3',
+        name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
+        description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
