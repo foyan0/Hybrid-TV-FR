@@ -35,6 +35,11 @@ function normalizeChannelName(rawName) {
     tags.forEach(tag => { n = n.replace(new RegExp(`\\b${tag}\\b`, 'g'), ' '); });
     n = n.replace(/\s+/g, ' ').trim();
 
+    // Raccords Spéciaux
+    if (n === 'TF 1') return 'TF1';
+    if (n === 'C 8') return 'C8';
+    if (n === 'CANAL PLUS' || n === 'CANAL' || n.includes('CANAL+ FRANCE')) return 'CANAL+';
+    
     if (n === 'BFM' || n === 'BFM TV') return 'BFMTV';
     if (n === 'C NEWS') return 'CNEWS';
     if (n === 'FRANCEINFO') return 'FRANCE INFO';
@@ -61,7 +66,6 @@ function normalizeChannelName(rawName) {
     if (beinMatch) return beinMatch[1] ? `BEIN SPORTS MAX ${beinMatch[2]}` : `BEIN SPORTS ${beinMatch[2]}`;
     if (n.includes('BEIN SPORT')) return 'BEIN SPORTS 1';
 
-    if (n === 'CANAL PLUS' || n === 'CANAL') return 'CANAL+';
     if (n === 'CANAL PLUS FOOT' || n === 'FOOT+') return 'CANAL+ FOOT';
     if (n === 'CANAL PLUS SPORT') return 'CANAL+ SPORT';
     if (n.includes('SPORT 360') || n.includes('CANAL+ 360')) return 'CANAL+ SPORT 360';
@@ -148,7 +152,7 @@ function getChannelPlacements(n) {
     return placements;
 }
 
-// === LECTEUR EPG V60 (Fazzani + Extracteur Blindé) ===
+// === LECTEUR EPG V61 (FUSION DE SOURCES MULTIPLES) ===
 function slugify(str) { return str.toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 
 function parseXmltvDate(str) {
@@ -163,10 +167,10 @@ function parseXmltvDate(str) {
 }
 
 function extractEpgData(xml) {
-    let tempEpg = {};
+    let sourceEpg = {};
     let epgChannels = {};
     
-    // 1. Scan ultra-sécurisé des chaînes
+    // Scan des chaînes
     let chIdx = 0;
     while ((chIdx = xml.indexOf('<channel ', chIdx)) !== -1) {
         const endTag = xml.indexOf('</channel>', chIdx);
@@ -182,7 +186,7 @@ function extractEpgData(xml) {
         chIdx = endTag + 10;
     }
 
-    // 2. Scan ultra-sécurisé des programmes
+    // Scan des programmes
     let pIdx = 0;
     while ((pIdx = xml.indexOf('<programme ', pIdx)) !== -1) {
         const pEnd = xml.indexOf('</programme>', pIdx);
@@ -198,8 +202,8 @@ function extractEpgData(xml) {
         if (startM && stopM && chanM && titleM) {
             const rawChName = epgChannels[chanM[1]];
             if (rawChName) {
-                if (!tempEpg[rawChName]) tempEpg[rawChName] = [];
-                tempEpg[rawChName].push({
+                if (!sourceEpg[rawChName]) sourceEpg[rawChName] = [];
+                sourceEpg[rawChName].push({
                     start: parseXmltvDate(startM[1]),
                     stop: parseXmltvDate(stopM[1]),
                     title: titleM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").trim(),
@@ -209,7 +213,7 @@ function extractEpgData(xml) {
         }
         pIdx = pEnd + 12;
     }
-    return tempEpg;
+    return sourceEpg;
 }
 
 async function updateEPG() {
@@ -217,27 +221,27 @@ async function updateEPG() {
     isUpdatingEPG = true; 
     let tempEpgData = {};
     
-    // Les meilleures sources du net (Fazzani en priorité 1)
+    // Le Fusionneur : Il télécharge chaque source et ajoute les chaînes manquantes.
     const urls = [ 
-        'https://raw.githubusercontent.com/Fazzani/grabber/master/guide.xml', // Ultra complet, ne bloque jamais
-        'https://xmltvfr.fr/xmltv/xmltv_francophone.xml',
-        'https://epgshare01.online/epgshare01/epg_ripper_FR1.xml.gz'
+        { url: 'https://xmltvfr.fr/xmltv/xmltv_francophone.xml', isGz: false }, // Priorité 1: Qualité TNT FR parfaite (TF1, C8, Canal+)
+        { url: 'https://epgshare01.online/epgshare01/epg_ripper_FR1.xml.gz', isGz: true }, // Priorité 2: Méga base Sports / Découverte
+        { url: 'https://raw.githubusercontent.com/Fazzani/grabber/master/guide.xml', isGz: false } // Priorité 3: Reste du monde
     ];
 
     try {
-        for (const url of urls) {
+        let loadedSources = 0;
+        
+        for (const source of urls) {
             try {
-                lastEpgError = `Test de la source: ${url.substring(0, 30)}...`;
-                const isGz = url.endsWith('.gz');
-                
-                const response = await axios.get(url, { 
-                    responseType: isGz ? 'arraybuffer' : 'text',
-                    timeout: 60000, 
+                lastEpgError = `Fusion en cours... (${source.url.substring(8, 25)})`;
+                const response = await axios.get(source.url, { 
+                    responseType: source.isGz ? 'arraybuffer' : 'text',
+                    timeout: 45000, 
                     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
                 });
                 
                 let xml = '';
-                if (isGz) {
+                if (source.isGz) {
                     const unzipped = await new Promise((resolve, reject) => {
                         zlib.gunzip(response.data, (err, buffer) => {
                             if (err) reject(err); else resolve(buffer);
@@ -248,14 +252,23 @@ async function updateEPG() {
                     xml = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
                 }
                 
-                tempEpgData = extractEpgData(xml);
+                // On extrait les programmes de cette source
+                const parsedEpg = extractEpgData(xml);
+                xml = null; // On libère la RAM immédiatement
                 
-                // Si on a plus de 50 chaînes, la source est bonne, on s'arrête
-                if (Object.keys(tempEpgData).length > 50) {
-                    break;
+                // FUSION : On ajoute les chaînes trouvées SI elles n'y sont pas déjà
+                for (const channelName in parsedEpg) {
+                    if (!tempEpgData[channelName] && parsedEpg[channelName].length > 0) {
+                        tempEpgData[channelName] = parsedEpg[channelName];
+                    }
                 }
+                
+                loadedSources++;
+                // Si on a récolté plus de 150 chaînes TV, le travail est fini !
+                if (Object.keys(tempEpgData).length > 150) break;
+                
             } catch (err) {
-                console.log("[EPG] Échec URL:", url, err.message);
+                console.log(`[EPG] Source ignorée (${source.url}):`, err.message);
             }
         }
         
@@ -264,7 +277,7 @@ async function updateEPG() {
             lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
             lastEpgError = "Succès";
         } else {
-            lastEpgError = "Toutes les sources ont échoué ou ont été bloquées.";
+            lastEpgError = "Toutes les sources EPG sont actuellement hors ligne.";
         }
         
     } finally {
@@ -388,11 +401,11 @@ app.get('/', (req, res) => {
         
     let epgStatus = "";
     if (isUpdatingEPG) {
-        epgStatus = '⏳ Téléchargement du Programme TV en cours...';
+        epgStatus = `⏳ ${lastEpgError}`;
     } else {
         const epgCount = Object.keys(epgData).length;
         if (epgCount > 0) {
-            epgStatus = `✅ Programme TV chargé pour <b>${epgCount}</b> chaînes (Maj : ${lastUpdate})`;
+            epgStatus = `✅ Programme TV chargé pour <b>${epgCount}</b> chaînes (Fusion active)`;
         } else {
             epgStatus = `❌ Échec du téléchargement.<br>Erreur technique : <i>${lastEpgError}</i>`;
         }
@@ -421,7 +434,7 @@ app.get('/', (req, res) => {
     <body>
         <div class="container">
             <h1>📺 Hybrid TV FR</h1>
-            <p>Votre add-on télévisuel haute-performance.<br>Propulsé par le Fazzani Grabber.</p>
+            <p>Votre add-on télévisuel haute-performance.<br>Édition Spéciale "Magazine TV" avec Fusion de données.</p>
             
             <a href="${stremioUrl}" class="btn">▶ Ajouter à Stremio</a>
             <button onclick="copyLink()" class="btn btn-secondary">📋 Copier le lien</button>
@@ -429,7 +442,8 @@ app.get('/', (req, res) => {
             
             <div class="stats">
                 ${channelsStatus}<br>
-                ${epgStatus}
+                ${epgStatus}<br>
+                🕒 Dernière synchronisation : ${lastUpdate}
             </div>
         </div>
         <script>
@@ -447,10 +461,10 @@ app.get('/', (req, res) => {
 app.get('/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v60', 
-        version: '60.0.0',
+        id: 'org.hybridproxy.fr.live.v61', 
+        version: '61.0.0',
         name: 'Hybrid TV FR',
-        description: 'L\'expérience IPTV ultime. Tri par IA, Programme TV détaillé, zéro publicité.',
+        description: 'L\'expérience IPTV ultime. Tri par IA, Programme TV Magazine, zéro publicité.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -525,7 +539,7 @@ app.get('/catalog/tv/:id/:extra', async (req, res) => {
     res.json({ metas: paginatedMetas });
 });
 
-// === LE NOUVEAU FORMATTAGE DE NUVIO (LA GRILLE TV) ===
+// === LA MISE EN PAGE "MAGAZINE TV" (Inversée pour Nuvio) ===
 app.get('/meta/tv/:id.json', async (req, res) => {
     await waitForChannels();
     res.setHeader('Cache-Control', 'max-age=1800, public'); 
@@ -542,10 +556,8 @@ app.get('/meta/tv/:id.json', async (req, res) => {
     const epgList = getEpgForChannel(channel.name);
     if (epgList && epgList.length > 0) {
         const now = Date.now();
-        // On trie les programmes par heure pour être sûr
         epgList.sort((a, b) => a.start - b.start);
         
-        // On cherche le programme en cours
         const currentIndex = epgList.findIndex(p => now >= p.start && now <= p.stop);
         
         if (currentIndex !== -1) {
@@ -553,15 +565,10 @@ app.get('/meta/tv/:id.json', async (req, res) => {
             const sTime = new Date(currentProg.start).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
             const eTime = new Date(currentProg.stop).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
             
-            // Le Titre en haut (Sert de sous-titre dans l'interface Nuvio)
+            // 1. LE TITRE EN HAUT (Reste visible sous forme de "Sous-titre" dans Nuvio)
             descriptionText = `🔴 EN DIRECT (${sTime} - ${eTime}) : ${currentProg.title}`;
             
-            // Le résumé en dessous
-            if (currentProg.desc) {
-                descriptionText += `\n\n${currentProg.desc}`;
-            }
-
-            // Les 5 prochains programmes à suivre
+            // 2. LES PROGRAMMES "À SUIVRE" DIRECTEMENT EN DESSOUS (Pas besoin de dérouler le texte)
             const upcoming = epgList.slice(currentIndex + 1, currentIndex + 6);
             if (upcoming.length > 0) {
                 descriptionText += `\n\n📺 À SUIVRE :`;
@@ -570,8 +577,13 @@ app.get('/meta/tv/:id.json', async (req, res) => {
                     descriptionText += `\n⏰ ${uTime} - ${p.title}`;
                 });
             }
+
+            // 3. LE GROS RÉSUMÉ RELÉGUÉ TOUT EN BAS
+            if (currentProg.desc) {
+                descriptionText += `\n\n📝 RÉSUMÉ :\n${currentProg.desc}`;
+            }
+            
         } else {
-            // Si on a le programme mais qu'il y a un "trou" à l'heure actuelle
             const nextProgs = epgList.filter(p => p.start > now).slice(0, 5);
             if (nextProgs.length > 0) {
                 descriptionText = `▶ Aucun programme renseigné en ce moment.\n\n📺 À VENIR :`;
