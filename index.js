@@ -22,21 +22,6 @@ let channelsData = [];
 let epgData = {}; 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
-// === FORÇAGE DES LOGOS CARRÉS (La variable qui manquait !) ===
-const CUSTOM_LOGOS = {
-    'TF1': 'https://upload.wikimedia.org/wikipedia/commons/2/2b/TF1_logo_2013.png',
-    'FRANCE 2': 'https://upload.wikimedia.org/wikipedia/commons/e/e8/France_2_logo_2018.png',
-    'FRANCE 3': 'https://upload.wikimedia.org/wikipedia/commons/6/67/France_3_logo_2018.png',
-    'CANAL+': 'https://upload.wikimedia.org/wikipedia/commons/7/7b/Canal%2B_2020_square_logo.png',
-    'CANAL+ SPORT 360': 'https://upload.wikimedia.org/wikipedia/commons/c/cd/Canal%2B_Sport_360_logo.svg',
-    'M6': 'https://upload.wikimedia.org/wikipedia/commons/4/42/M6_logo_2020.png',
-    'BFMTV': 'https://upload.wikimedia.org/wikipedia/commons/6/6f/BFMTV_logo_2024.png',
-    'CNEWS': 'https://upload.wikimedia.org/wikipedia/commons/6/6c/CNews_logo_2017.png',
-    'L EQUIPE': 'https://upload.wikimedia.org/wikipedia/commons/e/e0/L%27%C3%89quipe_2021_logo.svg',
-    'PLANETE+ CRIME': 'https://upload.wikimedia.org/wikipedia/commons/3/36/Plan%C3%A8te%2B_Crime_2021.svg',
-    'PLANETE+ AVENTURE': 'https://upload.wikimedia.org/wikipedia/commons/c/cd/Plan%C3%A8te%2B_Aventure_2021.svg'
-};
-
 // === NORMALISATION AGRESSIVE ===
 function normalizeChannelName(rawName) {
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -46,17 +31,16 @@ function normalizeChannelName(rawName) {
     n = n.replace(/^(FR|BE|CH|CA|VIP)\s*[:|/-]+\s*/, '');
     n = n.replace(/^FR\s+/, '');
     
-    // CENSURE : On bloque la fausse chaîne Disney+ qui pollue le bouquet
+    // CENSURE : On bloque la fausse chaîne Disney+
     if (n === 'DISNEY+' || n === 'DISNEY PLUS') return '';
 
-    // Suppression agressive des tags de qualité
     const tags = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'VAVOO', 'DIRECT', 'RAW', 'ACCESS'];
     n = n.replace(/[^A-Z0-9+ ]/g, ' '); 
     tags.forEach(tag => { n = n.replace(new RegExp(`\\b${tag}\\b`, 'g'), ' '); });
     n = n.replace(/\bHD\b/g, ' '); 
     n = n.replace(/\s+/g, ' ').trim();
 
-    // Raccords Spéciaux (Les bugs identifiés)
+    // Raccords Spéciaux
     if (n.includes('BFM') && !n.includes('BUSINESS') && !n.includes('PARIS') && !n.includes('LYON')) return 'BFMTV';
     if (n.includes('CNEWS') || n.includes('C NEWS')) return 'CNEWS';
     if (n.includes('FRANCEINFO') || n.includes('FRANCE INFO')) return 'FRANCE INFO';
@@ -432,16 +416,11 @@ async function updateStreams() {
                 if (!dName || dName.length < 2) return; 
 
                 const id = 'hyb_id_' + dName.replace(/[^a-zA-Z0-9+]/g, '_').toLowerCase();
-                const finalPoster = CUSTOM_LOGOS[dName] ? CUSTOM_LOGOS[dName] : (meta.poster || DEFAULT_POSTER);
 
                 if (!tempChannelsMap[id]) {
-                    tempChannelsMap[id] = { id, name: dName, displayName: getPrettyName(dName), sources: [], poster: finalPoster };
-                } else {
-                    if (CUSTOM_LOGOS[dName]) {
-                        tempChannelsMap[id].poster = CUSTOM_LOGOS[dName]; 
-                    } else if (meta.poster && tempChannelsMap[id].poster === DEFAULT_POSTER) {
-                        tempChannelsMap[id].poster = meta.poster; 
-                    }
+                    tempChannelsMap[id] = { id, name: dName, displayName: getPrettyName(dName), sources: [], poster: meta.poster || DEFAULT_POSTER };
+                } else if (meta.poster && tempChannelsMap[id].poster === DEFAULT_POSTER) {
+                    tempChannelsMap[id].poster = meta.poster; 
                 }
                 
                 const sourceExists = tempChannelsMap[id].sources.find(s => s.metaId === meta.id && s.provider.id === provider.id);
@@ -548,7 +527,7 @@ app.get('/', (req, res) => {
 function handleManifest(req, res, conf) {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v1.0.0.' + conf, 
+        id: 'org.hybridproxy.fr.live.v1.' + conf, 
         version: '1.0.0',
         name: conf === 'epg-on' ? 'Hybrid TV FR' : 'Hybrid TV FR (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition TV FR.',
