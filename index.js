@@ -10,16 +10,9 @@ app.use(cors());
 // Variables globales EPG
 let isUpdatingEPG = false;
 let lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
-let lastEpgError = "Téléchargement initial en cours...";
 let epgData = {}; 
 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
-
-// Sources par défaut si l'utilisateur ne met rien
-const DEFAULT_SOURCES = [
-    'https://tvvoo.hayd.uk/cfg-fr',
-    'https://tvmio.ooguy.com/eyJjb3VudHJpZXMiOlsiRlIiLCJCRV9GUiJdLCjI','jIjoiRlIiLCJCRV9GUiJdLCjI1Zm5hYmxlU2VhcmNoIjpmYWxzZX0' // (ou ton autre lien Mio complet)
-];
 
 // === NORMALISATION AGRESSIVE ===
 function normalizeChannelName(rawName) {
@@ -343,7 +336,7 @@ function getEpgForChannel(channelName) {
     return epgData[toSyncId(channelName)] || null;
 }
 
-// === RÉCUPÉRATION DYNAMIQUE DES SOURCES (VERSION META-ADDON) ===
+// === RÉCUPÉRATION DYNAMIQUE DES SOURCES ===
 async function fetchAddonCatalog(providerUrl) {
     let allMetas = [];
     try {
@@ -398,7 +391,7 @@ async function getChannelsForSources(sourcesList) {
                     type: 'addon', 
                     metaId: meta.id, 
                     providerBase: base,
-                    isPriority: i === 0 // La 1ère source de la liste est prioritaire
+                    isPriority: i === 0 
                 });
             }
         });
@@ -415,16 +408,14 @@ async function getChannelsForSources(sourcesList) {
     return tempChannelsData;
 }
 
-// === INTERFACE WEB DYNAMIQUE (AVEC CHAMPS [+]/[-] POUR LES SOURCES) ===
+// === INTERFACE WEB DYNAMIQUE CORRIGÉE ===
 app.get('/', async (req, res) => {
     let sourcesParam = req.query.sources;
-    let sourcesList = sourcesParam ? sourcesParam.split(',') : DEFAULT_SOURCES;
+    // Si l'utilisateur n'a rien mis, on propose des champs vides pour qu'il saisisse ses propres liens en toute liberté
+    let sourcesList = sourcesParam ? sourcesParam.split(',') : ['', ''];
     
-    // On récupère les chaînes pour l'affichage de la page d'accueil
-    let channelsData = await getChannelsForSources(sourcesList);
-    let channelsStatus = `✅ <b>${channelsData.length}</b> chaînes actives`;
     let epgCount = Object.keys(epgData).length;
-    let epgStatus = epgCount > 0 ? `✅ Programme téléchargé pour <b>${epgCount}</b> chaînes` : `⏳ Programme TV en cours...`;
+    let epgStatus = epgCount > 0 ? `✅ Programme téléchargé pour <b>${epgCount}</b> chaînes` : `⏳ Programme TV en cours de chargement...`;
 
     const html = `
     <!DOCTYPE html>
@@ -432,20 +423,21 @@ app.get('/', async (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Hybrid TV FR - Meta Addon</title>
+        <title>Hybrid TV FR</title>
         <style>
             body { font-family: -apple-system, sans-serif; background: #141414; color: #fff; text-align: center; padding: 40px 20px; }
             .container { max-width: 650px; margin: 0 auto; background: #1f1f1f; padding: 40px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-top: 4px solid #e50914; }
             h1 { color: #fff; font-size: 32px; margin-bottom: 10px; }
             p { font-size: 15px; color: #aaa; margin-bottom: 25px; line-height: 1.6; }
-            .options { background: #111; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #333; text-align: left; }
-            .source-row { display: flex; gap: 8px; margin-bottom: 10px; }
+            .section { background: #111; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #333; text-align: left; }
+            .source-row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
             .source-row input { flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px; }
-            .btn { display: inline-block; background: #e50914; color: #fff; padding: 14px 25px; text-decoration: none; font-size: 15px; font-weight: bold; border-radius: 8px; margin: 5px; cursor: pointer; border: none; transition: 0.2s; }
+            .btn { display: inline-block; background: #e50914; color: #fff; padding: 12px 24px; text-decoration: none; font-size: 14px; font-weight: bold; border-radius: 8px; margin: 5px; cursor: pointer; border: none; transition: 0.2s; }
             .btn:hover { background: #f40612; transform: scale(1.02); }
             .btn-secondary { background: #333; }
             .btn-secondary:hover { background: #444; }
-            .btn-small { background: #444; padding: 8px 12px; font-size: 13px; border-radius: 6px; }
+            .btn-small { background: #444; padding: 8px 12px; font-size: 13px; border-radius: 6px; cursor: pointer; color: #fff; border: none; }
+            .btn-danger { background: #800; padding: 8px 12px; font-size: 13px; border-radius: 6px; cursor: pointer; color: #fff; border: none; }
             .stats { margin-top: 25px; font-size: 14px; color: #888; background: #111; padding: 15px; border-radius: 6px; line-height: 1.8; text-align: left; }
             input[type="text"].main-link { width: 100%; padding: 12px; margin-top: 15px; background: #111; color: #fff; border: 1px solid #444; border-radius: 6px; text-align: center; font-size: 14px; box-sizing: border-box; }
         </style>
@@ -453,91 +445,103 @@ app.get('/', async (req, res) => {
     <body>
         <div class="container">
             <h1>📺 Hybrid TV FR</h1>
-            <p>Configure tes sources d'add-ons dynamiques ci-dessous (Vavoo, Mio, Sport, etc.), puis génère ton lien unique pour Stremio / Nuvio.</p>
+            <p>Ajoutez les liens de vos manifests d'add-ons ci-dessous, puis cliquez sur générer pour obtenir votre lien universel.</p>
             
-            <div class="options">
-                <b style="font-size: 14px; color: #ccc;">Sources d'add-ons (jusqu'à 5) :</b><br><br>
+            <div class="section">
+                <label style="font-size: 14px; color: #ccc; font-weight: bold;">Sources de flux (manifest.json) :</label><br><br>
                 <div id="sourcesContainer"></div>
-                <button type="button" onclick="addSourceField()" class="btn btn-small" style="margin-top: 5px;">+ Ajouter une source</button>
+                <button type="button" onclick="addSourceField()" class="btn btn-small">+ Ajouter une source</button>
             </div>
 
-            <div class="options" style="text-align: center;">
+            <div class="section" style="text-align: center;">
                 <label style="cursor: pointer; display: inline-flex; align-items: center; gap: 10px;">
-                    <input type="checkbox" id="epgToggle" checked onchange="updateLinks()" style="width: 18px; height: 18px; cursor: pointer;">
+                    <input type="checkbox" id="epgToggle" checked style="width: 18px; height: 18px; cursor: pointer;">
                     <b style="font-size: 15px;">Activer le Programme TV</b>
                 </label>
             </div>
             
-            <a href="#" id="stremioBtn" class="btn">▶ Ajouter à Stremio / Nuvio</a>
-            <button onclick="copyLink()" class="btn btn-secondary">📋 Copier le lien</button>
-            <input type="text" id="manifestLink" class="main-link" readonly>
+            <button type="button" onclick="generateLink()" class="btn">⚡ Générer le lien de l'Add-on</button>
+            <br>
+            <input type="text" id="manifestLink" class="main-link" placeholder="Cliquez sur 'Générer' pour afficher le lien..." readonly>
+            <br>
+            <button type="button" onclick="copyLink()" class="btn btn-secondary" style="margin-top: 10px;">📋 Copier le lien</button>
             
             <div class="stats">
-                ${channelsStatus}<br>
+                <b>État du service :</b><br>
+                ✅ Serveur actif et opérationnel<br>
                 ${epgStatus}<br>
-                🕒 Synchronisation : ${lastUpdate}
+                🕒 Dernière synchronisation : ${lastUpdate}
             </div>
         </div>
 
         <script>
-            // Initialisation des champs de sources depuis l'URL ou par défaut
-            let initialSources = ${JSON.stringify(sourcesList)};
+            let sources = ${JSON.stringify(sourcesList)};
 
             function renderSources() {
                 const container = document.getElementById('sourcesContainer');
                 container.innerHTML = '';
-                initialSources.forEach((src, index) => {
-                    if (index >= 5) return; // Limite à 5
+                sources.forEach((src, index) => {
+                    if (index >= 5) return;
                     const div = document.createElement('div');
                     div.className = 'source-row';
                     div.innerHTML = \`
-                        <input type="text" value="\${src}" placeholder="https://..." oninput="updateSourceVal(\${index}, this.value)">
-                        \${initialSources.length > 1 ? '<button type="button" onclick="removeSource(\\' + index + '\\)" class="btn btn-small" style="background:#800;">✕</button>' : ''}
+                        <input type="text" id="src_\${index}" value="\${src}" placeholder="https://votre-source.com/manifest.json">
+                        \${sources.length > 1 ? '<button type="button" onclick="removeSource(' + index + ')" class="btn btn-danger">✕</button>' : ''}
                     \`;
                     container.appendChild(div);
                 });
-                updateLinks();
             }
 
             function addSourceField() {
-                if (initialSources.length < 5) {
-                    initialSources.push('');
+                if (sources.length < 5) {
+                    saveInputs();
+                    sources.push('');
                     renderSources();
                 }
             }
 
             function removeSource(index) {
-                initialSources.splice(index, 1);
+                saveInputs();
+                sources.splice(index, 1);
                 renderSources();
             }
 
-            function updateSourceVal(index, val) {
-                initialSources[index] = val;
-                updateLinks();
+            function saveInputs() {
+                sources.forEach((_, index) => {
+                    const el = document.getElementById('src_' + index);
+                    if (el) sources[index] = el.value.trim();
+                });
             }
 
-            function updateLinks() {
-                var isEpg = document.getElementById("epgToggle").checked;
-                var conf = isEpg ? "epg-on" : "epg-off";
-                var validSources = initialSources.map(s => s.trim()).filter(s => s.length > 0);
+            function generateLink() {
+                saveInputs();
+                const validSources = sources.filter(s => s.length > 0);
+                if (validSources.length === 0) {
+                    alert("Veuillez entrer au moins un lien de source !");
+                    return;
+                }
+                const isEpg = document.getElementById("epgToggle").checked;
+                const conf = isEpg ? "epg-on" : "epg-off";
                 
-                var base = window.location.protocol + "//" + window.location.host;
-                var query = validSources.length > 0 ? "?sources=" + encodeURIComponent(validSources.join(',')) : "";
+                const base = window.location.protocol + "//" + window.location.host;
+                const query = "?sources=" + encodeURIComponent(validSources.join(','));
                 
-                var url = base + "/" + conf + "/manifest.json" + query;
-                var stremioUrl = "stremio://" + window.location.host + "/" + conf + "/manifest.json" + query;
-                
+                const url = base + "/" + conf + "/manifest.json" + query;
                 document.getElementById("manifestLink").value = url;
-                document.getElementById("stremioBtn").href = stremioUrl;
+                alert("Lien généré avec succès !");
             }
 
             renderSources();
 
             function copyLink() {
                 var copyText = document.getElementById("manifestLink");
+                if (!copyText.value) {
+                    alert("Veuillez d'abord générer le lien !");
+                    return;
+                }
                 copyText.select(); 
                 document.execCommand("copy"); 
-                alert("Lien copié ! Pensez à DÉSINSTALLER l'ancien add-on dans Nuvio avant de coller celui-ci.");
+                alert("Lien copié dans le presse-papier !");
             }
         </script>
     </body>
@@ -551,7 +555,7 @@ function handleManifest(req, res, conf) {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridproxy.fr.meta.' + conf, 
-        version: '2.0.0',
+        version: '2.0.1',
         name: conf === 'epg-on' ? 'Hybrid TV FR' : 'Hybrid TV FR (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -576,7 +580,9 @@ app.get('/:conf/manifest.json', (req, res) => handleManifest(req, res, req.param
 // === CATALOGUES DYNAMIQUES ===
 app.get(['/:conf?/catalog/tv/:id.json', '/:conf?/catalog/tv/:id/:extra'], async (req, res) => {
     let sourcesParam = req.query.sources;
-    let sourcesList = sourcesParam ? sourcesParam.split(',') : DEFAULT_SOURCES;
+    if (!sourcesParam) return res.json({ metas: [] });
+    
+    let sourcesList = sourcesParam.split(',');
     let channelsData = await getChannelsForSources(sourcesList);
 
     if (channelsData.length === 0) { 
@@ -616,7 +622,9 @@ app.get(['/:conf?/catalog/tv/:id.json', '/:conf?/catalog/tv/:id/:extra'], async 
 app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
     const isEpgOn = !req.params.conf || req.params.conf === 'epg-on';
     let sourcesParam = req.query.sources;
-    let sourcesList = sourcesParam ? sourcesParam.split(',') : DEFAULT_SOURCES;
+    if (!sourcesParam) return res.json({ meta: {} });
+    
+    let sourcesList = sourcesParam.split(',');
     let channelsData = await getChannelsForSources(sourcesList);
 
     res.setHeader('Cache-Control', 'max-age=1800, public'); 
@@ -671,10 +679,12 @@ app.get('/:conf?/meta/tv/:id.json', async (req, res) => {
     });
 });
 
-// === STREAMS (Récupération et tri des flux des sources dynamiques) ===
+// === STREAMS ===
 app.get('/:conf?/stream/tv/:id.json', async (req, res) => {
     let sourcesParam = req.query.sources;
-    let sourcesList = sourcesParam ? sourcesParam.split(',') : DEFAULT_SOURCES;
+    if (!sourcesParam) return res.json({ streams: [] });
+    
+    let sourcesList = sourcesParam.split(',');
     let channelsData = await getChannelsForSources(sourcesList);
 
     res.setHeader('Cache-Control', 'max-age=1800, public'); 
@@ -692,20 +702,18 @@ app.get('/:conf?/stream/tv/:id.json', async (req, res) => {
                     headers: { 'X-Forwarded-For': clientIp }, timeout: 8000 
                 });
                 if (streamRes.data && streamRes.data.streams) {
-                    const labelName = source.providerBase.includes('tvvoo') ? 'Vavoo' : (source.providerBase.includes('tvmio') ? 'Mio' : 'Source');
                     const mappedStreams = streamRes.data.streams.map(s => {
                         let qual = "Qualité Standard (SD)";
                         let up = (s.title || '').toUpperCase();
                         if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) qual = "Ultra Haute Qualité (4K)";
                         else if (up.includes('FHD') || up.includes('1080') || up.includes('HD') || up.includes('720')) qual = "Haute Qualité (HD/FHD)";
-                        return { ...s, _qualText: qual, _label: labelName, _isPriority: source.isPriority };
+                        return { ...s, _qualText: qual, _isPriority: source.isPriority };
                     });
                     allStreams = allStreams.concat(mappedStreams);
                 }
             } catch (err) {}
         }
         
-        // Tri de stabilité : Priorité aux sources principales
         allStreams.sort((a, b) => {
             if (a._isPriority && !b._isPriority) return -1;
             if (!a._isPriority && b._isPriority) return 1;
@@ -713,7 +721,7 @@ app.get('/:conf?/stream/tv/:id.json', async (req, res) => {
         });
 
         const finalStreams = allStreams.map((s, idx) => ({
-            url: s.url, name: `▶ Source ${idx + 1}\n(${s._label})`, title: s._qualText
+            url: s.url, name: `▶ Source ${idx + 1}`, title: s._qualText
         }));
         
         res.json({ streams: finalStreams });
