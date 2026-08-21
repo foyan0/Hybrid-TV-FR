@@ -8,6 +8,7 @@ app.use(cors());
 // Variables globales
 let isUpdatingChannels = false;
 let lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
+let apiTestStatus = "⏳ Test de l'API EPG en cours...";
 
 const ADDON_PROVIDERS = [
     { id: 'vavoo', base: 'https://tvvoo.hayd.uk/cfg-fr', label: 'Vavoo', isPriority: true },
@@ -144,10 +145,7 @@ function getChannelPlacements(n) {
     return placements;
 }
 
-// === API EPG "À LA DEMANDE" (Version 57) ===
-// Au lieu de télécharger 40Mo de fichiers, on demande à un vrai site (Télé-Loisirs) 
-// ce qu'il y a sur une chaîne spécifique juste quand Nuvio le demande.
-
+// === API EPG "À LA DEMANDE" ===
 const CHANNEL_API_MAP = {
     "TF1": "c200", "FRANCE 2": "c202", "FRANCE 3": "c204", "CANAL+": "c47",
     "FRANCE 5": "c207", "M6": "c208", "ARTE": "c138", "C8": "c553", "W9": "c211",
@@ -173,21 +171,18 @@ const CHANNEL_API_MAP = {
     "ACTION": "c101", "TCM": "c102", "PARAMOUNT": "c3546"
 };
 
-// Map de la grille locale (Cache)
 let liveEpgCache = {};
 
 async function fetchLiveEpgForChannel(channelName) {
     const apiCode = CHANNEL_API_MAP[channelName];
     if (!apiCode) return null;
 
-    // Si on a les données et qu'elles datent de moins d'1 heure, on utilise le cache
     const cachedData = liveEpgCache[channelName];
     if (cachedData && cachedData.expiresAt > Date.now()) {
         return cachedData.description;
     }
 
     try {
-        // Requête très légère vers l'API secrète d'une App Mobile de Programme TV
         const url = `https://api.programme-tv.net/tv/epg/v1/grid/channels/${apiCode}/now`;
         const res = await axios.get(url, {
             timeout: 5000,
@@ -199,14 +194,12 @@ async function fetchLiveEpgForChannel(channelName) {
             let title = prog.title || 'Programme Inconnu';
             if (prog.subtitle) title += ` - ${prog.subtitle}`;
             
-            // Formatage de l'heure
             const sTime = new Date(prog.start).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
             const eTime = new Date(prog.end).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
             
             let descText = `🔴 EN DIRECT (${sTime} - ${eTime}) : ${title}`;
             if (prog.synopsis) descText += `\n\n${prog.synopsis}`;
 
-            // Mise en cache pendant 30 minutes
             liveEpgCache[channelName] = {
                 description: descText,
                 expiresAt: Date.now() + (30 * 60 * 1000)
@@ -215,12 +208,53 @@ async function fetchLiveEpgForChannel(channelName) {
             return descText;
         }
     } catch (err) {
-        // En cas d'erreur de réseau on ne fait pas planter l'add-on
-        console.error(`Erreur EPG pour ${channelName}`);
+        // En cas de blocage de l'API (DataDome) on passe par le proxy allorigins
+        try {
+            const urlProxy = `https://api.allorigins.win/get?url=` + encodeURIComponent(`https://api.programme-tv.net/tv/epg/v1/grid/channels/${apiCode}/now`);
+            const resProxy = await axios.get(urlProxy, { timeout: 6000 });
+            if (resProxy.data && resProxy.data.contents) {
+                const data = JSON.parse(resProxy.data.contents);
+                if (data.programs && data.programs.length > 0) {
+                    const prog = data.programs[0];
+                    let title = prog.title || 'Programme';
+                    const sTime = new Date(prog.start).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
+                    const eTime = new Date(prog.end).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
+                    let descText = `🔴 EN DIRECT (${sTime} - ${eTime}) : ${title}`;
+                    if (prog.synopsis) descText += `\n\n${prog.synopsis}`;
+                    
+                    liveEpgCache[channelName] = { description: descText, expiresAt: Date.now() + (30 * 60 * 1000) };
+                    return descText;
+                }
+            }
+        } catch(proxyErr) {
+            console.error(`Double échec EPG pour ${channelName}`);
+        }
     }
     return null;
 }
 
+async function testEpgApi() {
+    try {
+        const test = await fetchLiveEpgForChannel("TF1");
+        if (test && test.includes("EN DIRECT")) {
+            apiTestStatus = "✅ L'API 'À la demande' répond parfaitement.";
+        } else {
+            apiTestStatus = "⚠️ L'API répond mais aucun programme trouvé.";
+        }
+    } catch(e) {
+        apiTestStatus = "❌ L'API est bloquée.";
+    }
+}
+
+// === LE SAS D'ATTENTE (POUR NE PAS VIDER NUVIO) ===
+async function waitForChannels() {
+    // Si Nuvio est trop rapide, on le met en attente (maximum 15 secondes)
+    let tries = 0;
+    while(isUpdatingChannels && tries < 30) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        tries++;
+    }
+}
 
 // === MISE À JOUR DES FLUX ===
 async function fetchAddonCatalog(provider) {
@@ -294,11 +328,9 @@ app.get('/', (req, res) => {
     const stremioUrl = `stremio://${host}/manifest.json`;
     
     let channelsStatus = isUpdatingChannels 
-        ? '⏳ Recherche des chaînes en cours...' 
+        ? '⏳ Recherche des chaînes en cours (Nuvio est mis en attente)...' 
         : `✅ <b>${channelsData.length}</b> chaînes actives`;
         
-    let epgStatus = `✅ Moteur EPG "À la demande" actif<br>(Les programmes s'affichent uniquement quand vous cliquez sur une chaîne)`;
-    
     const html = `
     <!DOCTYPE html>
     <html lang="fr">
@@ -322,7 +354,7 @@ app.get('/', (req, res) => {
     <body>
         <div class="container">
             <h1>📺 Hybrid TV FR</h1>
-            <p>Votre add-on télévisuel haute-performance.<br>Propulsé par un cache mémoire et l'API "On-Demand".</p>
+            <p>Votre add-on télévisuel haute-performance.<br>Propulsé par un sas de sécurité pour Nuvio.</p>
             
             <a href="${stremioUrl}" class="btn">▶ Ajouter à Stremio</a>
             <button onclick="copyLink()" class="btn btn-secondary">📋 Copier le lien</button>
@@ -330,8 +362,8 @@ app.get('/', (req, res) => {
             
             <div class="stats">
                 ${channelsStatus}<br><br>
-                ${epgStatus}<br>
-                🕒 Dernière synchronisation : ${lastUpdate}
+                ${apiTestStatus}<br>
+                🕒 Dernière synchronisation des chaînes : ${lastUpdate}
             </div>
         </div>
         <script>
@@ -349,10 +381,10 @@ app.get('/', (req, res) => {
 app.get('/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridproxy.fr.live.v57', 
-        version: '57.0.0',
+        id: 'org.hybridproxy.fr.live.v58', 
+        version: '58.0.0',
         name: 'Hybrid TV FR',
-        description: 'L\'expérience IPTV ultime. Tri par IA, Programme TV Instantané, zéro publicité.',
+        description: 'L\'expérience IPTV ultime. Sécurisé contre le cache vide.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -369,7 +401,15 @@ app.get('/manifest.json', (req, res) => {
     });
 });
 
-app.get('/catalog/tv/:id.json', (req, res) => {
+app.get('/catalog/tv/:id.json', async (req, res) => {
+    await waitForChannels(); // LE FAMEUX PÉAGE !
+    
+    // Si malgré l'attente on a toujours rien, on dit à Nuvio de ne rien mettre en cache !
+    if (channelsData.length === 0) {
+        res.setHeader('Cache-Control', 'no-cache');
+        return res.json({ metas: [] });
+    }
+    
     res.setHeader('Cache-Control', 'max-age=14400, public'); 
     const requestedCatalog = req.params.id; 
     let skip = 0;
@@ -393,7 +433,13 @@ app.get('/catalog/tv/:id.json', (req, res) => {
     res.json({ metas: paginatedMetas });
 });
 
-app.get('/catalog/tv/:id/:extra', (req, res) => {
+app.get('/catalog/tv/:id/:extra', async (req, res) => {
+    await waitForChannels();
+    if (channelsData.length === 0) {
+        res.setHeader('Cache-Control', 'no-cache');
+        return res.json({ metas: [] });
+    }
+
     res.setHeader('Cache-Control', 'max-age=14400, public'); 
     const requestedCatalog = req.params.id; 
     let skip = 0;
@@ -422,13 +468,13 @@ app.get('/catalog/tv/:id/:extra', (req, res) => {
 });
 
 app.get('/meta/tv/:id.json', async (req, res) => {
+    await waitForChannels();
     res.setHeader('Cache-Control', 'max-age=60, public'); 
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ meta: {} });
     
     let descriptionText = `▶ Diffusion en cours sur ${channel.displayName}...`;
     
-    // Appel de l'API à la demande
     const liveEpg = await fetchLiveEpgForChannel(channel.name);
     if (liveEpg) {
         descriptionText = liveEpg;
@@ -449,6 +495,7 @@ function getStreamScore(title) {
 }
 
 app.get('/stream/tv/:id.json', async (req, res) => {
+    await waitForChannels();
     res.setHeader('Cache-Control', 'max-age=1800, public'); 
     const rawIp = req.headers['x-forwarded-for'];
     const clientIp = rawIp ? rawIp.split(',')[0].trim() : req.socket.remoteAddress;
@@ -495,6 +542,12 @@ app.get('/stream/tv/:id.json', async (req, res) => {
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, async () => {
     console.log(`Serveur démarré sur le port ${PORT}`);
-    updateStreams();
+    
+    // On met à jour les chaînes immédiatement
+    updateStreams().then(() => {
+        // Une fois les chaînes chargées, on teste discrètement l'API EPG en arrière-plan
+        testEpgApi();
+    });
+    
     setInterval(updateStreams, 14400000); 
 });
