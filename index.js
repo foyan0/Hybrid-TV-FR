@@ -19,9 +19,8 @@ const BLACKLIST = [
     'TEST', 'MIRROR', 'BACKUPCHANNEL', 'BOXOFFICE1', 'BOXOFFICE2', 'CANALPLAY', 'AFRIQUE'
 ];
 
-// LOGOS VIP ISOLÉS (Chaque chaîne a son URL unique pour éviter les doublons)
+// Logos VIP (Optionnels via le bouton ON/OFF du site)
 const LOGOS = {
-    // TNT & Généralistes
     'hyb_tnt_1': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cc/TF1_2013_logo.svg/512px-TF1_2013_logo.svg.png',
     'hyb_tnt_2': 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/France_2_logo_2018.svg/512px-France_2_logo_2018.svg.png',
     'hyb_tnt_3': 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d1/France_3_logo_2018.svg/512px-France_3_logo_2018.svg.png',
@@ -36,7 +35,7 @@ const LOGOS = {
     'hyb_tnt_12': 'https://upload.wikimedia.org/wikipedia/fr/4/44/NRJ12-Logo.png',
     'hyb_tnt_13': 'https://upload.wikimedia.org/wikipedia/fr/thumb/b/b3/LCP_Assemblée_Nationale_logo_2018.svg/512px-LCP_Assemblée_Nationale_logo_2018.svg.png',
     'hyb_tnt_17': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c0/Logo_CStar_2016.svg/512px-Logo_CStar_2016.svg.png',
-    'hyb_tnt_18': 'https://focus.telerama.fr/500x500/0000/00/01/clear-43.png',
+    'hyb_jeu_gulli': 'https://focus.telerama.fr/500x500/0000/00/01/clear-43.png',
     'hyb_tnt_20': 'https://upload.wikimedia.org/wikipedia/fr/thumb/4/4b/TF1_S%C3%A9ries_Films_logo_2020.svg/512px-TF1_S%C3%A9ries_Films_logo_2020.svg.png',
     'hyb_tnt_22': 'https://upload.wikimedia.org/wikipedia/fr/a/a9/6ter_2012.png',
     'hyb_tnt_23': 'https://upload.wikimedia.org/wikipedia/fr/thumb/8/8a/RMC_Story_logo_2018.svg/512px-RMC_Story_logo_2018.svg.png',
@@ -47,7 +46,6 @@ const LOGOS = {
     'hyb_tnt_teva': 'https://focus.telerama.fr/500x500/0000/00/01/clear-197.png',
     'hyb_tnt_ab1': 'https://upload.wikimedia.org/wikipedia/fr/9/9a/Logo_AB1_2021.png',
     
-    // Info & Régionales
     'hyb_info_1': 'https://upload.wikimedia.org/wikipedia/commons/4/40/BFM_TV_logo.png',
     'hyb_info_biz': 'https://upload.wikimedia.org/wikipedia/fr/thumb/c/ca/BFM_Business_logo_2019.svg/512px-BFM_Business_logo_2019.svg.png',
     'hyb_info_2': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/CNews_logo_2017.svg/512px-CNews_logo_2017.svg.png',
@@ -61,7 +59,6 @@ const LOGOS = {
     'hyb_info_lyon': 'https://upload.wikimedia.org/wikipedia/fr/thumb/f/f7/BFM_Lyon_logo_2022.svg/512px-BFM_Lyon_logo_2022.svg.png',
     'hyb_info_paris': 'https://upload.wikimedia.org/wikipedia/fr/thumb/8/8c/BFM_Paris_Île-de-France_logo_2022.svg/512px-BFM_Paris_Île-de-France_logo_2022.svg.png',
     
-    // Bouquet Canal
     'hyb_canal_cplus': 'https://upload.wikimedia.org/wikipedia/commons/3/39/Canal%2B_Film_HD.png',
     'hyb_canal_cinema': 'https://upload.wikimedia.org/wikipedia/fr/e/eb/C%2B_Cin%C3%A9ma%28s%29.png',
     'hyb_canal_grandecran': 'https://upload.wikimedia.org/wikipedia/fr/d/da/C%2B_Grand_%C3%89cran.png',
@@ -74,9 +71,9 @@ const LOGOS = {
     'hyb_cine_comedie': 'https://upload.wikimedia.org/wikipedia/commons/3/3e/Com%C3%A9die%2B_logo_%C3%A0_l%27antenne.png',
     'hyb_canal_family': 'http://schedulesdirect-api20141201-logos.s3.amazonaws.com/stationLogos/s87283_dark_360w_270h.png',
     'hyb_canal_decale': 'https://www.staderochelais.com/sites/stade-rochelais/files/logos/canal-decale-1622622027.png',
-    'hyb_jeu_canalj': 'https://upload.wikimedia.org/wikipedia/fr/6/69/Logo_canal_J.png', // Canal J tout à la fin de Canal
+    'hyb_jeu_canalj': 'https://upload.wikimedia.org/wikipedia/fr/6/69/Logo_canal_J.png',
     
-    // Sports
+    // LIGUE 1+ ISOLÉ ET SÉCURISÉ EN POSITION 1 ABSOLUE
     'hyb_sport_ligue1plus': 'https://focus.telerama.fr/500x500/0000/00/01/clear-1845.png',
     'hyb_canal_sport': 'https://upload.wikimedia.org/wikipedia/commons/1/1a/Canal%2B_Sport_2015.png',
     'hyb_canal_foot': 'https://upload.wikimedia.org/wikipedia/commons/e/eb/Canal%2BFoot.png',
@@ -89,7 +86,6 @@ const LOGOS = {
     'hyb_sport_lequipe': 'https://focus.telerama.fr/500x500/0000/00/01/clear-46.png',
     'dazn_generic': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/06/DAZN_Logo_Master.svg/512px-Logo_Master.svg.png',
 
-    // Cinéma
     'hyb_cine_emotion': 'https://thumb.canalplus.pro/http/unsafe/epg.canal-plus.com/mycanal/img/CHN43FN/PNG/213X160/CHN43FB_396.PNG',
     'hyb_cine_famiz': 'https://static.wikia.nocookie.net/logo-chaines/images/6/64/CinePlusFamiz_Logo.svg.png',
     'hyb_cine_club': 'https://upload.wikimedia.org/wikipedia/fr/7/77/Cin%C3%A9Cin%C3%A9ma_Club_logo_2008.png',
@@ -97,17 +93,14 @@ const LOGOS = {
     'hyb_cine_action': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRPdxSas0cWbgadzbAuhDjqLEd_Y4iMG0odsUoZy8ch1NJYK3ZVez_yrHCoAA&s',
     'hyb_cine_paramount': 'https://upload.wikimedia.org/wikipedia/fr/5/59/Paramount_Channel.svg.png',
 
-    // Découverte
     'hyb_dec_crime': 'https://www.lyngsat.com/logo/tv/cc/crime_district_fr.png',
     'hyb_dec_natgeo': 'https://focus.telerama.fr/500x500/0000/00/01/clear-243.png',
     'hyb_dec_discovery': 'https://upload.wikimedia.org/wikipedia/commons/2/27/Discovery_Channel_-_Logo_2019.svg.png',
     'hyb_dec_planete': 'https://focus.telerama.fr/500x500/0000/00/01/clear-147.png',
     'hyb_dec_histoire': 'https://upload.wikimedia.org/wikipedia/fr/thumb/5/5c/Histoire_TV_logo_2019.svg/512px-Histoire_TV_logo_2019.svg.png',
     
-    // Jeunesse
     'hyb_jeu_cartoon': 'https://upload.wikimedia.org/wikipedia/commons/f/fe/CARTOON_NETWORK_logo.png',
     'hyb_jeu_disney': 'https://upload.wikimedia.org/wikipedia/commons/7/78/Disney_Channel_Germany_Logo_2014.png',
-    'hyb_jeu_gulli': 'https://focus.telerama.fr/500x500/0000/00/01/clear-43.png',
     'hyb_jeu_nick': 'https://upload.wikimedia.org/wikipedia/commons/f/fa/Nickelodeon_logo_2009.png',
     'hyb_jeu_gameone': 'https://upload.wikimedia.org/wikipedia/fr/thumb/a/a0/Game_One_%281998%29_Logo.svg/512px-Game_One_%281998%29_Logo.svg.png',
     'hyb_jeu_boom': 'https://focus.telerama.fr/500x500/0000/00/01/clear-321.png',
@@ -117,22 +110,21 @@ const LOGOS = {
     'hyb_jeu_piwi': 'https://focus.telerama.fr/500x500/0000/00/01/clear-344.png',
     'hyb_jeu_mangas': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQrBITj8D4ehy326isxvvHDFUivw37wiREtViWbndOOtqIoq8ykrTbVbQQADg&s',
 
-    // Musique
     'hyb_mus_mtv': 'https://upload.wikimedia.org/wikipedia/commons/0/0d/MTV-2021.svg.png',
     'hyb_mus_mcm': 'https://upload.wikimedia.org/wikipedia/fr/a/ab/MCM_logo_2017.svg.png'
 };
 
 function parseConfig(encodedConfig) {
     try {
-        if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], epg: true };
+        if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], epg: true, logos: true };
         const jsonStr = Buffer.from(encodedConfig, 'base64').toString('utf8');
         return JSON.parse(jsonStr);
     } catch (e) {
-        return { sources: [], epg: true };
+        return { sources: [], epg: true, logos: true };
     }
 }
 
-// === MOTEUR D'EXTRACTION ADN ===
+// === MOTEUR D'EXTRACTION ADN (Isolant rigoureusement LIGUE 1+) ===
 function getChannelData(rawName) {
     if (!rawName) return null;
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -143,6 +135,11 @@ function getChannelData(rawName) {
     
     const tags = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'DIRECT', 'RAW', 'ACCESS'];
     tags.forEach(tag => { n = n.replace(new RegExp(`\\b${tag}\\b`, 'gi'), ''); });
+
+    // --- 0. LE CAS SPÉCIAL LIGUE 1+ (Détecté en premier pour éviter toute confusion avec Canal+) ---
+    if (n.includes('LIGUE 1+') || n.includes('LIGUE1+') || n === 'LIGUE 1+') {
+        return { id: 'hyb_sport_ligue1plus', name: 'Ligue 1+', categories: ['sports'], index: 1 };
+    }
 
     let c = n.replace(/[^A-Z0-9+]/g, '');
     if (!c || c.length < 2) return null;
@@ -195,7 +192,6 @@ function getChannelData(rawName) {
     if (c.includes('BFMPARIS')) return { id: 'hyb_info_paris', name: 'BFM Paris Île-de-France', categories: ['info'], index: 52 };
 
     // --- 3. SPORTS ---
-    if (c.includes('LIGUE1+') || c === 'LIGUE1') return { id: 'hyb_sport_ligue1plus', name: 'Ligue 1+', categories: ['sports'], index: 1 };
     if (c.includes('DAZNLIGUE1') || c.includes('DAZNLIVE')) {
         let m = c.match(/\d+/g); let num = m ? m[m.length-1] : '1';
         if (parseInt(num) > 8) return null; 
@@ -224,9 +220,9 @@ function getChannelData(rawName) {
     }
     if (c === 'LEQUIPE' || c === 'LEQUIPETV') return { id: 'hyb_sport_lequipe', name: "L'Équipe", categories: ['sports', 'tnt'], index: 95 };
 
-    // --- 4. CANAL+ (Canal J repoussé tout à la fin) ---
+    // --- 4. CANAL+ ---
     if (c.startsWith('CANAL') || c === 'CPLUS') {
-        if (c.includes('J') || c === 'CANALJ') return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 99 }; // Tout à la fin du bouquet Canal !
+        if (c.includes('J') || c === 'CANALJ') return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 99 };
         if (c.includes('CINEMA') || c.includes('CNEMA')) return { id: 'hyb_canal_cinema', name: 'Canal+ Cinéma', categories: ['canal', 'cinema'], index: 2 };
         if (c.includes('GRANDECRAN') || c.includes('ECRAN')) return { id: 'hyb_canal_grandecran', name: 'Canal+ Grand Écran', categories: ['canal', 'cinema'], index: 3 };
         if (c.includes('SERIES')) return { id: 'hyb_canal_series', name: 'Canal+ Séries', categories: ['canal', 'cinema'], index: 4 };
@@ -280,7 +276,7 @@ function getChannelData(rawName) {
     if (c.includes('CHASSE') || c.includes('PECHE')) return { id: 'hyb_dec_chasse', name: 'Chasse et Pêche', categories: ['decouverte'], index: 34 };
     if (c.includes('ANIMAUX')) return { id: 'hyb_dec_animaux', name: 'Animaux', categories: ['decouverte'], index: 35 };
 
-    // --- 7. JEUNESSE (Ordre strict) ---
+    // --- 7. JEUNESSE ---
     if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
     if (c.includes('DISNEY') && !c.includes('JR') && !c.includes('JUNIOR')) return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 2 };
     if (c === 'GULLI' || c.includes('GULLI')) return { id: 'hyb_jeu_gulli', name: 'Gulli', categories: ['jeunesse', 'tnt'], index: 3 };
@@ -494,8 +490,8 @@ async function fetchCatalogFromSource(sourceInput) {
     return metas;
 }
 
-async function getChannelsForSources(sourcesList) {
-    const cacheKey = sourcesList.join('|');
+async function getChannelsForSources(sourcesList, enableLogos) {
+    const cacheKey = sourcesList.join('|') + '|' + enableLogos;
     if (channelsCache[cacheKey] && (Date.now() - channelsCache[cacheKey].timestamp < 3600000)) return channelsCache[cacheKey].data;
 
     let tempChannelsMap = {};
@@ -512,10 +508,15 @@ async function getChannelsForSources(sourcesList) {
 
             const id = channelInfo.id;
             
-            let forceLogo = LOGOS[id];
-            if (id.startsWith('hyb_sport_dazn')) forceLogo = LOGOS['dazn_generic']; 
-
-            let finalPoster = forceLogo || meta.poster || DEFAULT_POSTER;
+            // Gestion de l'interrupteur ON/OFF des logos VIP
+            let finalPoster = DEFAULT_POSTER;
+            if (enableLogos) {
+                let forceLogo = LOGOS[id];
+                if (id.startsWith('hyb_sport_dazn')) forceLogo = LOGOS['dazn_generic'];
+                finalPoster = forceLogo || meta.poster || DEFAULT_POSTER;
+            } else {
+                finalPoster = meta.poster || DEFAULT_POSTER;
+            }
 
             if (!tempChannelsMap[id]) {
                 tempChannelsMap[id] = { 
@@ -527,7 +528,7 @@ async function getChannelsForSources(sourcesList) {
                     sources: [], 
                     poster: finalPoster 
                 };
-            } else if (!forceLogo && meta.poster && tempChannelsMap[id].poster === DEFAULT_POSTER) {
+            } else if (enableLogos && !LOGOS[id] && meta.poster && tempChannelsMap[id].poster === DEFAULT_POSTER) {
                 tempChannelsMap[id].poster = meta.poster; 
             }
             
@@ -603,10 +604,11 @@ app.get('/', async (req, res) => {
                 <button type="button" onclick="addSourceField()" class="btn btn-small">+ Ajouter une source</button>
             </div>
 
-            <div class="section">
-                <label style="font-size: 14px; color: #ccc; font-weight: bold;">🔑 Code de Sauvegarde / Partage :</label><br>
-                <textarea id="exportTokenBox" class="export-box" placeholder="Code de configuration..."></textarea>
-                <button type="button" onclick="importToken()" class="btn btn-small" style="margin-top: 5px;">📥 Importer le code</button>
+            <div class="section" style="text-align: center;">
+                <label style="cursor: pointer; display: inline-flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="logosToggle" checked style="width: 18px; height: 18px; cursor: pointer;">
+                    <b style="font-size: 15px;">Activer les Logos VIP (ON / OFF)</b>
+                </label>
             </div>
 
             <div class="section" style="text-align: center;">
@@ -614,6 +616,12 @@ app.get('/', async (req, res) => {
                     <input type="checkbox" id="epgToggle" checked style="width: 18px; height: 18px; cursor: pointer;">
                     <b style="font-size: 15px;">Activer le Programme TV</b>
                 </label>
+            </div>
+
+            <div class="section">
+                <label style="font-size: 14px; color: #ccc; font-weight: bold;">🔑 Code de Sauvegarde / Partage :</label><br>
+                <textarea id="exportTokenBox" class="export-box" placeholder="Code de configuration..."></textarea>
+                <button type="button" onclick="importToken()" class="btn btn-small" style="margin-top: 5px;">📥 Importer le code</button>
             </div>
             
             <button type="button" onclick="generateLink()" class="btn">⚡ Générer le lien de l'Add-on</button>
@@ -671,7 +679,8 @@ app.get('/', async (req, res) => {
             function updateExportToken() {
                 const validSources = sources.filter(s => s.length > 0);
                 const isEpg = document.getElementById("epgToggle").checked;
-                const configObj = { sources: validSources, epg: isEpg };
+                const isLogos = document.getElementById("logosToggle").checked;
+                const configObj = { sources: validSources, epg: isEpg, logos: isLogos };
                 document.getElementById('exportTokenBox').value = btoa(JSON.stringify(configObj));
             }
             function importToken() {
@@ -681,6 +690,7 @@ app.get('/', async (req, res) => {
                     if (config.sources && Array.isArray(config.sources)) {
                         sources = config.sources; if (sources.length === 0) sources = ['', ''];
                         if (config.epg !== undefined) document.getElementById("epgToggle").checked = config.epg;
+                        if (config.logos !== undefined) document.getElementById("logosToggle").checked = config.logos;
                         renderSources(); alert("Configuration importée avec succès !");
                     } else alert("Code invalide.");
                 } catch(e) { alert("Erreur : Ce code est corrompu."); }
@@ -717,7 +727,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '2.0.6',
+        version: '2.0.7',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -740,7 +750,7 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ metas: [] });
     
-    let channelsData = await getChannelsForSources(config.sources);
+    let channelsData = await getChannelsForSources(config.sources, config.logos);
     if (channelsData.length === 0) { res.setHeader('Cache-Control', 'no-cache'); return res.json({ metas: [] }); }
     
     res.setHeader('Cache-Control', 'max-age=14400, public'); 
@@ -765,7 +775,7 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ meta: {} });
     
-    let channelsData = await getChannelsForSources(config.sources);
+    let channelsData = await getChannelsForSources(config.sources, config.logos);
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate'); 
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ meta: {} });
@@ -822,7 +832,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
     
-    let channelsData = await getChannelsForSources(config.sources);
+    let channelsData = await getChannelsForSources(config.sources, config.logos);
     res.setHeader('Cache-Control', 'max-age=1800, public'); 
     const rawIp = req.headers['x-forwarded-for'];
     const clientIp = rawIp ? rawIp.split(',')[0].trim() : req.socket.remoteAddress;
@@ -851,7 +861,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         let score = 0;
                         let up = (s.title || '').toUpperCase() + ' ' + (s.name || '').toUpperCase();
                         
-                        // ANTI-INTOXICATION RENFORCÉE (Stoppe net Canal+ Sport 360 de s'incruster sur le Canal+ de base)
                         if (channel.id === 'hyb_canal_cplus') {
                             if (up.match(/(SPORT|FOOT|CINEMA|DECALE|KIDS|DOC|BOX|GRAND|SERIE|F1|MOTO|360|FAMILY|LIGUE|\bJ\b|CANALJ|LIVE)/)) {
                                 score -= 100000;
