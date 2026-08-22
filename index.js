@@ -11,7 +11,6 @@ let isUpdatingEPG = false;
 let lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
 let epgData = {}; 
 let channelsCache = {}; 
-let m3uChannelsCache = []; // Cache en mémoire vive pour le M3U (vitesse instantanée)
 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
@@ -20,8 +19,9 @@ const BLACKLIST = [
     'TEST', 'MIRROR', 'BACKUPCHANNEL', 'BOXOFFICE1', 'BOXOFFICE2', 'CANALPLAY', 'AFRIQUE'
 ];
 
-// Logos officiels et stables (Format carré parfait)
+// Logos VIP (Format carré parfait et propre)
 const LOGOS = {
+    // TNT & Généralistes
     'hyb_tnt_1': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/tf1.png',
     'hyb_tnt_2': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/france_2.png',
     'hyb_tnt_3': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/france_3.png',
@@ -65,7 +65,7 @@ const LOGOS = {
     'hyb_canal_family': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/canal_plus_family.png',
     'hyb_canal_decale': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/canal_plus_decale.png',
     
-    // Sports
+    // Sports (Ligue 1+ en premier)
     'hyb_sport_ligue1plus': 'https://upload.wikimedia.org/wikipedia/fr/thumb/f/fa/Logo_Ligue_1%2B_%28Ic%C3%B4ne%29.svg/512px-Logo_Ligue_1%2B_%28Ic%C3%B4ne%29.svg.png',
     'hyb_canal_sport': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/canal_plus_sport.png',
     'hyb_canal_foot': 'https://upload.wikimedia.org/wikipedia/commons/e/eb/Canal%2BFoot.png',
@@ -106,6 +106,12 @@ const LOGOS = {
     'hyb_mus_mtv': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/MTV-2021.svg/512px-MTV-2021.svg.png'
 };
 
+// Formateur de logo carré parfait (zéro zoom, centmé sur fond transparent via wsrv.nl)
+function makePerfectSquare(url) {
+    if (!url || url === DEFAULT_POSTER) return DEFAULT_POSTER;
+    return `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=400&h=400&fit=contain&output=png`;
+}
+
 function parseConfig(encodedConfig) {
     try {
         if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], epg: true };
@@ -116,7 +122,7 @@ function parseConfig(encodedConfig) {
     }
 }
 
-// === MOTEUR D'EXTRACTION ADN (Robuste & Non-destructif) ===
+// === MOTEUR D'EXTRACTION ADN ===
 function getChannelData(rawName) {
     if (!rawName) return null;
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -172,7 +178,7 @@ function getChannelData(rawName) {
     if (c.includes('FRANCE24') || c === 'FR24') return { id: 'hyb_info_5', name: 'France 24', categories: ['info'], index: 5 };
     if (c.includes('METEO')) return { id: 'hyb_info_meteo', name: 'La Chaîne Météo', categories: ['info'], index: 6 };
 
-    // --- 3. SPORTS ---
+    // --- 3. SPORTS (Ligue 1+ en roi absolu) ---
     if (c.includes('LIGUE1+') || c === 'LIGUE1') return { id: 'hyb_sport_ligue1plus', name: 'Ligue 1+', categories: ['sports'], index: 1 };
     if (c.includes('DAZNLIGUE1') || c.includes('DAZNLIVE')) {
         let m = c.match(/\d+/g); let num = m ? m[m.length-1] : '1';
@@ -354,7 +360,7 @@ async function fetchAndParseEPG(url, isGz) {
                             if (!localEpg[syncId]) localEpg[syncId] = [];
                             localEpg[syncId].push({
                                 start: parseXmltvDate(startM[1]), stop: parseXmltvDate(stopM[1]),
-                                title: titleM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").replace(/&quot;/g, '"').trim()
+                                title: titleM[1].replace(/&amp;/g, '&').replace(/&apos;/, "'").replace(/&quot;/g, '"').trim()
                             });
                         }
                     }
@@ -395,7 +401,6 @@ async function updateEPG() {
     } finally { isUpdatingEPG = false; }
 }
 
-// === LECTURE ET CACHE DU M3U DIRECT ===
 async function fetchCatalogFromSource(sourceInput) {
     let metas = [];
     let cleanInput = sourceInput.trim();
@@ -437,7 +442,6 @@ async function fetchCatalogFromSource(sourceInput) {
         return metas;
     }
 
-    // Sinon, Add-on Stremio standard (manifest.json)
     try {
         let cleanUrl = cleanInput;
         if (!cleanUrl.endsWith('manifest.json')) cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
@@ -488,11 +492,12 @@ async function getChannelsForSources(sourcesList) {
 
             const id = channelInfo.id;
             
-            // LOGOS : Priorité au dictionnaire VIP, sinon le logo d'origine de la source
+            // LOGOS : Dictionnaire VIP prioritaire, sinon Logo brut. Et application du carré parfait wsrv.nl
             let forceLogo = LOGOS[id];
             if (id.startsWith('hyb_sport_dazn')) forceLogo = LOGOS['dazn_generic']; 
 
-            let finalPoster = forceLogo || meta.poster || DEFAULT_POSTER;
+            let rawPoster = forceLogo || meta.poster || DEFAULT_POSTER;
+            let finalPoster = makePerfectSquare(rawPoster);
 
             if (!tempChannelsMap[id]) {
                 tempChannelsMap[id] = { 
@@ -504,8 +509,8 @@ async function getChannelsForSources(sourcesList) {
                     sources: [], 
                     poster: finalPoster 
                 };
-            } else if (!forceLogo && meta.poster && tempChannelsMap[id].poster === DEFAULT_POSTER) {
-                tempChannelsMap[id].poster = meta.poster; 
+            } else if (!forceLogo && meta.poster && tempChannelsMap[id].poster === makePerfectSquare(DEFAULT_POSTER)) {
+                tempChannelsMap[id].poster = makePerfectSquare(meta.poster); 
             }
             
             if (meta._isDirectStream) {
@@ -694,7 +699,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '2.0.0',
+        version: '2.0.1',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -809,7 +814,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     
     try {
         let streamPromises = channel.sources.map(async (source) => {
-            // Si c'est un flux direct issu d'un fichier .m3u
             if (source.type === 'm3u') {
                 return [{
                     url: source.directUrl,
@@ -819,7 +823,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                 }];
             }
 
-            // Si c'est un Add-on Stremio
             try {
                 const streamRes = await axios.get(`${source.providerBase}/stream/tv/${source.metaId}.json`, {
                     headers: { 'X-Forwarded-For': clientIp }, timeout: 4000 
