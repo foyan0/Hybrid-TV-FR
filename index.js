@@ -106,6 +106,7 @@ const LOGOS = {
     'hyb_jeu_tiji': 'https://focus.telerama.fr/500x500/0000/00/01/clear-229.png',
     'hyb_jeu_piwi': 'https://focus.telerama.fr/500x500/0000/00/01/clear-344.png',
     'hyb_jeu_mangas': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQrBITj8D4ehy326isxvvHDFUivw37wiREtViWbndOOtqIoq8ykrTbVbQQADg&s',
+    'hyb_esport_lfl': 'https://upload.wikimedia.org/wikipedia/fr/thumb/3/3f/Ligue_Française_de_League_of_Legends_logo.svg/512px-Ligue_Française_de_League_of_Legends_logo.svg.png',
 
     'hyb_mus_mtv': 'https://upload.wikimedia.org/wikipedia/commons/0/0d/MTV-2021.svg',
     'hyb_mus_mcm': 'https://upload.wikimedia.org/wikipedia/fr/a/ab/MCM_logo_2017.svg'
@@ -126,7 +127,7 @@ function parseConfig(encodedConfig) {
     }
 }
 
-// === MOTEUR D'EXTRACTION ADN ===
+// === MOTEUR D'EXTRACTION ADN ISOLÉ (LFL vs Ligue 1+) ===
 function getChannelData(rawName) {
     if (!rawName) return null;
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -138,8 +139,13 @@ function getChannelData(rawName) {
     const tags = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'DIRECT', 'RAW', 'ACCESS'];
     tags.forEach(tag => { n = n.replace(new RegExp(`\\b${tag}\\b`, 'gi'), ''); });
 
-    // --- 0. LIGUE 1+ ---
-    if (n.includes('LIGUE 1+') || n.includes('LIGUE1+') || n.includes('LIGUE 1 PLUS') || n.includes('LIGUE1+')) {
+    // --- 0. ISOLATION DE L'ESPORT (LFL) ---
+    if (n.includes('LFL') || n.includes('LEAGUE OF LEGENDS') || n.includes('LOL LFL')) {
+        return { id: 'hyb_esport_lfl', name: 'LFL (eSport)', categories: ['sports', 'autres'], index: 150 };
+    }
+
+    // --- 0.1 ISOLATION DE LIGUE 1+ ---
+    if (n.includes('LIGUE 1+') || n.includes('LIGUE1+') || n.includes('LIGUE 1 PLUS')) {
         let m = n.match(/\d+/g); 
         let num = m ? m[m.length-1] : '';
         if (!num || num === '1') {
@@ -730,7 +736,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '2.1.3',
+        version: '2.1.4',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -855,7 +861,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             }
 
             try {
-                // Timeout élargi à 8000ms (8 secondes) pour éviter les échecs de chargement sur les sources lentes
                 const streamRes = await axios.get(`${source.providerBase}/stream/tv/${source.metaId}.json`, {
                     headers: { 'X-Forwarded-For': clientIp }, timeout: 8000 
                 });
