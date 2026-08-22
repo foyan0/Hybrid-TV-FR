@@ -20,6 +20,74 @@ const BLACKLIST = [
     'MULTISPORTS', 'TEST', 'MIRROR', 'BACKUPCHANNEL', 'EVENEMENT', 'LIVEEVENT', 'BOXOFFICE1', 'BOXOFFICE2', 'CANALPLAY'
 ];
 
+// Dictionnaire des logos HD extraits de ta base de données (Stables, hébergés sur Wikipédia / Telerama)
+const LOGOS_DICTIONARY = {
+    // TNT
+    'hyb_tnt_1': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS4u3EMdVyFA2uqIpbnwKBT1GRW9U-mA2jyCz28L2ieGx4vB9bKhpInhHCIqmk&s',
+    'hyb_tnt_2': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT75gfTDfdL-e43D2R2awmntB05mvURFDuhcYJEKY5oEXm4LIK9aVcRFzTl6g&s',
+    'hyb_tnt_3': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQbzqYO9_z_y5FUVRULr1t8ipW_n54umAWj0H-H4qe1ZnsSzNDxcPKVUUuYx_o&s',
+    'hyb_tnt_4': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ8D8hHa8tQzvCzrieu8ozDp__dYDN4slllfTkTPqRh9eKmoK9g9ECfY_WRE_M&s',
+    'hyb_tnt_5': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTehdtMEkCHAK6KKKpveJBKxfujkvTwOJ87tZMWQw9bpUEzTHBPb_vKAc2gRK0&s',
+    'hyb_tnt_6': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRcqsTWUc0GnTr8FLzPJ93DpIIa4OGlWVNFRWV0KtnFCTmU3MH2pSPOpXrYXbY&s',
+    'hyb_tnt_7': 'https://www.arte.tv/sites/corporate/wp-content/themes/arte-entreprise/img/arte_logo.png',
+    'hyb_tnt_8': 'https://upload.wikimedia.org/wikipedia/commons/0/07/C8_t%C3%A9l%C3%A9.png',
+    'hyb_tnt_9': 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/62/W9-Logo.svg/2560px-W9-Logo.svg.png',
+    'hyb_tnt_10': 'https://upload.wikimedia.org/wikipedia/fr/thumb/a/a8/TMC_logo_2016.svg/1280px-TMC_logo_2016.svg.png',
+    'hyb_tnt_11': 'https://upload.wikimedia.org/wikipedia/fr/thumb/8/83/TFX_logo_2018.svg/1200px-TFX_logo_2018.svg.png',
+    'hyb_tnt_12': 'https://upload.wikimedia.org/wikipedia/fr/4/44/NRJ12-Logo.png',
+    'hyb_tnt_13': 'https://i.postimg.cc/dtNWFqXk/IMG-20240318-015448.png',
+    'hyb_tnt_17': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c0/Logo_CStar_2016.svg/2560px-Logo_CStar_2016.svg.png',
+    'hyb_tnt_18': 'https://upload.wikimedia.org/wikipedia/fr/4/43/18._Gulli.png',
+    'hyb_tnt_20': 'https://upload.wikimedia.org/wikipedia/fr/thumb/4/4b/TF1_S%C3%A9ries_Films_logo_2020.svg/2560px-TF1_S%C3%A9ries_Films_logo_2020.svg.png',
+    'hyb_tnt_22': 'https://upload.wikimedia.org/wikipedia/fr/a/a9/6ter_2012.png',
+    'hyb_tnt_23': 'https://www.teleboy.ch/assets/stations/376/icon320_light.png?v2023_48_0',
+    'hyb_tnt_24': 'https://www.teleboy.ch/assets/stations/380/icon320_light.png',
+    'hyb_tnt_25': 'https://logowik.com/content/uploads/images/cherie-255806.logowik.com.webp',
+    
+    // INFO
+    'hyb_info_1': 'https://upload.wikimedia.org/wikipedia/commons/4/40/BFM_TV_logo.png',
+    'hyb_info_2': 'https://focus.telerama.fr/500x500/0000/00/01/clear-226.png',
+    'hyb_info_3': 'https://upload.wikimedia.org/wikipedia/fr/b/b4/LCI_logo_%282016%29.png',
+    'hyb_info_4': 'https://i.postimg.cc/9QDT35Nq/franceinfo-en-journee-speciale-A-quoi-ressemblera-votre-ete-vendredi-1er-juillet-edit-510848289542.jpg',
+    'hyb_info_5': 'https://i.postimg.cc/TPwp9d9B/640px-France24.png',
+    'hyb_info_7': 'https://static.wikia.nocookie.net/logo-chaines/images/a/ab/Euronews_2016_logo.svg.png/revision/latest?cb=20190722173431&path-prefix=fr',
+
+    // CANAL+
+    'hyb_canal_cplus': 'https://logos-marques.com/wp-content/uploads/2020/04/Canal-Logo-1995-768x432.png',
+    'hyb_canal_cinema': 'https://upload.wikimedia.org/wikipedia/fr/e/eb/C%2B_Cin%C3%A9ma%28s%29.png',
+    'hyb_canal_grandecran': 'https://upload.wikimedia.org/wikipedia/fr/d/da/C%2B_Grand_%C3%89cran.png',
+    'hyb_canal_series': 'https://upload.wikimedia.org/wikipedia/fr/e/e3/C%2B_S%C3%A9ries.png',
+    'hyb_canal_kids': 'https://upload.wikimedia.org/wikipedia/commons/0/0c/Canal%2B_Kids.png',
+    'hyb_canal_docs': 'https://upload.wikimedia.org/wikipedia/commons/2/27/Canal%2B_Docs.png',
+    
+    // SPORTS
+    'hyb_sport_cplussport': 'https://upload.wikimedia.org/wikipedia/commons/1/1a/Canal%2B_Sport_2015.png',
+    'hyb_sport_cplusfoot': 'https://upload.wikimedia.org/wikipedia/commons/e/eb/Canal%2BFoot.png',
+    'hyb_sport_cplussport360': 'https://upload.wikimedia.org/wikipedia/commons/6/64/Canal%2BSport_360.png',
+    'hyb_sport_cplusf1': 'https://upload.wikimedia.org/wikipedia/fr/1/12/Logo_C%2BFormule_1.png',
+    'hyb_sport_bein1': 'https://c0.klipartz.com/pngpicture/320/259/gratis-png-bein-sports-1-logo-bein-taquilla-bein-media-group-canal-de-television.png',
+    'hyb_sport_bein2': 'https://upload.wikimedia.org/wikipedia/commons/c/c9/Logo_bein_sports_2.png',
+    'hyb_sport_bein3': 'https://upload.wikimedia.org/wikipedia/commons/c/c4/Logo_bein_sports_3.png',
+    'hyb_sport_rmc1': 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/Logo_RMC_Sport_1_2018.svg/2560px-Logo_RMC_Sport_1_2018.svg.png',
+    'hyb_sport_euro1': 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d0/Eurosport_1_Logo_2015.svg/2560px-Eurosport_1_Logo_2015.svg.png',
+    'hyb_sport_euro2': 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Eurosport_2_Logo_2015.svg/2560px-Eurosport_2_Logo_2015.svg.png',
+    // DAZN générique (on l'applique dynamiquement dans le code)
+    'dazn_generic': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/06/DAZN_Logo_Master.svg/400px-DAZN_Logo_Master.svg.png',
+
+    // DECOUVERTE
+    'hyb_dec_natgeo': 'https://focus.telerama.fr/500x500/0000/00/01/clear-243.png',
+    'hyb_dec_discovery': 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/27/Discovery_Channel_-_Logo_2019.svg/1280px-Discovery_Channel_-_Logo_2019.svg.png',
+    'hyb_dec_ushuaia': 'https://focus.telerama.fr/500x500/0000/00/01/clear-451.png',
+    'hyb_dec_histoire': 'https://upload.wikimedia.org/wikipedia/fr/thumb/5/5c/Histoire_TV_logo_2019.svg/2560px-Histoire_TV_logo_2019.svg.png',
+    
+    // JEUNESSE
+    'hyb_jeu_cartoon': 'https://upload.wikimedia.org/wikipedia/commons/f/fe/CARTOON_NETWORK_logo.png',
+    'hyb_jeu_disney': 'https://upload.wikimedia.org/wikipedia/commons/7/78/Disney_Channel_Germany_Logo_2014.png',
+    'hyb_jeu_boom': 'https://focus.telerama.fr/500x500/0000/00/01/clear-321.png',
+    'hyb_jeu_canalj': 'https://upload.wikimedia.org/wikipedia/fr/6/69/Logo_canal_J.png',
+    'hyb_jeu_nick': 'https://upload.wikimedia.org/wikipedia/commons/f/fa/Nickelodeon_logo_2009.png'
+};
+
 function parseConfig(encodedConfig) {
     try {
         if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], epg: true };
@@ -31,30 +99,23 @@ function parseConfig(encodedConfig) {
 }
 
 // === LE MOTEUR DE DICTIONNAIRE ABSOLU ===
-// Crée un ADN unique pour chaque chaîne pour une fusion et un classement sans erreur
 function getChannelData(rawName) {
     if (!rawName) return null;
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     
-    // Nettoyage radical : on supprime les crochets, parenthèses et préfixes inutiles
     n = n.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s*\[[^\]]*\]\s*/g, ' ');
     n = n.replace(/^(FR|BE|CH|CA|VIP)\s*[:|/-]+\s*/i, '');
     n = n.replace(/DURING EVENT ONLY/g, '').replace(/EVENT ONLY/g, '');
 
-    // Suppression des balises de qualité (On NE TOUCHE PAS au mot FRANCE ou FR ici pour ne pas casser France 2 !)
     const tags = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'DIRECT', 'RAW', 'ACCESS'];
     tags.forEach(tag => { n = n.replace(new RegExp(`\\b${tag}\\b`, 'gi'), ''); });
     
-    // L'ADN de la chaîne
     let c = n.replace(/[^A-Z0-9]/g, '');
     if (!c || c.length < 2) return null;
 
-    // Éjection immédiate si la chaîne est blacklistée
     if (BLACKLIST.some(b => c.includes(b))) return null;
 
-    // --- LE DICTIONNAIRE COMPLET (Zéro perte) ---
-
-    // 1. TNT ET GENERALISTES
+    // --- 1. TNT ET GENERALISTES ---
     if (c.startsWith('TF1')) {
         if (c.includes('SERIE') || c.includes('FILM')) return { id: 'hyb_tnt_20', name: 'TF1 Séries Films', category: 'tnt', index: 20 };
         return { id: 'hyb_tnt_1', name: 'TF1', category: 'tnt', index: 1 };
@@ -96,7 +157,7 @@ function getChannelData(rawName) {
     if (c.includes('LATROIS')) return { id: 'hyb_tnt_latrois', name: 'La Trois', category: 'tnt', index: 44 };
     if (c.includes('COMEDIE')) return { id: 'hyb_tnt_comedie', name: 'Comédie+', category: 'tnt', index: 45 };
 
-    // 2. INFORMATION
+    // --- 2. INFORMATION ---
     if (c.includes('BFM')) {
         if (c.includes('BUSINESS')) return { id: 'hyb_info_bfmbiz', name: 'BFM Business', category: 'info', index: 11 };
         return { id: 'hyb_info_1', name: 'BFMTV', category: 'info', index: 1 };
@@ -120,11 +181,11 @@ function getChannelData(rawName) {
         return { id: 'hyb_info_tv5', name: 'TV5 Monde', category: 'info', index: 18 };
     }
 
-    // 3. SPORTS
+    // --- 3. SPORTS ---
     if (c.includes('DAZN') || c.includes('LIGUE1') || c.includes('PASSLIGUE') || c.includes('LEAUGE1')) {
         let isLive = c.includes('LIVE') || c.includes('LIGUE1') || c.includes('PASS') || c.includes('LEAUGE');
         let m = c.match(/\d+/g); let num = m ? m[m.length-1] : '1';
-        if (parseInt(num) > 8) return null; // Coupe les canaux vides
+        if (parseInt(num) > 8) return null; 
         if (isLive) return { id: 'hyb_sport_daznlive'+num, name: 'DAZN Ligue 1 - Live '+num, category: 'sports', index: 10 + parseInt(num) };
         return { id: 'hyb_sport_dazn'+num, name: 'DAZN '+num, category: 'sports', index: 30 + parseInt(num) };
     }
@@ -168,7 +229,7 @@ function getChannelData(rawName) {
     if (c.includes('INFOSPORT')) return { id: 'hyb_sport_infosport', name: 'Infosport+', category: 'sports', index: 183 };
     if (c.includes('SPORTENFRANCE')) return { id: 'hyb_sport_sportenfrance', name: 'Sport En France', category: 'sports', index: 184 };
 
-    // 4. CINE+ ET CINEMA
+    // --- 4. CINE+ ET CINEMA ---
     if (c.includes('CINE') || c.includes('CINA')) {
         if (c.includes('PREMIER')) return { id: 'hyb_cine_premier', name: 'Ciné+ Premier', category: 'cinema', index: 11 };
         if (c.includes('FRISSON') || c.includes('ISSON')) return { id: 'hyb_cine_frisson', name: 'Ciné+ Frisson', category: 'cinema', index: 12 };
@@ -179,7 +240,7 @@ function getChannelData(rawName) {
         if (c.includes('MAX')) return { id: 'hyb_cine_max', name: 'Ciné+ Max', category: 'cinema', index: 17 };
         if (c.includes('STAR')) {
             if (c.includes('HIT')) return { id: 'hyb_mus_cstar', name: 'CStar Hits', category: 'musique', index: 8 };
-            return { id: 'hyb_tnt_17', name: 'CStar', category: 'tnt', index: 17 }; // CSTAR !
+            return { id: 'hyb_tnt_17', name: 'CStar', category: 'tnt', index: 17 };
         }
         if (c.includes('ACTION')) return { id: 'hyb_cine_action', name: 'Action', category: 'cinema', index: 30 };
         return { id: 'hyb_cine_plus', name: 'Ciné+', category: 'cinema', index: 19 };
@@ -206,7 +267,7 @@ function getChannelData(rawName) {
     }
     if (c.includes('ALTICE')) return { id: 'hyb_cine_altice', name: 'Altice Studio', category: 'cinema', index: 45 };
 
-    // 5. CANAL+ (BOUQUET GENERAL)
+    // --- 5. CANAL+ ---
     if (c.includes('CANAL') && !c.includes('CANALJ') && !c.includes('CANALD') && !c.includes('SAVOIR') && !c.includes('ALPHA')) {
         if (c.includes('CINEMA') || c.includes('CNEMA')) return { id: 'hyb_canal_cinema', name: 'Canal+ Cinéma', category: 'canal', index: 2 };
         if (c.includes('GRANDECRAN')) return { id: 'hyb_canal_grandecran', name: 'Canal+ Grand Écran', category: 'canal', index: 3 };
@@ -222,7 +283,7 @@ function getChannelData(rawName) {
         return { id: 'hyb_canal_cplus', name: 'Canal+', category: 'canal', index: 1 };
     }
 
-    // 6. DECOUVERTE
+    // --- 6. DECOUVERTE ---
     if (c.includes('NATGEO') || c.includes('NATIONALGEO')) {
         if (c.includes('WILD')) return { id: 'hyb_dec_natgeowild', name: 'Nat Geo Wild', category: 'decouverte', index: 2 };
         return { id: 'hyb_dec_natgeo', name: 'National Geographic', category: 'decouverte', index: 1 };
@@ -249,7 +310,7 @@ function getChannelData(rawName) {
     if (c.includes('CRIMEDISTRICT')) return { id: 'hyb_dec_crime', name: 'Crime District', category: 'decouverte', index: 37 };
     if (c.includes('SCIENCE')) return { id: 'hyb_dec_science', name: 'Science & Vie TV', category: 'decouverte', index: 38 };
 
-    // 7. JEUNESSE
+    // --- 7. JEUNESSE ---
     if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', category: 'jeunesse', index: 1 };
     if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', category: 'jeunesse', index: 2 };
     if (c.includes('BOING') || c.includes('BOEING')) return { id: 'hyb_jeu_boing', name: 'Boing', category: 'jeunesse', index: 3 };
@@ -279,7 +340,7 @@ function getChannelData(rawName) {
         return { id: 'hyb_jeu_gong', name: 'Gong', category: 'jeunesse', index: 39 };
     }
 
-    // 8. MUSIQUE
+    // --- 8. MUSIQUE ---
     if (c.includes('CSTAR') && c.includes('HIT')) return { id: 'hyb_mus_cstar', name: 'CStar Hits', category: 'musique', index: 8 };
     if (c.includes('MTV')) {
         if (c.includes('HIT')) return { id: 'hyb_mus_mtvhits', name: 'MTV Hits', category: 'musique', index: 11 };
@@ -473,6 +534,10 @@ async function getChannelsForSources(sourcesList) {
             if (!channelInfo) return; // Blacklist ou Rejet
 
             const id = channelInfo.id;
+            
+            // Intégration du Dictionnaire des Logos !
+            let forceLogo = LOGOS_DICTIONARY[id];
+            let finalPoster = forceLogo || meta.poster || DEFAULT_POSTER;
 
             if (!tempChannelsMap[id]) {
                 tempChannelsMap[id] = { 
@@ -482,9 +547,9 @@ async function getChannelsForSources(sourcesList) {
                     category: channelInfo.category,
                     sortIndex: channelInfo.index,
                     sources: [], 
-                    poster: meta.poster || DEFAULT_POSTER 
+                    poster: finalPoster 
                 };
-            } else if (meta.poster && tempChannelsMap[id].poster === DEFAULT_POSTER) {
+            } else if (!forceLogo && meta.poster && tempChannelsMap[id].poster === DEFAULT_POSTER) {
                 tempChannelsMap[id].poster = meta.poster; 
             }
             
@@ -663,6 +728,7 @@ app.get('/', async (req, res) => {
     res.send(html);
 });
 
+// Routage Meta-Addon
 app.get('/:config/manifest.json', (req, res) => {
     const config = parseConfig(req.params.config);
     const confName = config.epg ? 'epg-on' : 'epg-off';
@@ -670,7 +736,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '1.3.0',
+        version: '1.3.1',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -694,7 +760,10 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
     if (!config.sources || config.sources.length === 0) return res.json({ metas: [] });
     
     let channelsData = await getChannelsForSources(config.sources);
-    if (channelsData.length === 0) { res.setHeader('Cache-Control', 'no-cache'); return res.json({ metas: [] }); }
+    if (channelsData.length === 0) { 
+        res.setHeader('Cache-Control', 'no-cache'); 
+        return res.json({ metas: [] }); 
+    }
     
     res.setHeader('Cache-Control', 'max-age=14400, public'); 
     const requestedCatalog = req.params.id; 
@@ -708,6 +777,7 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
     if (!validCatalogs.includes(requestedCatalog)) return res.json({ metas: [] });
     
     const filteredChannels = channelsData.filter(ch => ch.category === requestedCatalog);
+
     const paginatedMetas = filteredChannels.slice(skip, skip + 100).map(ch => ({
         id: ch.id, type: 'tv', name: ch.displayName, poster: ch.poster, posterShape: 'square'
     }));
