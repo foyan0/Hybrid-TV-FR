@@ -24,25 +24,28 @@ function parseConfig(encodedConfig) {
     }
 }
 
-// Normalisation avancée avec détection des pays et nettoyage des flux de sport
 function normalizeChannelName(rawName) {
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     n = n.replace(/\s*\([Tt][Vv]\)\s*/g, '');
     n = n.replace(/DURING EVENT ONLY/g, '');
     n = n.replace(/EVENT ONLY/g, '');
     
-    // Nettoyage des balises de qualité parasites pour uniformiser les noms de sport/cinéma
+    // Normalisation propre pour DAZN Ligue 1 et ses sous-lives
+    if (n.includes('LIGUE 1') || n.includes('PASS LIGUE')) {
+        let liveMatch = n.match(/LIVE\s*(\d+)/i);
+        let num = liveMatch ? liveMatch[1] : '1';
+        let allNums = n.match(/\d+/g);
+        if (!liveMatch && allNums && allNums.length > 1) {
+            num = allNums[allNums.length - 1]; // Récupère le dernier chiffre (ex: le 2 de live 2)
+        }
+        return `DAZN LIGUE 1 - LIVE ${num}`;
+    }
+
     const tags = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'VAVOO', 'DIRECT', 'RAW', 'ACCESS'];
     tags.forEach(tag => { n = n.replace(new RegExp(`\\b${tag}\\b`, 'g'), ' '); });
     n = n.replace(/\bHD\b/g, ' '); 
     n = n.replace(/\s+/g, ' ').trim();
 
-    // Normalisation spécifique DAZN et Ligue 1
-    if (n.includes('DAZN LIGUE 1') || n.includes('PASS LIGUE 1')) {
-        let match = n.match(/(\d+)/);
-        let num = match ? match[1] : '1';
-        return `DAZN LIGUE 1 LIVE ${num}`;
-    }
     if (n.startsWith('DAZN')) {
         let match = n.match(/(\d+)/);
         let num = match ? match[1] : '1';
@@ -118,20 +121,19 @@ function getPrettyName(n) {
     if (n === 'CNEWS') return 'CNews';
     if (n === 'GULLI') return 'Gulli';
     if (n === 'ARTE') return 'Arte';
-    if (n.startsWith('DAZN')) return n.replace('DAZN', 'DAZN ');
+    if (n.startsWith('DAZN')) return n;
     if (n.startsWith('CANAL+')) return n.replace('CANAL+', 'Canal+').replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.substr(1).toLowerCase()).replace('Canal+ ', 'Canal+ ');
     return n.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.substr(1).toLowerCase());
 }
 
-// Rangement intelligent avec les nouvelles catégories Internationales (BE, CH, CA)
 function getChannelPlacements(rawOriginalName, n) {
     let placements = [];
     let upperRaw = rawOriginalName.toUpperCase();
 
-    // Détection internationale par préfixe ou nom de chaîne spécifique
-    let isBelgian = upperRaw.startsWith('BE') || ['RTL-TVI', 'CLUB RTL', 'PLUG RTL', 'LA UNE', 'LA DEUX', 'LA TROIS', 'AB3'].some(k => upperRaw.includes(k));
-    let isSwiss = upperRaw.startsWith('CH') || ['RTS 1', 'RTS 2', 'RTS UN', 'RTS DEUX', 'SRF'].some(k => upperRaw.includes(k));
-    let isCanadian = upperRaw.startsWith('CA') || ['ICI TELE', 'RDS', 'TVA SPORTS', 'NOVO'].some(k => upperRaw.includes(k));
+    // Détection internationale sécurisée (évite le faux positif sur beIN Sports)
+    let isBelgian = upperRaw.match(/^BE[\s:|\/-]/) || ['RTL-TVI', 'CLUB RTL', 'PLUG RTL', 'LA UNE', 'LA DEUX', 'LA TROIS', 'AB3'].some(k => upperRaw.includes(k));
+    let isSwiss = upperRaw.match(/^CH[\s:|\/-]/) || ['RTS 1', 'RTS 2', 'RTS UN', 'RTS DEUX', 'SRF'].some(k => upperRaw.includes(k));
+    let isCanadian = upperRaw.match(/^CA[\s:|\/-]/) || ['ICI TELE', 'RDS', 'TVA SPORTS', 'NOVO'].some(k => upperRaw.includes(k));
 
     if (isBelgian) {
         placements.push({ category: 'belgique', index: 10 });
@@ -153,7 +155,7 @@ function getChannelPlacements(rawOriginalName, n) {
         placements.push({ category: 'info', index: idx });
     }
 
-    // Jeunesse (avec Boing, Baby TV)
+    // Jeunesse
     let jeuIdx = -1;
     if (n === 'CARTOON NETWORK') jeuIdx = 1; 
     else if (n === 'DISNEY CHANNEL') jeuIdx = 2; 
@@ -205,7 +207,7 @@ function getChannelPlacements(rawOriginalName, n) {
         placements.push({ category: 'decouverte', index: decIndex });
     }
 
-    // Cinéma & Séries (Ciné+)
+    // Cinéma & Séries
     if (['PARAMOUNT', 'WARNER', 'ACTION', 'TCM', 'CINE+', 'CINE +', 'OCS', 'SYFY', 'SCI FI', 'SERIE CLUB', 'TV BREIZH', 'COMEDY CENTRAL', 'POLAR+'].some(k => n.includes(k))) {
         let cineIdx = 10;
         if (n.includes('PREMIER')) cineIdx = 1;
@@ -224,7 +226,7 @@ function getChannelPlacements(rawOriginalName, n) {
         placements.push({ category: 'musique', index: musIndex });
     }
 
-    // Sports (Ordre rigoureux demandé : Ligue 1 -> DAZN -> beIN -> RMC -> Eurosport -> Canal+ Sport)
+    // Sports (Ordre strict demandé : Ligue 1 -> DAZN -> beIN Sports -> RMC Sport -> Eurosport -> Canal+ Sport)
     if (n.includes('LIGUE 1')) {
         let match = n.match(/(\d+)/);
         let l1Idx = match ? parseInt(match[1]) : 1;
@@ -700,7 +702,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '1.1.0',
+        version: '1.1.1',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
