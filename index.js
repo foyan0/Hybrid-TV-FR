@@ -13,13 +13,14 @@ let epgData = {};
 let channelsCache = {}; 
 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
+const MATCH_EVENT_POSTER = 'https://upload.wikimedia.org/wikipedia/fr/thumb/f/fa/Logo_Ligue_1%2B_%28Ic%C3%B4ne%29.svg/512px-Logo_Ligue_1%2B_%28Ic%C3%B4ne%29.svg.png';
 
 const BLACKLIST = [
     'ALACARTE', 'DISNEYPLUS', 'NETFLIX', 'PRIMEVIDEO', 'APPLETV',
     'TEST', 'MIRROR', 'BACKUPCHANNEL', 'BOXOFFICE1', 'BOXOFFICE2', 'CANALPLAY', 'AFRIQUE', 'DEUTSCH', 'GERMAN'
 ];
 
-// Logos VIP (Optionnels via le bouton ON/OFF)
+// Logos VIP
 const LOGOS = {
     // TNT & Généralistes
     'hyb_tnt_1': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cc/TF1_2013_logo.svg/512px-TF1_2013_logo.svg.png',
@@ -136,11 +137,12 @@ function parseConfig(encodedConfig) {
     }
 }
 
-// === MOTEUR D'EXTRACTION ADN CHIRURGICAL ===
+// === MOTEUR D'EXTRACTION ADN (SPORTS & MATCHS EN DIRECT) ===
 function getChannelData(rawName) {
     if (!rawName) return null;
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
+    // Nettoyage soft
     n = n.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s*\[[^\]]*\]\s*/g, ' ');
     n = n.replace(/^(?:FR|BE|CH|CA|VIP|VAVOO)\s*[:|/-]+\s*/i, '');
     n = n.replace(/DURING EVENT ONLY/g, '').replace(/EVENT ONLY/g, '');
@@ -148,19 +150,35 @@ function getChannelData(rawName) {
     const tags = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'DIRECT', 'RAW', 'ACCESS'];
     tags.forEach(tag => { n = n.replace(new RegExp(`\\b${tag}\\b`, 'gi'), ''); });
 
-    // --- 0. ISOLATION DE L'ESPORT (LFL) POUR NE PAS POLLUER LE FOOT ---
+    // --- 0. DÉTECTION DES MATCHS EN DIRECT (REGROUPEMENT INTELLIGENT) ---
+    const matchRegex = /\b(?:VS\.?|CONTRE|\s-\s)\b/i;
+    const isLiveEvent = n.includes('LIGUE 1 :') || n.includes('DAZN :') || n.includes('EVENT') || (matchRegex.test(n) && !n.includes('EUROSPORT'));
+
+    if (isLiveEvent) {
+        let cleanEvent = n.replace(/^(?:LIGUE 1|DAZN|BEIN|RMC|CANAL\+?|EVENT)\s*[:|-]+\s*/gi, '').trim();
+        let eventSyncId = 'hyb_match_' + cleanEvent.replace(/[^A-Z0-9]/g, '_');
+        return {
+            id: eventSyncId,
+            name: '⚽ ' + cleanEvent,
+            categories: ['sports'],
+            index: 5, // Apparaît en haut dans Sports juste après les chaînes principales
+            customPoster: MATCH_EVENT_POSTER
+        };
+    }
+
+    // --- 0.1 ISOLATION DE L'ESPORT (LFL) ---
     if (n.includes('LFL') || n.includes('LEAGUE OF LEGENDS') || n.includes('LOL LFL')) {
         return { id: 'hyb_esport_lfl', name: 'LFL (eSport)', categories: ['sports', 'autres'], index: 150 };
     }
 
-    // --- 0.1 ISOLATION DE LIGUE 1+ (SANS DAZN DANS LE NOM) ---
-    if ((n.includes('LIGUE 1+') || n.includes('LIGUE1+') || n.includes('LIGUE 1 PLUS')) && !n.includes('DAZN')) {
+    // --- 0.2 LIGUE 1+ ET MULTIPLEX NUMÉROTÉS (1 à 8) ---
+    if (n.includes('LIGUE 1+') || n.includes('LIGUE1+') || n.includes('LIGUE 1 PLUS')) {
         let m = n.match(/\d+/g); 
         let num = m ? m[m.length-1] : '';
         if (!num || num === '1') {
             return { id: 'hyb_sport_ligue1plus', name: 'Ligue 1+', categories: ['sports'], index: 1 };
         } else {
-            return { id: 'hyb_sport_ligue1plus'+num, name: 'Ligue 1+ '+num, categories: ['sports'], index: 1 + parseInt(num) };
+            return { id: 'hyb_sport_ligue1plus_' + num, name: 'Ligue 1+ ' + num, categories: ['sports'], index: 1 + parseInt(num) };
         }
     }
 
@@ -214,7 +232,7 @@ function getChannelData(rawName) {
     if (c.includes('BFMLYON')) return { id: 'hyb_info_lyon', name: 'BFM Lyon', categories: ['info'], index: 51 };
     if (c.includes('BFMPARIS')) return { id: 'hyb_info_paris', name: 'BFM Paris Île-de-France', categories: ['info'], index: 52 };
 
-    // --- 3. SPORTS (Suite DAZN / beIN) ---
+    // --- 3. SPORTS ---
     if (c.includes('DAZNLIGUE1') || c.includes('DAZNLIVE')) {
         let m = c.match(/\d+/g); let num = m ? m[m.length-1] : '1';
         if (parseInt(num) > 8) return null; 
@@ -334,12 +352,6 @@ function getChannelData(rawName) {
     prettyName = prettyName.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.substr(1).toLowerCase());
     
     return { id: 'hyb_id_' + c, name: prettyName, categories: [cat], index: idx };
-}
-
-function toSyncId(rawName) {
-    if (!rawName) return '';
-    let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    return n.replace(/[^A-Z0-9]/g, ''); 
 }
 
 function parseXmltvDate(str) {
@@ -534,7 +546,7 @@ async function getChannelsForSources(sourcesList, enableLogos) {
             
             let finalPoster = DEFAULT_POSTER;
             if (enableLogos) {
-                let forceLogo = LOGOS[id];
+                let forceLogo = channelInfo.customPoster || LOGOS[id];
                 if (id.startsWith('hyb_sport_dazn')) forceLogo = LOGOS['dazn_generic'];
                 let rawPoster = forceLogo || meta.poster || DEFAULT_POSTER;
                 finalPoster = makePerfectSquare(rawPoster);
@@ -751,7 +763,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '2.1.5',
+        version: '2.2.0',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -885,18 +897,16 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         let score = 0;
                         let up = (s.title || '').toUpperCase() + ' ' + (s.name || '').toUpperCase();
                         
-                        // ANTI-INTOXICATION (FILTRE CHIRURGICAL DES FLUX VIDÉO)
+                        // ANTI-INTOXICATION CHIRURGICALE
                         if (channel.id === 'hyb_canal_cplus') {
                             if (up.match(/(SPORT|FOOT|CINEMA|CNEMA|DECALE|KIDS|DOC|BOX|GRAND|SERIE|PREMIER|FRISSON|EMOTION|FAMIZ|CLUB|CLASSIC|COMEDIE|F1|MOTO|360|FAMILY|LIGUE|\bJ\b|CANALJ|LIVE)/)) {
                                 score -= 100000;
                             }
                         } else if (channel.id.startsWith('hyb_sport_ligue1plus')) {
-                            // Protection stricte de Ligue 1+ contre DAZN et les autres
                             if (up.includes('DAZN') || up.includes('BEIN') || up.includes('RMC')) {
                                 score -= 100000;
                             }
                         } else if (channel.id.startsWith('hyb_sport_dazn')) {
-                            // Protection de DAZN contre Ligue 1+ et les autres
                             if (up.includes('LIGUE1+') || up.includes('LIGUE 1+') || up.includes('BEIN')) {
                                 score -= 100000;
                             }
