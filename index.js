@@ -119,7 +119,6 @@ function parseConfig(encodedConfig) {
 
 // ============================================================================
 // 1. EXTRACTEUR D'ÉVÉNEMENTS EN DIRECT (MATCHS ISOLÉS)
-// Isole les rencontres sportives dans la catégorie [events] pour ne pas polluer les chaines.
 // ============================================================================
 function extractMatchEvent(rawName) {
     if (!rawName) return null;
@@ -128,16 +127,12 @@ function extractMatchEvent(rawName) {
     let isMatch = false;
     let t1 = '', t2 = '';
 
-    // Détection 1 : Le mot VS, V, ou CONTRE
     let vsMatch = s.match(/([A-Z0-9\s]{3,20})\s+(?:VS\.?|CONTRE|\bV\b|\bVERSUS\b)\s+([A-Z0-9\s]{3,20})/i);
     if (vsMatch) {
         isMatch = true; t1 = vsMatch[1]; t2 = vsMatch[2];
-    } 
-    // Détection 2 : Un tiret mais UNIQUEMENT si le flux indique clairement que c'est un sport/live
-    else if (/(?:LIGUE\s*1|DAZN|BEIN|RMC|UCL|LDC|EURO|PREMIER LEAGUE|MATCH|LIVE|DIRECT|SPORT).+?\b([A-Z0-9\s]{3,20})\s*[-/]\s*([A-Z0-9\s]{3,20})\b/i.test(s)) {
+    } else if (/(?:LIGUE\s*1|DAZN|BEIN|RMC|UCL|LDC|EURO|PREMIER LEAGUE|MATCH|LIVE|DIRECT|SPORT).+?\b([A-Z0-9\s]{3,20})\s*[-/]\s*([A-Z0-9\s]{3,20})\b/i.test(s)) {
         let dashMatch = s.match(/\b([A-Z0-9\s]{3,20})\s*[-/]\s*([A-Z0-9\s]{3,20})\b/i);
         if (dashMatch) {
-            // Anti-Faux-Positif (pour ne pas confondre "FRANCE 2 - HD" avec un match)
             let inv = ['CANAL', 'CINE', 'SPORT', 'BEIN', 'RMC', 'EUROSPORT', 'TF1', 'FRANCE', 'M6', 'DAZN', '1080P', '720P', 'UHD', '4K', 'FHD', 'HD', 'SD'];
             if (!inv.includes(dashMatch[1].trim()) && !inv.includes(dashMatch[2].trim())) {
                 isMatch = true; t1 = dashMatch[1]; t2 = dashMatch[2];
@@ -157,19 +152,17 @@ function extractMatchEvent(rawName) {
         let cleanT2 = cleanTeam(t2);
 
         if (cleanT1.length >= 2 && cleanT2.length >= 2 && cleanT1 !== cleanT2) {
-            // Tri alphabétique pour fusionner "PSG vs OM" et "OM vs PSG" au même endroit
             let canonicalKey = [toSyncId(cleanT1), toSyncId(cleanT2)].sort().join('_');
             return {
                 id: 'hyb_ev_' + canonicalKey,
                 name: `⚽ ${cleanT1} vs ${cleanT2}`,
-                categories: ['events'], // Exclusif aux événements (ne se duplique plus dans sports)
+                categories: ['events'],
                 index: 5,
                 customPoster: EVENT_POSTER
             };
         }
     }
 
-    // Capture les MULTIPLEX purs
     if (s.includes('MULTIPLEX') && !s.includes('CANAL')) {
         return { id: 'hyb_ev_multi', name: '🔴 MULTIPLEX EN DIRECT', categories: ['events'], index: 1, customPoster: EVENT_POSTER };
     }
@@ -182,31 +175,25 @@ function extractMatchEvent(rawName) {
 function getChannelData(rawName) {
     if (!rawName) return null;
     
-    // Si c'est un match temporaire, il part dans les events et quitte le processus normal
     let eventData = extractMatchEvent(rawName);
     if (eventData) return eventData;
 
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-    // Nettoyage générique IPTV
     n = n.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s*\[[^\]]*\]\s*/g, ' ');
     n = n.replace(/^(?:FR|BE|CH|CA|VIP|VAVOO)\s*[:|/-]+\s*/i, '');
     n = n.replace(/DURING EVENT ONLY/g, '').replace(/EVENT ONLY/g, '');
     const tags = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'DIRECT', 'RAW', 'ACCESS'];
     tags.forEach(tag => { n = n.replace(new RegExp(`\\b${tag}\\b`, 'gi'), ''); });
 
-    // Isolation eSport (LFL)
     if (n.includes('LFL') || n.includes('LEAGUE OF LEGENDS') || n.includes('LOL LFL')) {
         return { id: 'hyb_esport_lfl', name: 'LFL (eSport)', categories: ['autres'], index: 10 };
     }
 
-    // 🔴 LA NEUTRALISATION SÉMANTIQUE (Le signe '+' est converti en texte pur)
     n = n.replace(/\+/g, 'PLUS');
 
-    // Moteur Spécial Sports (Avec ou sans "PLUS")
     if (n.includes('LIGUE 1') || n.includes('LIGUE1') || n.match(/\bL1\b/)) {
         if (!n.includes('DAZN') && !n.includes('BEIN') && !n.includes('RMC')) {
-            // Capte Ligue 1, Ligue 1 Plus, L1, L1 Plus 2...
             let m = n.match(/(?:LIGUE\s*1|L1|LIGUE1)\s*(?:PLUS)?\s*(\d+)/i);
             let num = (m && m[1]) ? m[1] : '';
             if (!num || num === '1') {
@@ -221,15 +208,12 @@ function getChannelData(rawName) {
         return { id: 'hyb_sport_dazn_'+num, name: 'DAZN '+num, categories: ['sports'], index: 10 + parseInt(num, 10) };
     }
 
-    // Conversion totale en bloc pur pour la suite de l'analyse (ex: CANALPLUSCINEMA)
     let c = n.replace(/[^A-Z0-9]/g, '');
     if (!c || c.length < 2) return null;
     if (BLACKLIST.some(b => c.includes(b))) return null;
 
-    // --- CASCADE SÉMANTIQUE ---
     if (c.startsWith('FRANCE24')) return { id: 'hyb_info_5', name: 'France 24', categories: ['info'], index: 6 };
 
-    // --- BOUQUET CANAL PLUS ---
     if (c.includes('CANAL') || c.includes('CPLUS')) {
         if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 99 };
         if (c.includes('SPORT360') || c.includes('360')) return { id: 'hyb_canal_sport360', name: 'Canal+ Sport 360', categories: ['canal', 'sports'], index: 90 };
@@ -250,7 +234,6 @@ function getChannelData(rawName) {
 
     if (c.includes('COMEDIE') || c.includes('COMEDY')) return { id: 'hyb_cine_comedie', name: 'Comédie+', categories: ['canal', 'cinema'], index: 10 };
 
-    // --- AUTRES SPORTS ---
     if (c.includes('BEINSPORT') || c.includes('BEIN')) {
         let isMax = c.includes('MAX'); let m = c.match(/BEIN(?:SPORT|MAX)?(\d+)/); let num = (m && m[1]) ? m[1] : '1';
         return { id: 'hyb_sport_bein_' + (isMax?'max':'') + num, name: isMax ? 'beIN SPORTS MAX '+num : 'beIN SPORTS '+num, categories: ['sports'], index: isMax ? 40 + parseInt(num, 10) : 30 + parseInt(num, 10) };
@@ -267,7 +250,6 @@ function getChannelData(rawName) {
     }
     if (c.includes('LEQUIPE')) return { id: 'hyb_sport_lequipe', name: "L'Équipe", categories: ['sports', 'tnt'], index: 95 };
 
-    // --- CINE+ ---
     if (c.includes('CINE') || c.includes('CINA')) {
         if (c.includes('PREMIER')) return { id: 'hyb_cine_premier', name: 'Ciné+ Premier', categories: ['cinema', 'canal'], index: 11 };
         if (c.includes('FRISSON') || c.includes('ISSON')) return { id: 'hyb_cine_frisson', name: 'Ciné+ Frisson', categories: ['cinema', 'canal'], index: 12 };
@@ -279,7 +261,6 @@ function getChannelData(rawName) {
         return { id: 'hyb_cine_plus', name: 'Ciné+', categories: ['cinema', 'canal'], index: 19 };
     }
 
-    // --- TNT ---
     if (c.startsWith('TF1SERIESFILMS') || c.startsWith('TF1SF')) return { id: 'hyb_tnt_20', name: 'TF1 Séries Films', categories: ['tnt', 'cinema'], index: 20 };
     if (c.startsWith('TF1')) return { id: 'hyb_tnt_1', name: 'TF1', categories: ['tnt'], index: 1 };
     if (c.startsWith('FRANCE2') || c === 'FR2') return { id: 'hyb_tnt_2', name: 'France 2', categories: ['tnt'], index: 2 };
@@ -310,7 +291,6 @@ function getChannelData(rawName) {
     if (c.includes('CNEWS')) return { id: 'hyb_info_2', name: 'CNews', categories: ['info'], index: 3 };
     if (c === 'LCI') return { id: 'hyb_info_3', name: 'LCI', categories: ['info'], index: 4 };
 
-    // --- FALLBACK GENÉRIQUE ---
     let cat = 'autres';
     let idx = 300;
     if (c.includes('SPORT') || c.includes('FOOT') || c.includes('GOLF')) cat = 'sports';
@@ -837,9 +817,6 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
     });
 });
 
-// ============================================================================
-// L'ARCHITECTURE DE TRI ULTIME (SCORING + ANTI-POISON DOUX)
-// ============================================================================
 app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
@@ -858,8 +835,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                 return [{
                     url: source.directUrl,
                     name: `▶ Flux direct M3U`,
-                    title: `Haute Qualité (1080p)`,
-                    _score: 1000
+                    title: `Full HD (1080p)`,
+                    _score: 1500
                 }];
             }
 
@@ -870,7 +847,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                 
                 if (streamRes.data && streamRes.data.streams) {
                     return streamRes.data.streams.map((s, idx) => {
-                        let qual = "Qualité Standard (SD)";
+                        let qual = "SD";
                         let score = 0;
                         
                         let up = (s.title || '').toUpperCase() + ' ' + (s.name || '').toUpperCase();
@@ -882,12 +859,10 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         if (channel.id.startsWith('hyb_canal_')) {
                             let isBaseCanal = (channel.id === 'hyb_canal_cplus');
                             if (isBaseCanal) {
-                                // Canal+ repousse tout le reste
                                 if (nStream.match(/(SPORT|FOOT|CINE|DECALE|KIDS|DOC|BOX|GRAND|SERIE|PREMIER|FRISSON|EMOTION|FAMIZ|CLUB|CLASSIC|COMEDIE|F1|MOTO|360|FAMILY|LIGUE1|DAZN|BEIN|MULTI)/)) {
                                     penalty += 2000;
                                 }
                             } else {
-                                // Les sous-chaînes repoussent ce qui n'est pas de leur domaine
                                 let target = channel.id.replace('hyb_canal_', '').toUpperCase();
                                 if (target.includes('SPORT') || target.includes('FOOT')) {
                                     if (nStream.includes('CINE') || nStream.includes('DOC') || nStream.includes('KIDS') || nStream.includes('SERIE') || nStream.includes('BOX')) penalty += 2000;
@@ -899,14 +874,12 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
                         // --- 2. MULTIPLEX SPORT : SÉCURISATION DES CANAUX ---
                         if (channel.id.startsWith('hyb_sport_ligue1plus')) {
-                            // On extrait le canal demandé par l'utilisateur (Ligue 1+ "2")
                             let targetNumMatch = channel.id.match(/_(\d+)$/);
                             let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
                             
-                            // On cherche si un autre numéro est présent dans le nom du flux (Ex: LIGUE1PLUS3)
                             let streamNumMatch = nStream.match(/(?:LIGUE[\s\+]*1|L1)[\s\+A-Z]*([1-9]|1[0-8])/i);
                             if (streamNumMatch && streamNumMatch[1] !== targetNum) {
-                                penalty += 3000; // Malus lourd pour empêcher Ligue 1+ 3 de passer sur Ligue 1+ 1
+                                penalty += 5000; // Malus lourd
                             }
                         }
 
@@ -916,17 +889,17 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             
                             let streamNumMatch = nStream.match(/DAZN\s*([1-9]|1[0-8])/i);
                             if (streamNumMatch && streamNumMatch[1] !== targetNum) {
-                                penalty += 3000;
+                                penalty += 5000;
                             }
                         }
 
                         // --- 3. SCORING DE QUALITÉ RÉALISTE IPTV ---
                         if (up.includes('FHD') || up.includes('1080')) { qual = "Full HD (1080p)"; score += 1500; } 
                         else if (up.includes('HD') || up.includes('720')) { qual = "HD (720p)"; score += 1000; } 
-                        else if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) { qual = "4K (UHD)"; score += 500; } // Rétrogradé sous le FHD car souvent instable en IPTV
-                        else { score += 0; } // SD par défaut
+                        else if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) { qual = "4K (UHD)"; score += 500; } 
+                        else { score += 0; } 
 
-                        // Bonus Langue (On assure les commentaires français)
+                        // Bonus Langue 
                         if (up.match(/\bFR\b/) || up.match(/\bVF\b/) || up.includes('FRENCH') || up.includes('TRUEFRENCH')) {
                             score += 300;
                         }
@@ -934,10 +907,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         // Malus Backup
                         if (up.includes('BACKUP') || up.includes('SECOURS') || up.includes('ALT') || up.includes('TEST')) score -= 1000;
                         
-                        // Application de la pénalité sémantique (Le "poison")
                         score -= penalty;
-                        
-                        // Tri secondaire stable (Conserve l'ordre natif de ton fournisseur en cas d'égalité)
                         score -= idx; 
                         score += (10 - source.sourceIndex) * 10;
 
@@ -955,8 +925,11 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         allStreams.sort((a, b) => b._score - a._score);
         const limitedStreams = allStreams.slice(0, 15);
 
+        // AFFICHAGE OPTIMISÉ POUR STREMIO : NOM EXACT EN GRAND
         const finalStreams = limitedStreams.map((s, idx) => ({
-            url: s.url, name: `▶ Source ${idx + 1}`, title: s._qualText
+            url: s.url, 
+            name: `${channel.displayName}`, 
+            title: `▶ Source ${idx + 1} | ${s._qualText}`
         }));
         
         res.json({ streams: finalStreams });
