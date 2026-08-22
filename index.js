@@ -175,51 +175,134 @@ function getPrettyName(n) {
 
 function getChannelPlacements(n) {
     let placements = [];
+    
+    // Information
     if (['FRANCE INFO', 'LA CHAINE METEO', 'CNEWS', 'LCI', 'BFMTV', 'FRANCE 24', 'EURONEWS', 'LCN', '20 MINUTES TV'].includes(n) || n.startsWith('BFM ')) {
         let idx = 50;
         if(n === 'FRANCE INFO') idx = 1; else if(n === 'LA CHAINE METEO') idx = 2; else if(n === 'CNEWS') idx = 3; else if(n === 'LCI') idx = 4; else if(n === 'BFMTV') idx = 5; else if(n === 'FRANCE 24') idx = 6; else if(n === 'EURONEWS') idx = 7; else if(n.startsWith('BFM ')) idx = 20; 
         placements.push({ category: 'info', index: idx });
     }
+
+    // Jeunesse
     let jeuIdx = -1;
-    if (n === 'CARTOON NETWORK') jeuIdx = 1; else if (n === 'DISNEY CHANNEL') jeuIdx = 2; else if (n === 'GULLI') jeuIdx = 3; else if (n === 'NICKELODEON') jeuIdx = 4; else if (n === 'GAME ONE') jeuIdx = 5; else if (n === 'DISNEY XD') jeuIdx = 6; else if (n === 'BOOMERANG') jeuIdx = 7; else if (n === 'CANAL+ KIDS') jeuIdx = 8; else if (n === 'CANAL J') jeuIdx = 9; else if (n === 'DISNEY JUNIOR') jeuIdx = 10; else if (n === 'NICKELODEON TEEN') jeuIdx = 11; else if (n === 'NICKELODEON JUNIOR') jeuIdx = 12; else if (n === 'NICKTOONS') jeuIdx = 13; else if (n === 'DISNEY CHANNEL +1') jeuIdx = 50; else if (n.includes('NICKELODEON') && (n.includes('+') || n.includes('14') || n.includes('1'))) jeuIdx = 51;
-    if (jeuIdx !== -1) placements.push({ category: 'jeunesse', index: jeuIdx });
-    else if (['DISNEY', 'CARTOON', 'BOOMERANG', 'NICKELODEON', 'TIJI', 'TELETOON', 'PIWI', 'MANGAS', 'TOONAMI'].some(k => n.includes(k))) placements.push({ category: 'jeunesse', index: 30 });
+    if (n === 'CARTOON NETWORK') jeuIdx = 1; 
+    else if (n === 'DISNEY CHANNEL') jeuIdx = 2; 
+    else if (n === 'GULLI') jeuIdx = 3; 
+    else if (n === 'NICKELODEON') jeuIdx = 4; 
+    else if (n === 'GAME ONE') jeuIdx = 5; 
+    else if (n === 'BOING') jeuIdx = 6;
+    else if (n === 'BABY TV' || n === 'BABYTV') jeuIdx = 7;
+    else if (n === 'DISNEY XD') jeuIdx = 8; 
+    else if (n === 'BOOMERANG') jeuIdx = 9; 
+    else if (n === 'CANAL+ KIDS') jeuIdx = 10; 
+    else if (n === 'CANAL J') jeuIdx = 11; 
+    else if (n === 'DISNEY JUNIOR') jeuIdx = 12; 
+    
+    if (jeuIdx !== -1) {
+        placements.push({ category: 'jeunesse', index: jeuIdx });
+    } else if (['DISNEY', 'CARTOON', 'BOOMERANG', 'NICKELODEON', 'TIJI', 'TELETOON', 'PIWI', 'MANGAS', 'TOONAMI', 'BOING', 'BABY TV', 'BABYTV'].some(k => n.includes(k))) {
+        placements.push({ category: 'jeunesse', index: 30 });
+    }
 
+    // Bouquet Canal
     let canIdx = -1;
-    if(n==='CANAL+') canIdx=1; else if(n==='CANAL+ FOOT') canIdx=2; else if(n==='CANAL+ SPORT') canIdx=3; else if(n==='CANAL+ SPORT 360') canIdx=4; else if(n==='CANAL+ FORMULA 1') canIdx=5; else if(n==='CANAL+ CINEMA') canIdx=6; else if(n==='CANAL+ GRAND ECRAN') canIdx=7; else if(n==='CANAL+ BOX OFFICE') canIdx=8; else if(n==='CANAL+ SERIES') canIdx=9; else if(n==='CANAL+ FAMILY') canIdx=10; else if(n==='CANAL+ DOCS') canIdx=11; else if(n==='CANAL J') canIdx=12; else if(n==='CANAL+ KIDS') canIdx=13; else if(n==='CANAL+ 4K') canIdx=14; else if(n==='CANAL+ DECALE') canIdx=16; else if(n.includes('CSTAR HITS')) canIdx=17;
-    if(canIdx !== -1) placements.push({ category: 'canal', index: canIdx });
-    else if (n.startsWith('CANAL') && !n.includes('PLAY')) placements.push({ category: 'canal', index: 30 });
+    if(n==='CANAL+') canIdx=1; 
+    else if(n==='CANAL+ FOOT') canIdx=2; 
+    else if(n==='CANAL+ SPORT') canIdx=3; 
+    else if(n==='CANAL+ SPORT 360') canIdx=4; 
+    else if(n==='CANAL+ FORMULA 1') canIdx=5; 
+    else if(n==='CANAL+ CINEMA') canIdx=6; 
+    else if(n==='CANAL+ GRAND ECRAN') canIdx=7; 
+    else if(n==='CANAL+ BOX OFFICE') canIdx=8; 
+    else if(n==='CANAL+ SERIES') canIdx=9; 
+    else if(n==='CANAL+ FAMILY') canIdx=10; 
+    else if(n==='CANAL+ DOCS') canIdx=11; 
+    else if(n==='CANAL J') canIdx=12; 
+    else if(n==='CANAL+ KIDS') canIdx=13; 
+    else if(n==='CANAL+ 4K') canIdx=14; 
+    else if(n==='CANAL+ DECALE') canIdx=16; 
+    
+    if(canIdx !== -1) {
+        placements.push({ category: 'canal', index: canIdx });
+    } else if (n.startsWith('CANAL') && !n.includes('PLAY')) {
+        placements.push({ category: 'canal', index: 30 });
+    }
 
+    // Découverte & Documentaires
     if (['DISCOVERY', 'PLANETE', 'NATIONAL GEOGRAPHIC', 'USHUAIA', 'HISTOIRE', 'ANIMAUX', 'CHASSE', 'SCIENCE', 'TREK', 'SEASONS', 'MYZEN', 'CRIME DISTRICT', 'STAR CHANNEL'].some(k => n.includes(k))) {
         let decIndex = 10;
         if(n === 'DISCOVERY CHANNEL') decIndex = 1; else if(n.includes('PLANETE')) decIndex = 2; else if(n.includes('NATIONAL GEOGRAPHIC')) decIndex = 3;
         placements.push({ category: 'decouverte', index: decIndex });
     }
 
-    if (['PARAMOUNT', 'WARNER', 'ACTION', 'TCM', 'CINE+', 'OCS', 'SYFY', 'SCI FI', 'SERIE CLUB', 'TV BREIZH', 'COMEDY CENTRAL', 'POLAR+'].some(k => n.includes(k))) placements.push({ category: 'cinema', index: 10 });
+    // Cinéma & Séries
+    if (['PARAMOUNT', 'WARNER', 'ACTION', 'TCM', 'CINE+', 'CINE +', 'OCS', 'SYFY', 'SCI FI', 'SERIE CLUB', 'TV BREIZH', 'COMEDY CENTRAL', 'POLAR+'].some(k => n.includes(k))) {
+        let cineIdx = 10;
+        if (n.includes('PREMIER')) cineIdx = 1;
+        else if (n.includes('FRISSON')) cineIdx = 2;
+        else if (n.includes('EMOTION')) cineIdx = 3;
+        else if (n.includes('FAMIZ')) cineIdx = 4;
+        else if (n.includes('CLUB')) cineIdx = 5;
+        else if (n.includes('CLASSIC')) cineIdx = 6;
+        placements.push({ category: 'cinema', index: cineIdx });
+    }
 
+    // Musique
     if (['TRACE', 'M6 MUSIC', 'MTV', 'NRJ HITS', 'MCM', 'MEZZO', 'MELODY', 'CLUBBING TV', 'CSTAR HITS'].some(k => n.includes(k)) && n !== 'BFMTV') {
         let musIndex = 10;
         if(n.includes('M6 MUSIC')) musIndex = 1; else if(n.includes('NRJ HITS')) musIndex = 2; else if(n.includes('MTV')) musIndex = 3; else if(n.includes('TRACE')) musIndex = 4; else if(n.includes('MCM')) musIndex = 5; else if(n.includes('MEZZO') || n.includes('MELODY')) musIndex = 20; 
         placements.push({ category: 'musique', index: musIndex });
     }
 
-    if (n === 'CANAL+ SPORT' || n === 'CANAL+ FOOT' || n === 'CANAL+ SPORT 360' || n === 'CANAL+ FORMULA 1') placements.push({ category: 'sports', index: 250 });
-    if (n.startsWith('BEIN SPORTS') || n.includes('BING SPORT')) {
-        let match = n.match(/\d+/); let beinIdx = match ? parseInt(match[0]) : 0; if (n.includes('MAX')) beinIdx += 10; 
-        placements.push({ category: 'sports', index: 100 + beinIdx });
+    // Sports (Ordre personnalisé : Ligue 1 -> DAZN -> beIN Sports -> RMC Sport -> Eurosport -> Canal+ Sport/Foot -> Autres)
+    if (n.includes('LIGUE 1') || n.includes('PASS LIGUE')) {
+        let match = n.match(/\d+/);
+        let l1Idx = match ? parseInt(match[0]) : 1;
+        placements.push({ category: 'sports', index: 10 + l1Idx }); 
+    } else if (n.startsWith('DAZN')) {
+        let match = n.match(/\d+/);
+        let daznIdx = match ? parseInt(match[0]) : 1;
+        placements.push({ category: 'sports', index: 30 + daznIdx }); 
+    } else if (n.startsWith('BEIN SPORTS') || n.includes('BING SPORT')) {
+        let match = n.match(/\d+/); 
+        let beinIdx = match ? parseInt(match[0]) : 0; 
+        if (n.includes('MAX')) beinIdx += 10; 
+        placements.push({ category: 'sports', index: 50 + beinIdx }); 
+    } else if (n.startsWith('RMC SPORT') && !n.includes('MULTICANAL')) {
+        let match = n.match(/\d+/);
+        let rmcIdx = match ? parseInt(match[0]) : 1;
+        placements.push({ category: 'sports', index: 90 + rmcIdx });
+    } else if (n.startsWith('EUROSPORT')) {
+        let match = n.match(/\d+/);
+        let euroIdx = match ? parseInt(match[0]) : 1;
+        placements.push({ category: 'sports', index: 120 + euroIdx });
+    } else if (n === 'CANAL+ SPORT' || n === 'CANAL+ FOOT' || n === 'CANAL+ SPORT 360' || n === 'CANAL+ FORMULA 1') {
+        let cIdx = 150;
+        if (n.includes('FOOT')) cIdx = 151;
+        else if (n.includes('SPORT 360')) cIdx = 152;
+        else if (n.includes('SPORT')) cIdx = 153;
+        else if (n.includes('FORMULA 1')) cIdx = 154;
+        placements.push({ category: 'sports', index: cIdx });
+    } else if (n === 'OLTV' || n.includes('OL TV')) {
+        placements.push({ category: 'sports', index: 200 });
+    } else if (['AUTOMOTO', 'GOLF', 'EQUIDIA', 'INFOSPORT'].some(k => n.includes(k))) {
+        placements.push({ category: 'sports', index: 210 });
+    } else if (n === 'L EQUIPE') {
+        placements.push({ category: 'sports', index: 220 });
+    } else if (n.includes('SPORT') && !n.includes('CANAL')) {
+        placements.push({ category: 'sports', index: 230 });
     }
-    else if (n.startsWith('RMC SPORT') && !n.includes('MULTICANAL')) placements.push({ category: 'sports', index: 120 });
-    else if (n.startsWith('EUROSPORT')) placements.push({ category: 'sports', index: 130 });
-    else if (n.startsWith('DAZN')) placements.push({ category: 'sports', index: 140 });
-    else if (['AUTOMOTO', 'GOLF', 'EQUIDIA', 'OLTV', 'INFOSPORT'].some(k => n.includes(k))) placements.push({ category: 'sports', index: 150 });
-    else if (n === 'L EQUIPE') placements.push({ category: 'sports', index: 160 });
-    else if (n.includes('SPORT') && !n.includes('CANAL')) placements.push({ category: 'sports', index: 199 });
 
+    // TNT
     const tntList = ['TF1', 'FRANCE 2', 'FRANCE 3', 'FRANCE 4', 'FRANCE 5', 'M6', 'ARTE', 'C8', 'W9', 'TMC', 'TFX', 'NRJ 12', 'LCP', 'PUBLIC SENAT', 'CSTAR', 'GULLI', 'TF1 SERIES', 'L EQUIPE', '6TER', 'RMC STORY', 'RMC DECOUVERTE', 'CHERIE 25'];
-    if (tntList.includes(n)) placements.push({ category: 'tnt', index: tntList.indexOf(n) + 1 });
+    if (tntList.includes(n)) {
+        placements.push({ category: 'tnt', index: tntList.indexOf(n) + 1 });
+    }
 
-    if (placements.length === 0) placements.push({ category: 'autres', index: 500 });
+    if (placements.length === 0) {
+        placements.push({ category: 'autres', index: 500 });
+    }
+
     return placements;
 }
 
@@ -646,7 +729,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '1.0.6',
+        version: '1.0.9',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
