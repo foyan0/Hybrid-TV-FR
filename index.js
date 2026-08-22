@@ -20,7 +20,7 @@ const BLACKLIST = [
     'TEST', 'MIRROR', 'BACKUPCHANNEL', 'BOXOFFICE1', 'BOXOFFICE2', 'CANALPLAY', 'AFRIQUE'
 ];
 
-// Logos VIP : Sources Github Paomedia + Wikimedia (Zéro Telerama, Haute Résolution)
+// Logos VIP : Sources Officielles GitHub & Wikimedia (Carrés parfaits)
 const LOGOS = {
     // TNT & Généralistes
     'hyb_tnt_1': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/tf1.png',
@@ -94,7 +94,7 @@ const LOGOS = {
     'hyb_dec_planete': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/planete_plus.png',
     'hyb_dec_histoire': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/histoire.png',
     
-    // JEUNESSE (Le grand retour)
+    // JEUNESSE
     'hyb_jeu_cartoon': 'https://upload.wikimedia.org/wikipedia/commons/f/fe/CARTOON_NETWORK_logo.png',
     'hyb_jeu_disney': 'https://upload.wikimedia.org/wikipedia/commons/7/78/Disney_Channel_Germany_Logo_2014.png',
     'hyb_jeu_nick': 'https://upload.wikimedia.org/wikipedia/commons/f/fa/Nickelodeon_logo_2009.png',
@@ -108,10 +108,9 @@ const LOGOS = {
     'hyb_mus_mtv': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/MTV-2021.svg/512px-MTV-2021.svg.png'
 };
 
-// Fonction MAGIQUE pour générer des Carrés Parfaits sans aucun Zoom de Stremio
+// Formateur de logo carré parfait (zéro zoom Stremio)
 function makePerfectSquare(url) {
     if (!url || url === DEFAULT_POSTER) return DEFAULT_POSTER;
-    // On demande à wsrv.nl de "contain" (intégrer l'image entière) dans un carré de 400x400 transparent. Stremio ne pourra plus zoomer !
     return `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=400&h=400&fit=contain&output=png`;
 }
 
@@ -130,16 +129,13 @@ function getChannelData(rawName) {
     if (!rawName) return null;
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-    // Nettoyage soft
     n = n.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s*\[[^\]]*\]\s*/g, ' ');
     n = n.replace(/^(?:FR|BE|CH|CA|VIP|VAVOO)\s*[:|/-]+\s*/i, '');
     n = n.replace(/DURING EVENT ONLY/g, '').replace(/EVENT ONLY/g, '');
     
-    // On retire UNIQUEMENT les résolutions vidéo
     const tags = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'DIRECT', 'RAW', 'ACCESS'];
     tags.forEach(tag => { n = n.replace(new RegExp(`\\b${tag}\\b`, 'gi'), ''); });
 
-    // Conservation du "+" pour distinguer LIGUE 1+ ou CANAL+
     let c = n.replace(/[^A-Z0-9+]/g, '');
     if (!c || c.length < 2) return null;
 
@@ -180,13 +176,12 @@ function getChannelData(rawName) {
     if (c.includes('BFMTV') || c === 'BFM') return { id: 'hyb_info_1', name: 'BFMTV', categories: ['info'], index: 1 };
     if (c.includes('CNEWS') || c === 'CNEW') return { id: 'hyb_info_2', name: 'CNews', categories: ['info'], index: 2 };
     if (c === 'LCI') return { id: 'hyb_info_3', name: 'LCI', categories: ['info'], index: 3 };
-    if (c.includes('INFO') && !c.includes('SPORT')) return { id: 'hyb_info_4', name: 'France Info', categories: ['info'], index: 4 };
+    if (c.includes('FRANCEINFO')) return { id: 'hyb_info_4', name: 'France Info', categories: ['info'], index: 4 };
     if (c.includes('FRANCE24') || c === 'FR24') return { id: 'hyb_info_5', name: 'France 24', categories: ['info'], index: 5 };
     if (c.includes('METEO')) return { id: 'hyb_info_meteo', name: 'La Chaîne Météo', categories: ['info'], index: 6 };
 
     // --- 3. SPORTS ---
-    if (c.includes('LIGUE1+') || c === 'LIGUE1') return { id: 'hyb_sport_ligue1plus', name: 'Ligue 1+', categories: ['sports'], index: 1 }; // Le ROI au sommet !
-    
+    if (c.includes('LIGUE1+') || c === 'LIGUE1') return { id: 'hyb_sport_ligue1plus', name: 'Ligue 1+', categories: ['sports'], index: 1 };
     if (c.includes('DAZNLIGUE1') || c.includes('DAZNLIVE')) {
         let m = c.match(/\d+/g); let num = m ? m[m.length-1] : '1';
         if (parseInt(num) > 8) return null; 
@@ -196,7 +191,6 @@ function getChannelData(rawName) {
         let m = c.match(/\d+/g); let num = m ? m[m.length-1] : '1';
         return { id: 'hyb_sport_dazn'+num, name: 'DAZN '+num, categories: ['sports'], index: 10 + parseInt(num) };
     }
-    
     if (c.includes('BEINSPORT') || c.includes('BEIN')) {
         let isMax = c.includes('MAX');
         let m = c.match(/\d+/g); let num = m ? m[m.length-1] : '1';
@@ -281,12 +275,13 @@ function getChannelData(rawName) {
     if (c.includes('PIWI')) return { id: 'hyb_jeu_piwi', name: 'Piwi+', categories: ['jeunesse'], index: 35 };
     if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 36 };
     if (c.includes('GAMEONE') || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 37 };
+    if (c.includes('PITCHOUN')) return { id: 'hyb_jeu_pitchoun', name: 'Pitchoun TV', categories: ['jeunesse'], index: 40 };
 
     // --- 8. MUSIQUE ---
     if (c.includes('MTV')) return { id: 'hyb_mus_mtv', name: 'MTV', categories: ['musique'], index: 10 };
     if (c.includes('MCM')) return { id: 'hyb_mus_mcm', name: 'MCM', categories: ['musique'], index: 20 };
 
-    // --- 9. FALLBACK INTELLIGENT (Le filet de sécurité avec les Tags) ---
+    // --- 9. FALLBACK INTELLIGENT ---
     let cat = 'autres';
     let idx = 300;
 
@@ -408,11 +403,56 @@ async function updateEPG() {
     } finally { isUpdatingEPG = false; }
 }
 
-async function fetchAddonCatalog(providerUrl) {
-    let allMetas = [];
+// Fonction universelle pour parser un lien Stremio Manifest OU un lien direct .m3u / .m3u8
+async function fetchCatalogFromSource(sourceInput) {
+    let metas = [];
+    let cleanInput = sourceInput.trim();
+    if (!cleanInput) return metas;
+
+    // Cas 1 : C'est une playlist M3U / M3U8 directe !
+    if (cleanInput.endsWith('.m3u') || cleanInput.endsWith('.m3u8') || cleanInput.includes('get.php') || cleanInput.includes('/live/')) {
+        try {
+            const res = await axios.get(cleanInput, { timeout: 8000 });
+            const lines = res.data.split('\n');
+            let currentLogo = DEFAULT_POSTER;
+            let currentName = '';
+
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i].trim();
+                if (line.startsWith('#EXTINF:')) {
+                    let logoMatch = line.match(/tvg-logo="([^"]+)"/);
+                    if (logoMatch) currentLogo = logoMatch[1];
+                    let parts = line.split(',');
+                    if (parts.length > 1) currentName = parts[parts.length - 1].trim();
+                } else if (line && !line.startsWith('#')) {
+                    // C'est l'URL du flux direct
+                    if (currentName) {
+                        let streamUrl = line;
+                        let metaId = Buffer.from(streamUrl).toString('base64'); // ID unique basé sur l'URL
+                        metas.push({
+                            id: metaId,
+                            name: currentName,
+                            poster: currentLogo,
+                            _isDirectStream: true,
+                            _directUrl: streamUrl
+                        });
+                    }
+                    currentLogo = DEFAULT_POSTER;
+                    currentName = '';
+                }
+            }
+        } catch (e) {
+            console.error("Erreur de lecture M3U :", e.message);
+        }
+        return metas;
+    }
+
+    // Cas 2 : C'est un Add-on Stremio classique (manifest.json)
     try {
-        let cleanUrl = providerUrl.trim();
-        if (!cleanUrl.endsWith('manifest.json')) cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
+        let cleanUrl = cleanInput;
+        if (!cleanUrl.endsWith('manifest.json')) {
+            cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
+        }
         const base = cleanUrl.replace(/\/manifest\.json$/, '');
 
         const manifestRes = await axios.get(cleanUrl, { timeout: 4000 });
@@ -434,15 +474,14 @@ async function fetchAddonCatalog(providerUrl) {
         });
 
         const results = await Promise.all(catalogPromises);
-        let seenIds = new Set();
         results.flat().forEach(m => {
-            if (m && m.id && !seenIds.has(m.id)) {
-                seenIds.add(m.id);
-                allMetas.push({ ...m, _providerBase: base });
+            if (m && m.id) {
+                metas.push({ ...m, _providerBase: base, _isDirectStream: false });
             }
         });
     } catch (err) {}
-    return allMetas;
+
+    return metas;
 }
 
 async function getChannelsForSources(sourcesList) {
@@ -451,13 +490,11 @@ async function getChannelsForSources(sourcesList) {
 
     let tempChannelsMap = {};
     for (let i = 0; i < sourcesList.length; i++) {
-        const providerUrl = sourcesList[i].trim();
-        if (!providerUrl) continue;
+        const sourceInput = sourcesList[i].trim();
+        if (!sourceInput) continue;
         
-        const metas = await fetchAddonCatalog(providerUrl);
-        let cleanUrl = providerUrl.trim();
-        if (!cleanUrl.endsWith('manifest.json')) cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
-        const base = cleanUrl.replace(/\/manifest\.json$/, '');
+        const metas = await fetchCatalogFromSource(sourceInput);
+        let cleanUrl = sourceInput.replace(/\/manifest\.json$/, '').trim();
 
         metas.forEach(meta => {
             let channelInfo = getChannelData(meta.name || '');
@@ -465,7 +502,7 @@ async function getChannelsForSources(sourcesList) {
 
             const id = channelInfo.id;
             
-            // HYBRIDE LOGOS : Image VIP ou Image d'origine (Passées dans makePerfectSquare pour être parfaites sur Stremio)
+            // LOGOS VIP + makePerfectSquare pour un rendu carré irréprochable
             let forceLogo = LOGOS[id];
             if (id.startsWith('hyb_sport_dazn')) forceLogo = LOGOS['dazn_generic']; 
 
@@ -486,9 +523,17 @@ async function getChannelsForSources(sourcesList) {
                 tempChannelsMap[id].poster = makePerfectSquare(meta.poster); 
             }
             
-            const sourceExists = tempChannelsMap[id].sources.find(s => s.metaId === meta.id && s.providerBase === base);
-            if (!sourceExists) {
-                tempChannelsMap[id].sources.push({ type: 'addon', metaId: meta.id, providerBase: base, sourceIndex: i });
+            // Gestion intelligente : Source M3U directe ou Source Add-on Stremio
+            if (meta._isDirectStream) {
+                const sourceExists = tempChannelsMap[id].sources.find(s => s.directUrl === meta._directUrl);
+                if (!sourceExists) {
+                    tempChannelsMap[id].sources.push({ type: 'm3u', directUrl: meta._directUrl, sourceIndex: i });
+                }
+            } else {
+                const sourceExists = tempChannelsMap[id].sources.find(s => s.metaId === meta.id && s.providerBase === cleanUrl);
+                if (!sourceExists) {
+                    tempChannelsMap[id].sources.push({ type: 'addon', metaId: meta.id, providerBase: cleanUrl, sourceIndex: i });
+                }
             }
         });
     }
@@ -542,19 +587,18 @@ app.get('/', async (req, res) => {
         <div class="container">
             <h1>📺 HybridTV</h1>
             <div class="intro-desc">
-                <b>HybridTV</b> centralise vos sources de flux en une véritable bibliothèque francophone thématisée et triée sur le volet. Fini le désordre : tout est classé par catégories logiques (TNT, Sport, Cinéma, etc.) avec une sélection automatique de la meilleure qualité et des sources les plus stables selon vos priorités.
+                <b>HybridTV</b> centralise vos sources (Add-ons Stremio <b>manifest.json</b> ou liens de playlists <b>.m3u/.m3u8</b>) en une bibliothèque francophone propre, triée et dotée d'un guide TV.
             </div>
             
             <div class="section">
-                <label style="font-size: 14px; color: #ccc; font-weight: bold;">Sources de flux (manifest.json) :</label><br>
-                <span style="font-size: 11px; color: #777; display: block; margin-bottom: 12px;">L'ordre de priorité s'effectue du haut vers le bas (la source n°1 est interrogée en premier).</span>
+                <label style="font-size: 14px; color: #ccc; font-weight: bold;">Sources de flux (Add-on ou Lien .m3u) :</label><br>
+                <span style="font-size: 11px; color: #777; display: block; margin-bottom: 12px;">L'ordre de priorité s'effectue du haut vers le bas.</span>
                 <div id="sourcesContainer"></div>
                 <button type="button" onclick="addSourceField()" class="btn btn-small">+ Ajouter une source</button>
             </div>
 
             <div class="section">
                 <label style="font-size: 14px; color: #ccc; font-weight: bold;">🔑 Code de Sauvegarde / Partage :</label><br>
-                <span style="font-size: 12px; color: #777;">Copiez ce code pour sauvegarder vos sources, ou collez un code reçu pour l'importer :</span>
                 <textarea id="exportTokenBox" class="export-box" placeholder="Code de configuration..."></textarea>
                 <button type="button" onclick="importToken()" class="btn btn-small" style="margin-top: 5px;">📥 Importer le code</button>
             </div>
@@ -592,7 +636,7 @@ app.get('/', async (req, res) => {
                     div.className = 'source-row';
                     div.innerHTML = \`
                         <span class="source-num">#\${index + 1}</span>
-                        <input type="text" id="src_\${index}" value="\${src}" placeholder="https://votre-source.com/manifest.json">
+                        <input type="text" id="src_\${index}" value="\${src}" placeholder="https://.../manifest.json ou lien .m3u">
                         \${index > 0 ? '<button type="button" onclick="moveSource(' + index + ', -1)" class="btn-small">▲</button>' : ''}
                         \${index < sources.length - 1 ? '<button type="button" onclick="moveSource(' + index + ', 1)" class="btn-small">▼</button>' : ''}
                         \${sources.length > 1 ? '<button type="button" onclick="removeSource(' + index + ')" class="btn-danger">✕</button>' : ''}
@@ -667,7 +711,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '1.8.0',
+        version: '1.9.0',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -706,7 +750,7 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
     
     const filteredChannels = channelsData.filter(ch => ch.categories.includes(requestedCatalog));
     const paginatedMetas = filteredChannels.slice(skip, skip + 100).map(ch => ({
-        id: ch.id, type: 'tv', name: ch.displayName, poster: ch.poster, posterShape: 'square' // L'affichage est forcé au format carré, et protégé par wsrv.nl !
+        id: ch.id, type: 'tv', name: ch.displayName, poster: ch.poster, posterShape: 'square'
     }));
     res.json({ metas: paginatedMetas });
 });
@@ -782,6 +826,17 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     
     try {
         let streamPromises = channel.sources.map(async (source) => {
+            // Cas A : C'est une source M3U directe (On renvoie directement l'URL du flux)
+            if (source.type === 'm3u') {
+                return [{
+                    url: source.directUrl,
+                    name: `▶ Flux direct (M3U)`,
+                    title: `Haute Qualité (1080p)`,
+                    _score: 1000
+                }];
+            }
+
+            // Cas B : C'est un Add-on Stremio classique
             try {
                 const streamRes = await axios.get(`${source.providerBase}/stream/tv/${source.metaId}.json`, {
                     headers: { 'X-Forwarded-For': clientIp }, timeout: 4000 
@@ -792,32 +847,19 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         let score = 0;
                         let up = (s.title || '').toUpperCase() + ' ' + (s.name || '').toUpperCase();
                         
-                        // ANTI-INTOXICATION (Soft) : Repousse les mauvais flux au fond (-800 pts), mais ne les détruit plus
-                        if (channel.id === 'hyb_canal_cplus') {
-                            if (up.match(/(SPORT|FOOT|CINEMA|DECALE|KIDS|DOC|BOX|GRAND|SERIE|F1|MOTO|360|FAMILY|LIGUE|\bJ\b|CANALJ|LIVE)/)) {
-                                score -= 800;
-                            }
-                        }
-                        if (channel.id.startsWith('hyb_sport_dazn') && !channel.id.includes('live')) {
-                            if (up.match(/(LIGUE|LIVE|PASS)/)) score -= 800;
-                        }
-
-                        // SCORING PRINCIPAL (La Stabilité : 1080p > 720p > 4K)
+                        // Scoring souple (1080p > 720p > 4K)
                         if (up.includes('FHD') || up.includes('1080')) { qual = "Haute Qualité (1080p)"; score += 800; } 
                         else if (up.includes('HD') || up.includes('720')) { qual = "Haute Qualité (720p)"; score += 600; } 
                         else if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) { qual = "Ultra Haute Qualité (4K)"; score += 400; } 
-                        else { score += 200; } // SD classique
+                        else { score += 200; } 
 
-                        // BONUS LÉGER AU FRANÇAIS (+100)
                         if (up.match(/\bFR\b/) || up.match(/\bVF\b/) || up.includes('FRENCH') || up.includes('FRANCE')) {
                             score += 100;
                         }
                         
-                        // MALUS DOUX : Les flux illisibles ou Backup (-500 pts). S'il n'y a que ça, on l'affiche quand même !
                         if (up.includes('360P') || up.includes('480P') || up.includes('LQ')) score -= 500;
                         if (up.includes('BACKUP') || up.includes('SECOURS') || up.includes('ALT') || up.includes('TEST')) score -= 500;
                         
-                        // Bonus lié à l'ordre des sources du fournisseur
                         score += (10 - source.sourceIndex) * 10;
 
                         return { ...s, _qualText: qual, _score: score };
@@ -830,10 +872,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
 
-        // Tri mathématique par score
         allStreams.sort((a, b) => b._score - a._score);
-        
-        // Coupe élargie à 15 flux pour garantir un maximum de secours !
         const limitedStreams = allStreams.slice(0, 15);
 
         const finalStreams = limitedStreams.map((s, idx) => ({
