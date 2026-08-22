@@ -21,100 +21,85 @@ const BLACKLIST = [
     'BOXOFFICE1', 'BOXOFFICE2', 'CANALPLAY', 'ELLES', 'AFRIQUE', 'AFRICA', 'CANALLIVE'
 ];
 
-// Le Dictionnaire des Logos HD (Basé sur la liste M3U)
+// Base de données Logos (Mélange Paomedia & Wikimedia Commons)
 const LOGOS = {
     // TNT
-    'hyb_tnt_1': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cc/TF1_2013_logo.svg/800px-TF1_2013_logo.svg.png',
-    'hyb_tnt_2': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT75gfTDfdL-e43D2R2awmntB05mvURFDuhcYJEKY5oEXm4LIK9aVcRFzTl6g&s',
-    'hyb_tnt_3': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQbzqYO9_z_y5FUVRULr1t8ipW_n54umAWj0H-H4qe1ZnsSzNDxcPKVUUuYx_o&s',
-    'hyb_tnt_4': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ8D8hHa8tQzvCzrieu8ozDp__dYDN4slllfTkTPqRh9eKmoK9g9ECfY_WRE_M&s',
-    'hyb_tnt_5': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTehdtMEkCHAK6KKKpveJBKxfujkvTwOJ87tZMWQw9bpUEzTHBPb_vKAc2gRK0&s',
-    'hyb_tnt_6': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRcqsTWUc0GnTr8FLzPJ93DpIIa4OGlWVNFRWV0KtnFCTmU3MH2pSPOpXrYXbY&s',
-    'hyb_tnt_7': 'https://www.arte.tv/sites/corporate/wp-content/themes/arte-entreprise/img/arte_logo.png',
-    'hyb_tnt_8': 'https://upload.wikimedia.org/wikipedia/commons/0/07/C8_t%C3%A9l%C3%A9.png',
-    'hyb_tnt_9': 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/62/W9-Logo.svg/800px-W9-Logo.svg.png',
-    'hyb_tnt_10': 'https://upload.wikimedia.org/wikipedia/fr/thumb/a/a8/TMC_logo_2016.svg/800px-TMC_logo_2016.svg.png',
-    'hyb_tnt_11': 'https://upload.wikimedia.org/wikipedia/fr/thumb/8/83/TFX_logo_2018.svg/800px-TFX_logo_2018.svg.png',
-    'hyb_tnt_12': 'https://upload.wikimedia.org/wikipedia/fr/4/44/NRJ12-Logo.png',
-    'hyb_tnt_13': 'https://i.postimg.cc/dtNWFqXk/IMG-20240318-015448.png',
-    'hyb_tnt_17': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c0/Logo_CStar_2016.svg/800px-Logo_CStar_2016.svg.png',
-    'hyb_tnt_18': 'https://upload.wikimedia.org/wikipedia/fr/4/43/18._Gulli.png',
-    'hyb_tnt_20': 'https://upload.wikimedia.org/wikipedia/fr/thumb/4/4b/TF1_S%C3%A9ries_Films_logo_2020.svg/800px-TF1_S%C3%A9ries_Films_logo_2020.svg.png',
-    'hyb_tnt_22': 'https://upload.wikimedia.org/wikipedia/fr/a/a9/6ter_2012.png',
-    'hyb_tnt_23': 'https://www.teleboy.ch/assets/stations/376/icon320_light.png?v2023_48_0',
-    'hyb_tnt_24': 'https://www.teleboy.ch/assets/stations/380/icon320_light.png',
-    'hyb_tnt_25': 'https://logowik.com/content/uploads/images/cherie-255806.logowik.com.webp',
-    'hyb_tnt_rtl9': 'https://www.rtl9.com/upload/media/logo-rtl9-rvb-64784327dd675.png',
-    'hyb_tnt_13rue': 'https://www.lyngsat.com/logo/tv/num/13eme_rue_fr.png',
-    'hyb_tnt_ab1': 'https://upload.wikimedia.org/wikipedia/fr/9/9a/Logo_AB1_2021.png',
-    'hyb_tnt_teva': 'https://upload.wikimedia.org/wikipedia/fr/thumb/a/a8/TMC_logo_2016.svg/1280px-TMC_logo_2016.svg.png',
-
+    'hyb_tnt_1': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/tf1.png',
+    'hyb_tnt_2': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/france_2.png',
+    'hyb_tnt_3': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/france_3.png',
+    'hyb_tnt_4': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/france_4.png',
+    'hyb_tnt_5': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/france_5.png',
+    'hyb_tnt_6': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/m6.png',
+    'hyb_tnt_7': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/arte.png',
+    'hyb_tnt_8': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/c8.png',
+    'hyb_tnt_9': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/w9.png',
+    'hyb_tnt_10': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/tmc.png',
+    'hyb_tnt_11': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/tfx.png',
+    'hyb_tnt_12': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/nrj_12.png',
+    'hyb_tnt_13': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/lcp.png',
+    'hyb_tnt_17': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c0/Logo_CStar_2016.svg/1024px-Logo_CStar_2016.svg.png',
+    'hyb_tnt_18': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/gulli.png',
+    'hyb_tnt_20': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/tf1_series_films.png',
+    'hyb_tnt_22': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/6ter.png',
+    'hyb_tnt_23': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/rmc_story.png',
+    'hyb_tnt_24': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/rmc_decouverte.png',
+    'hyb_tnt_25': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/cherie_25.png',
+    'hyb_tnt_rtl9': 'https://upload.wikimedia.org/wikipedia/commons/4/42/RTL9_logo_2017.png',
+    
     // INFO
-    'hyb_info_bfm': 'https://upload.wikimedia.org/wikipedia/commons/4/40/BFM_TV_logo.png',
-    'hyb_info_cnews': 'https://focus.telerama.fr/500x500/0000/00/01/clear-226.png',
-    'hyb_info_lci': 'https://upload.wikimedia.org/wikipedia/fr/b/b4/LCI_logo_%282016%29.png',
-    'hyb_info_frinfo': 'https://i.postimg.cc/9QDT35Nq/franceinfo-en-journee-speciale-A-quoi-ressemblera-votre-ete-vendredi-1er-juillet-edit-510848289542.jpg',
-    'hyb_info_fr24': 'https://i.postimg.cc/TPwp9d9B/640px-France24.png',
-    'hyb_info_euronews': 'https://static.wikia.nocookie.net/logo-chaines/images/a/ab/Euronews_2016_logo.svg.png',
-
+    'hyb_info_1': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/bfm_tv.png',
+    'hyb_info_2': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/cnews.png',
+    'hyb_info_3': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/lci.png',
+    'hyb_info_4': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/france_info.png',
+    'hyb_info_5': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/France_24_logo_2013.svg/1024px-France_24_logo_2013.svg.png',
+    
     // CANAL+ BOUQUET
-    'hyb_canal_cplus': 'https://logos-marques.com/wp-content/uploads/2020/04/Canal-Logo-1995-768x432.png',
-    'hyb_canal_cinema': 'https://upload.wikimedia.org/wikipedia/fr/e/eb/C%2B_Cin%C3%A9ma%28s%29.png',
+    'hyb_canal_cplus': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/canal_plus.png',
+    'hyb_canal_cinema': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/canal_plus_cinema.png',
     'hyb_canal_grandecran': 'https://upload.wikimedia.org/wikipedia/fr/d/da/C%2B_Grand_%C3%89cran.png',
-    'hyb_canal_series': 'https://upload.wikimedia.org/wikipedia/fr/e/e3/C%2B_S%C3%A9ries.png',
+    'hyb_canal_series': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/canal_plus_series.png',
     'hyb_canal_kids': 'https://upload.wikimedia.org/wikipedia/commons/0/0c/Canal%2B_Kids.png',
     'hyb_canal_docs': 'https://upload.wikimedia.org/wikipedia/commons/2/27/Canal%2B_Docs.png',
-    'hyb_canal_boxoffice': 'https://upload.wikimedia.org/wikipedia/fr/5/55/C%2B_Box_Office.png',
-    'hyb_canal_family': 'http://schedulesdirect-api20141201-logos.s3.amazonaws.com/stationLogos/s87283_dark_360w_270h.png',
-    'hyb_canal_decale': 'https://www.staderochelais.com/sites/stade-rochelais/files/logos/canal-decale-1622622027.png',
+    'hyb_canal_family': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/canal_plus_family.png',
+    'hyb_canal_decale': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/canal_plus_decale.png',
     
     // SPORTS
-    'hyb_canal_sport': 'https://upload.wikimedia.org/wikipedia/commons/1/1a/Canal%2B_Sport_2015.png',
+    'hyb_canal_sport': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/canal_plus_sport.png',
     'hyb_canal_foot': 'https://upload.wikimedia.org/wikipedia/commons/e/eb/Canal%2BFoot.png',
     'hyb_canal_sport360': 'https://upload.wikimedia.org/wikipedia/commons/6/64/Canal%2BSport_360.png',
-    'hyb_canal_f1': 'https://upload.wikimedia.org/wikipedia/fr/1/12/Logo_C%2BFormule_1.png',
-    'hyb_sport_bein1': 'https://c0.klipartz.com/pngpicture/320/259/gratis-png-bein-sports-1-logo-bein-taquilla-bein-media-group-canal-de-television.png',
-    'hyb_sport_bein2': 'https://upload.wikimedia.org/wikipedia/commons/c/c9/Logo_bein_sports_2.png',
-    'hyb_sport_bein3': 'https://upload.wikimedia.org/wikipedia/commons/c/c4/Logo_bein_sports_3.png',
-    'hyb_sport_rmc1': 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/Logo_RMC_Sport_1_2018.svg/800px-Logo_RMC_Sport_1_2018.svg.png',
-    'hyb_sport_euro1': 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d0/Eurosport_1_Logo_2015.svg/800px-Eurosport_1_Logo_2015.svg.png',
-    'hyb_sport_euro2': 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Eurosport_2_Logo_2015.svg/800px-Eurosport_2_Logo_2015.svg.png',
-    'hyb_sport_lequipe': 'https://focus.telerama.fr/500x500/0000/00/01/clear-46.png',
-    'dazn_generic': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/06/DAZN_Logo_Master.svg/800px-DAZN_Logo_Master.svg.png',
+    'hyb_sport_bein1': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/bein_sports_1.png',
+    'hyb_sport_bein2': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/bein_sports_2.png',
+    'hyb_sport_bein3': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/bein_sports_3.png',
+    'hyb_sport_rmc1': 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/Logo_RMC_Sport_1_2018.svg/1024px-Logo_RMC_Sport_1_2018.svg.png',
+    'hyb_sport_euro1': 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d0/Eurosport_1_Logo_2015.svg/1024px-Eurosport_1_Logo_2015.svg.png',
+    'hyb_sport_lequipe': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/l_equipe.png',
+    'dazn_generic': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/06/DAZN_Logo_Master.svg/1024px-DAZN_Logo_Master.svg.png',
 
     // CINE
-    'hyb_cine_premier': 'https://upload.wikimedia.org/wikipedia/commons/7/73/Canalplus_fr_cine_plus_premier_hd.png',
-    'hyb_cine_frisson': 'https://www.lyngsat.com/logo/tv/cc/cineplus-frisson-fr.svg',
-    'hyb_cine_emotion': 'https://thumb.canalplus.pro/http/unsafe/epg.canal-plus.com/mycanal/img/CHN43FN/PNG/213X160/CHN43FB_396.PNG',
-    'hyb_cine_famiz': 'https://static.wikia.nocookie.net/logo-chaines/images/6/64/CinePlusFamiz_Logo.svg.png',
-    'hyb_cine_club': 'https://upload.wikimedia.org/wikipedia/fr/7/77/Cin%C3%A9Cin%C3%A9ma_Club_logo_2008.png',
-    'hyb_cine_classic': 'https://upload.wikimedia.org/wikipedia/fr/f/f3/Cin%C3%A9_Cin%C3%A9ma_Classic.png',
-    'hyb_cine_action': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRPdxSas0cWbgadzbAuhDjqLEd_Y4iMG0odsUoZy8ch1NJYK3ZVez_yrHCoAA&s',
-    'hyb_cine_paramount': 'https://upload.wikimedia.org/wikipedia/fr/thumb/5/59/Paramount_Channel.svg/1200px-Paramount_Channel.svg.png',
+    'hyb_cine_premier': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/cine_plus_premier.png',
+    'hyb_cine_frisson': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/cine_plus_frisson.png',
+    'hyb_cine_emotion': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/cine_plus_emotion.png',
+    'hyb_cine_famiz': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/cine_plus_famiz.png',
+    'hyb_cine_club': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/cine_plus_club.png',
+    'hyb_cine_classic': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/cine_plus_classic.png',
 
     // DECOUVERTE & DOCS
-    'hyb_dec_natgeo': 'https://focus.telerama.fr/500x500/0000/00/01/clear-243.png',
-    'hyb_dec_chasse': 'https://upload.wikimedia.org/wikipedia/fr/thumb/6/64/Chasse_%26_P%C3%AAche_%282013%29.svg/800px-Chasse_%26_P%C3%AAche_%282013%29.svg.png',
-    'hyb_dec_discovery': 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/27/Discovery_Channel_-_Logo_2019.svg/800px-Discovery_Channel_-_Logo_2019.svg.png',
-    'hyb_dec_histoire': 'https://upload.wikimedia.org/wikipedia/fr/thumb/5/5c/Histoire_TV_logo_2019.svg/800px-Histoire_TV_logo_2019.svg.png',
-    'hyb_dec_planete': 'https://focus.telerama.fr/500x500/0000/00/01/clear-147.png',
-    'hyb_dec_animaux': 'https://upload.wikimedia.org/wikipedia/fr/thumb/2/2a/Animaux_%28cha%C3%AEne_de_t%C3%A9l%C3%A9vision%29_-_Logo_2022.svg/1200px-Animaux_%28cha%C3%AEne_de_t%C3%A9l%C3%A9vision%29_-_Logo_2022.svg.png',
+    'hyb_dec_natgeo': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/National_Geographic_Channel_logo.svg/1024px-National_Geographic_Channel_logo.svg.png',
+    'hyb_dec_discovery': 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/27/Discovery_Channel_-_Logo_2019.svg/1024px-Discovery_Channel_-_Logo_2019.svg.png',
+    'hyb_dec_planete': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/planete_plus.png',
+    'hyb_dec_histoire': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/histoire.png',
     
     // JEUNESSE
     'hyb_jeu_cartoon': 'https://upload.wikimedia.org/wikipedia/commons/f/fe/CARTOON_NETWORK_logo.png',
     'hyb_jeu_disney': 'https://upload.wikimedia.org/wikipedia/commons/7/78/Disney_Channel_Germany_Logo_2014.png',
-    'hyb_jeu_boom': 'https://focus.telerama.fr/500x500/0000/00/01/clear-321.png',
-    'hyb_jeu_canalj': 'https://upload.wikimedia.org/wikipedia/fr/6/69/Logo_canal_J.png',
     'hyb_jeu_nick': 'https://upload.wikimedia.org/wikipedia/commons/f/fa/Nickelodeon_logo_2009.png',
+    'hyb_jeu_canalj': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/canal_j.png',
 
     // MUSIQUE
-    'hyb_mus_mtv': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/MTV-2021.svg/800px-MTV-2021.svg.png',
-    'hyb_mus_m6': 'https://upload.wikimedia.org/wikipedia/fr/1/1d/M6_Music_2012.png',
-    'hyb_mus_nrj': 'https://upload.wikimedia.org/wikipedia/fr/thumb/3/36/NRJ_Hits_2017.svg/800px-NRJ_Hits_2017.svg.png',
-    'hyb_mus_cstar': 'https://www.telesatellite.com/images/actu/c/cstar-hits-france.jpg'
+    'hyb_mus_mtv': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/MTV-2021.svg/1024px-MTV-2021.svg.png'
 };
 
-// Fonction MAGIQUE pour que les images soient des carrés parfaits sans aucun zoom dans Stremio
+// Fonction MAGIQUE pour générer des Carrés Parfaits (Centrés, Padding transparent)
 function makePerfectSquare(url) {
     if (!url || url === DEFAULT_POSTER) return DEFAULT_POSTER;
     return `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=400&h=400&fit=contain&bg=transparent`;
@@ -130,16 +115,17 @@ function parseConfig(encodedConfig) {
     }
 }
 
-// === LE MOTEUR DICTIONNAIRE ABSOLU ===
+// === LE MOTEUR DICTIONNAIRE ET TAGS INTELLIGENTS ===
 function getChannelData(rawName) {
     if (!rawName) return null;
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-    // Nettoyage
+    // Nettoyage modéré pour ne pas abimer les noms de chaînes
     n = n.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s*\[[^\]]*\]\s*/g, ' ');
     n = n.replace(/^(?:FR|BE|CH|CA|VIP|VAVOO)\s*[:|/-]+\s*/i, '');
     n = n.replace(/DURING EVENT ONLY/g, '').replace(/EVENT ONLY/g, '');
     
+    // On retire UNIQUEMENT les résolutions vidéo
     const tags = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'DIRECT', 'RAW', 'ACCESS'];
     tags.forEach(tag => { n = n.replace(new RegExp(`\\b${tag}\\b`, 'gi'), ''); });
 
@@ -173,48 +159,46 @@ function getChannelData(rawName) {
     if (c === '6TER') return { id: 'hyb_tnt_22', name: '6ter', categories: ['tnt'], index: 22 };
     if (c.includes('RMCSTORY') || c.includes('NUMERO23')) return { id: 'hyb_tnt_23', name: 'RMC Story', categories: ['tnt', 'decouverte'], index: 23 };
     if (c.includes('RMCDECOUVERTE')) return { id: 'hyb_tnt_24', name: 'RMC Découverte', categories: ['tnt', 'decouverte'], index: 24 };
-    if (c.includes('CHERIE25') || c === 'CHERIE') return { id: 'hyb_tnt_25', name: 'Chérie 25', categories: ['tnt'], index: 25 };
-    if (c.includes('13EMERUE') || c.includes('13RUE')) return { id: 'hyb_tnt_13rue', name: '13ème Rue', categories: ['tnt', 'cinema'], index: 30 };
-    if (c.includes('TEVA')) return { id: 'hyb_tnt_teva', name: 'Téva', categories: ['tnt'], index: 31 };
-    if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
-    if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
-
+    if (c.includes('CHERIE25') || c.includes('CHERIE')) return { id: 'hyb_tnt_25', name: 'Chérie 25', categories: ['tnt'], index: 25 };
+    
     // --- 2. INFORMATION ---
-    if (c.includes('BFMTV') || c === 'BFM') return { id: 'hyb_info_bfm', name: 'BFMTV', categories: ['info'], index: 1 };
-    if (c.includes('CNEWS') || c === 'CNEW') return { id: 'hyb_info_cnews', name: 'CNews', categories: ['info'], index: 2 };
-    if (c === 'LCI') return { id: 'hyb_info_lci', name: 'LCI', categories: ['info'], index: 3 };
-    if (c.includes('INFO') && !c.includes('SPORT')) return { id: 'hyb_info_frinfo', name: 'France Info', categories: ['info'], index: 4 };
-    if (c.includes('FRANCE24') || c === 'FR24') return { id: 'hyb_info_fr24', name: 'France 24', categories: ['info'], index: 5 };
+    if (c.includes('BFMTV') || c === 'BFM') return { id: 'hyb_info_1', name: 'BFMTV', categories: ['info'], index: 1 };
+    if (c.includes('CNEWS') || c === 'CNEW') return { id: 'hyb_info_2', name: 'CNews', categories: ['info'], index: 2 };
+    if (c === 'LCI') return { id: 'hyb_info_3', name: 'LCI', categories: ['info'], index: 3 };
+    if (c.includes('FRANCEINFO')) return { id: 'hyb_info_4', name: 'France Info', categories: ['info'], index: 4 };
+    if (c.includes('FRANCE24') || c === 'FR24') return { id: 'hyb_info_5', name: 'France 24', categories: ['info'], index: 5 };
 
     // --- 3. SPORTS (Hiérarchie rigoureuse : DAZN Live > DAZN > BEIN > RMC > Eurosport > Canal) ---
     if (c.includes('DAZN') || c.includes('LIGUE1') || c.includes('PASSLIGUE')) {
         let isLive = c.includes('LIVE') || c.includes('LIGUE1') || c.includes('PASS');
         let m = c.match(/\d+/g); let num = m ? m[m.length-1] : '1';
         if (parseInt(num) > 8) return null; 
-        if (isLive) return { id: 'hyb_sport_daznlive'+num, name: 'DAZN Live '+num, categories: ['sports'], index: 10 + parseInt(num) };
-        return { id: 'hyb_sport_dazn'+num, name: 'DAZN '+num, categories: ['sports'], index: 30 + parseInt(num) };
+        if (isLive) return { id: 'hyb_sport_daznlive'+num, name: 'DAZN Ligue 1 Live '+num, categories: ['sports'], index: 20 + parseInt(num) };
+        return { id: 'hyb_sport_dazn'+num, name: 'DAZN '+num, categories: ['sports'], index: 10 + parseInt(num) };
     }
     if (c.includes('BEINSPORT') || c.includes('BEIN')) {
         let isMax = c.includes('MAX');
         let m = c.match(/\d+/g); let num = m ? m[m.length-1] : '1';
-        return { id: 'hyb_sport_bein' + (isMax?'max':'') + num, name: isMax ? 'beIN SPORTS MAX '+num : 'beIN SPORTS '+num, categories: ['sports'], index: isMax ? 60 + parseInt(num) : 50 + parseInt(num) };
+        return { id: 'hyb_sport_bein' + (isMax?'max':'') + num, name: isMax ? 'beIN SPORTS MAX '+num : 'beIN SPORTS '+num, categories: ['sports'], index: isMax ? 40 + parseInt(num) : 30 + parseInt(num) };
     }
     if (c.includes('RMCSPORT')) {
         let isLive = c.includes('LIVE');
         let m = c.match(/\d+/g); let num = m ? m[m.length-1] : '1';
-        if (isLive) return { id: 'hyb_sport_rmclive'+num, name: 'RMC Sport Live '+num, categories: ['sports'], index: 80 + parseInt(num) };
-        return { id: 'hyb_sport_rmc'+num, name: 'RMC Sport '+num, categories: ['sports'], index: 70 + parseInt(num) };
+        if (isLive) return { id: 'hyb_sport_rmclive'+num, name: 'RMC Sport Live '+num, categories: ['sports'], index: 60 + parseInt(num) };
+        return { id: 'hyb_sport_rmc'+num, name: 'RMC Sport '+num, categories: ['sports'], index: 50 + parseInt(num) };
     }
     if (c.includes('EUROSPORT')) {
         let is360 = c.includes('360');
         let m = c.match(/\d+/g); let num = m ? m[m.length-1] : '1';
-        if (is360) return { id: 'hyb_sport_euro360_'+num, name: 'Eurosport 360 - '+num, categories: ['sports'], index: 100 + parseInt(num) };
-        return { id: 'hyb_sport_euro'+num, name: 'Eurosport '+num, categories: ['sports'], index: 90 + parseInt(num) };
+        if (is360) return { id: 'hyb_sport_euro360_'+num, name: 'Eurosport 360 - '+num, categories: ['sports'], index: 80 + parseInt(num) };
+        return { id: 'hyb_sport_euro'+num, name: 'Eurosport '+num, categories: ['sports'], index: 70 + parseInt(num) };
     }
-    if (c === 'LEQUIPE' || c === 'LEQUIPETV') return { id: 'hyb_sport_lequipe', name: "L'Équipe", categories: ['sports', 'tnt'], index: 120 };
+    if (c === 'LEQUIPE' || c === 'LEQUIPETV') return { id: 'hyb_sport_lequipe', name: "L'Équipe", categories: ['sports', 'tnt'], index: 95 };
 
-    // --- 4. CANAL+ (Bouquet Officiel Multi-Catégories) ---
+    // --- 4. CANAL+ (Bouquet Officiel + Multisectoriel. Attention à Canal J !) ---
     if (c.startsWith('CANAL') || c === 'CPLUS') {
+        if (c.includes('J') || c === 'CANALJ') return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 32 };
+        
         if (c.includes('CINEMA') || c.includes('CNEMA')) return { id: 'hyb_canal_cinema', name: 'Canal+ Cinéma', categories: ['canal', 'cinema'], index: 2 };
         if (c.includes('GRANDECRAN') || c.includes('ECRAN')) return { id: 'hyb_canal_grandecran', name: 'Canal+ Grand Écran', categories: ['canal', 'cinema'], index: 3 };
         if (c.includes('SERIES')) return { id: 'hyb_canal_series', name: 'Canal+ Séries', categories: ['canal', 'cinema'], index: 4 };
@@ -222,10 +206,10 @@ function getChannelData(rawName) {
         if (c.includes('DOC')) return { id: 'hyb_canal_docs', name: 'Canal+ Docs', categories: ['canal', 'decouverte'], index: 6 };
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 7 };
         
-        if (c.includes('SPORT360')) return { id: 'hyb_canal_sport360', name: 'Canal+ Sport 360', categories: ['canal', 'sports'], index: 110 };
-        if (c.includes('FOOT')) return { id: 'hyb_canal_foot', name: 'Canal+ Foot', categories: ['canal', 'sports'], index: 111 };
-        if (c.includes('FORMULA1') || c.includes('F1')) return { id: 'hyb_canal_f1', name: 'Canal+ Formula 1', categories: ['canal', 'sports'], index: 112 };
-        if (c.includes('SPORT')) return { id: 'hyb_canal_sport', name: 'Canal+ Sport', categories: ['canal', 'sports'], index: 113 };
+        if (c.includes('SPORT360')) return { id: 'hyb_canal_sport360', name: 'Canal+ Sport 360', categories: ['canal', 'sports'], index: 90 };
+        if (c.includes('FOOT')) return { id: 'hyb_canal_foot', name: 'Canal+ Foot', categories: ['canal', 'sports'], index: 91 };
+        if (c.includes('FORMULA1') || c.includes('F1')) return { id: 'hyb_canal_f1', name: 'Canal+ Formula 1', categories: ['canal', 'sports'], index: 93 };
+        if (c.includes('SPORT')) return { id: 'hyb_canal_sport', name: 'Canal+ Sport', categories: ['canal', 'sports'], index: 94 };
         
         if (c.includes('DECALE')) return { id: 'hyb_canal_decale', name: 'Canal+ Décalé', categories: ['canal'], index: 14 };
         if (c.includes('FAMILY')) return { id: 'hyb_canal_family', name: 'Canal+ Family', categories: ['canal'], index: 15 };
@@ -244,55 +228,25 @@ function getChannelData(rawName) {
         if (c.includes('ACTION')) return { id: 'hyb_cine_action', name: 'Action', categories: ['cinema'], index: 30 };
         return { id: 'hyb_cine_plus', name: 'Ciné+', categories: ['cinema', 'canal'], index: 19 };
     }
-    if (c.includes('ACTION')) return { id: 'hyb_cine_action', name: 'Action', categories: ['cinema'], index: 30 };
-    if (c.includes('PARAMOUNT')) return { id: 'hyb_cine_paramount', name: 'Paramount Channel', categories: ['cinema'], index: 32 };
-    if (c.includes('WARNER')) return { id: 'hyb_cine_warner', name: 'Warner TV', categories: ['cinema'], index: 34 };
-    if (c.includes('SYFY') || c.includes('SCIFI')) return { id: 'hyb_cine_syfy', name: 'Syfy', categories: ['cinema'], index: 35 };
 
-    // --- 6. DECOUVERTE ---
-    if (c.includes('NATGEO') || c.includes('NATIONALGEO')) {
-        if (c.includes('WILD')) return { id: 'hyb_dec_natgeowild', name: 'Nat Geo Wild', categories: ['decouverte'], index: 2 };
-        return { id: 'hyb_dec_natgeo', name: 'National Geographic', categories: ['decouverte'], index: 1 };
-    }
-    if (c.includes('PLANET')) {
-        if (c.includes('CRIME') || c.includes('CI') || c.includes('JUSTICE')) return { id: 'hyb_dec_planetecrime', name: 'Planète+ Crime', categories: ['decouverte', 'canal'], index: 211 };
-        if (c.includes('AVENTURE') || c.includes('AE')) return { id: 'hyb_dec_planeteaventure', name: 'Planète+ Aventure', categories: ['decouverte', 'canal'], index: 212 };
-        return { id: 'hyb_dec_planete', name: 'Planète+', categories: ['decouverte', 'canal'], index: 210 };
-    }
-    if (c.includes('DISCOVERY')) return { id: 'hyb_dec_discovery', name: 'Discovery Channel', categories: ['decouverte'], index: 20 };
-    if (c.includes('USHUAIA')) return { id: 'hyb_dec_ushuaia', name: 'Ushuaïa TV', categories: ['decouverte'], index: 30 };
-    if (c.includes('HISTOIRE')) return { id: 'hyb_dec_histoire', name: 'Histoire TV', categories: ['decouverte'], index: 32 };
-    if (c.includes('CHASSE') || c.includes('PECHE')) return { id: 'hyb_dec_chasse', name: 'Chasse et Pêche', categories: ['decouverte'], index: 34 };
-    if (c.includes('ANIMAUX')) return { id: 'hyb_dec_animaux', name: 'Animaux', categories: ['decouverte'], index: 35 };
-
-    // --- 7. JEUNESSE ---
-    if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
-    if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 2 };
-    if (c.includes('DISNEY')) {
-        if (c.includes('JR') || c.includes('JUNIOR')) return { id: 'hyb_jeu_disneyjr', name: 'Disney Junior', categories: ['jeunesse'], index: 11 };
-        return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 10 };
-    }
-    if (c.includes('NICKELODEON') || c.includes('NICK')) return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 20 };
-    if (c.includes('CANALJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 32 };
-
-    // --- 8. MUSIQUE ---
-    if (c.includes('MTV')) return { id: 'hyb_mus_mtv', name: 'MTV', categories: ['musique'], index: 10 };
-    if (c.includes('CSTAR') && c.includes('HIT')) return { id: 'hyb_mus_cstar', name: 'CStar Hits', categories: ['musique'], index: 8 };
-
-    // --- 9. FALLBACK INTELLIGENT (Les Tags pour ce qui n'est pas dans le dictionnaire) ---
-    // Si la chaîne passe les filtres mais n'est pas identifiée explicitement, on lit ses tags pour la ranger logiquement
+    // --- 6. LE FILET DE SAUVETAGE (Les Tags Thématiques pour ce qui reste) ---
+    // Si on arrive ici, c'est que la chaîne n'a pas été identifiée plus haut.
+    // On va utiliser des mots clés dans le nom pour la ranger proprement et remplir les catégories manquantes.
+    
     let cat = 'autres';
-    let idx = 500;
+    let idx = 300;
 
-    if (c.includes('SPORT') || c.includes('FOOT') || c.includes('GOLF') || c.includes('MOTO') || c.includes('TENNIS')) { cat = 'sports'; idx = 300; }
-    else if (c.includes('MUSIC') || c.includes('HIT') || c.includes('MCM') || c.includes('MELODY') || c.includes('MEZZO') || c.includes('TRACE')) { cat = 'musique'; idx = 300; }
-    else if (c.includes('NEWS') || c.includes('24')) { cat = 'info'; idx = 300; }
-    else if (c.includes('CINE') || c.includes('FILM') || c.includes('COMEDY') || c.includes('SYFY') || c.includes('OCS')) { cat = 'cinema'; idx = 300; }
-    else if (c.includes('KIDS') || c.includes('TOON') || c.includes('JUNIOR') || c.includes('TIJI') || c.includes('PIWI') || c.includes('MANGAS') || c.includes('GAMEONE')) { cat = 'jeunesse'; idx = 300; }
-    else if (c.includes('GEO') || c.includes('SCIENCE') || c.includes('TREK') || c.includes('SEASON')) { cat = 'decouverte'; idx = 300; }
+    // Mots-clés pour chaque thème
+    if (c.includes('SPORT') || c.includes('FOOT') || c.includes('GOLF') || c.includes('MOTO') || c.includes('TENNIS') || c.includes('EQUIDIA')) { cat = 'sports'; }
+    else if (c.includes('CINE') || c.includes('FILM') || c.includes('MOVIE') || c.includes('SERIE') || c.includes('ACTION') || c.includes('PARAMOUNT') || c.includes('WARNER') || c.includes('SYFY') || c.includes('OCS')) { cat = 'cinema'; }
+    else if (c.includes('INFO') || c.includes('NEWS') || c.includes('24')) { cat = 'info'; }
+    else if (c.includes('DOC') || c.includes('GEO') || c.includes('NATURE') || c.includes('HISTOIRE') || c.includes('ANIMAUX') || c.includes('SCIENCE') || c.includes('VOYAGE') || c.includes('CHASSE') || c.includes('PECHE')) { cat = 'decouverte'; }
+    else if (c.includes('KIDS') || c.includes('JUNIOR') || c.includes('TOON') || c.includes('BABY') || c.includes('DISNEY') || c.includes('NICKELODEON') || c.includes('GULLI')) { cat = 'jeunesse'; }
+    else if (c.includes('MUSIC') || c.includes('HIT') || c.includes('POP') || c.includes('ROCK') || c.includes('MTV') || c.includes('MCM') || c.includes('MELODY')) { cat = 'musique'; }
 
     let prettyName = rawName.replace(/\[.*?\]|\(.*?\)/g, '').replace(/\b(?:FHD|HD|SD|4K|1080P|720P)\b/gi, '').trim();
     prettyName = prettyName.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.substr(1).toLowerCase());
+    
     return { id: 'hyb_id_' + c, name: prettyName, categories: [cat], index: idx };
 }
 
@@ -438,12 +392,6 @@ async function fetchAddonCatalog(providerUrl) {
     return allMetas;
 }
 
-// Fonction MAGIQUE pour le format d'image Carré sans aucun ZOOM (via weserv)
-function makePerfectSquare(url) {
-    if (!url || url === DEFAULT_POSTER) return DEFAULT_POSTER;
-    return `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=400&h=400&fit=contain&bg=transparent`;
-}
-
 async function getChannelsForSources(sourcesList) {
     const cacheKey = sourcesList.join('|');
     if (channelsCache[cacheKey] && (Date.now() - channelsCache[cacheKey].timestamp < 3600000)) return channelsCache[cacheKey].data;
@@ -464,7 +412,7 @@ async function getChannelsForSources(sourcesList) {
 
             const id = channelInfo.id;
             
-            // INTÉGRATION DES LOGOS OFFICIELS AVEC PROTECTION ANTI-ZOOM
+            // INTÉGRATION LOGOS HD AVEC PROTECTION ANTI-ZOOM (wsrv.nl + padding transparent)
             let forceLogo = LOGOS[id];
             if (id.startsWith('hyb_sport_dazn')) forceLogo = LOGOS['dazn_generic']; 
 
@@ -705,7 +653,7 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
     
     const filteredChannels = channelsData.filter(ch => ch.categories.includes(requestedCatalog));
     const paginatedMetas = filteredChannels.slice(skip, skip + 100).map(ch => ({
-        id: ch.id, type: 'tv', name: ch.displayName, poster: ch.poster, posterShape: 'square' // On garde 'square' car l'image est maintenant paddée parfaitement !
+        id: ch.id, type: 'tv', name: ch.displayName, poster: ch.poster, posterShape: 'square' // L'affichage est forcé au format carré parfait !
     }));
     res.json({ metas: paginatedMetas });
 });
@@ -791,38 +739,33 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         let score = 0;
                         let up = (s.title || '').toUpperCase() + ' ' + (s.name || '').toUpperCase();
                         
-                        // ANTI-INTOXICATION : On filtre très sévèrement les flux qui squattent la mauvaise chaîne
+                        // ANTI-INTOXICATION : Si on est sur le "Canal+" classique, on détruit tout flux contenant les mots Sport, Foot, J, etc.
                         if (channel.id === 'hyb_canal_cplus') {
-                            if (up.match(/(SPORT|FOOT|CINEMA|DECALE|KIDS|DOC|BOX|GRAND|SERIE|F1|MOTO|360|FAMILY|LIGUE)/)) {
+                            if (up.match(/(SPORT|FOOT|CINEMA|DECALE|KIDS|DOC|BOX|GRAND|SERIE|F1|MOTO|360|FAMILY|LIGUE|\bJ\b|CANALJ|LIVE)/)) {
                                 score -= 50000;
                             }
                         }
+                        // ANTI-INTOXICATION DAZN : On sépare les DAZN normaux des DAZN Live/Ligue 1
                         if (channel.id.startsWith('hyb_sport_dazn') && !channel.id.includes('live')) {
                             if (up.match(/(LIGUE|LIVE|PASS)/)) score -= 50000;
                         }
 
-                        // SMART RATIO QUALITÉ : Le 1080p gagne !
-                        if (up.includes('FHD') || up.includes('1080')) { qual = "Haute Qualité (FHD)"; score += 800; } 
+                        // SMART RATIO QUALITÉ (1080p > 4K > 720p)
+                        if (up.includes('FHD') || up.includes('1080')) { qual = "Haute Qualité (1080p)"; score += 800; } 
                         else if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) { qual = "Ultra Haute Qualité (4K)"; score += 600; } 
-                        else if (up.includes('HD') || up.includes('720')) { qual = "Haute Qualité (HD)"; score += 400; } 
-                        else { score += 200; }
+                        else if (up.includes('HD') || up.includes('720')) { qual = "Haute Qualité (720p)"; score += 400; } 
+                        else { score += 200; } // SD classique
 
-                        // LA PRIORITÉ ABSOLUE AU FRANÇAIS (+5000 points)
+                        // BONUS LÉGER AU FRANÇAIS (On ne surcharge pas pour ne pas faire bugger la logique)
                         if (up.match(/\bFR\b/) || up.match(/\bVF\b/) || up.includes('FRENCH') || up.includes('FRANCE')) {
-                            score += 5000;
+                            score += 100;
                         }
                         
-                        // MALUS SÉVÈRE : La très basse qualité (illisible)
-                        if (up.includes('360P') || up.includes('480P') || up.includes('LQ')) {
-                            score -= 8000;
-                        }
-
-                        // MALUS SÉVÈRE : Les flux morts ou de secours
-                        if (up.includes('BACKUP') || up.includes('SECOURS') || up.includes('ALT') || up.includes('TEST')) {
-                            score -= 3000;
-                        }
+                        // MALUS SÉVÈRE : Qualité illisible ou Flux Mort
+                        if (up.includes('360P') || up.includes('480P') || up.includes('LQ')) score -= 1000;
+                        if (up.includes('BACKUP') || up.includes('SECOURS') || up.includes('ALT') || up.includes('TEST')) score -= 2000;
                         
-                        // Bonus lié à l'ordre des sources configuré par l'utilisateur
+                        // Bonus lié à l'ordre de priorité du provider (Choix de l'utilisateur sur le site web)
                         score += (10 - source.sourceIndex) * 10;
 
                         return { ...s, _qualText: qual, _score: score };
@@ -835,10 +778,10 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
 
-        // Tri mathématique absolu par score
+        // Tri mathématique absolu par score (le 1080p passera toujours en haut)
         allStreams.sort((a, b) => b._score - a._score);
         
-        // Coupe stricte aux 8 meilleurs flux
+        // Coupe stricte aux 8 meilleurs flux pour une interface propre et légère
         const limitedStreams = allStreams.slice(0, 8);
 
         const finalStreams = limitedStreams.map((s, idx) => ({
