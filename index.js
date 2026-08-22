@@ -16,7 +16,7 @@ const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-
 
 const BLACKLIST = [
     'ALACARTE', 'DISNEYPLUS', 'NETFLIX', 'PRIMEVIDEO', 'APPLETV',
-    'TEST', 'MIRROR', 'BACKUPCHANNEL', 'BOXOFFICE1', 'BOXOFFICE2', 'CANALPLAY', 'AFRIQUE'
+    'TEST', 'MIRROR', 'BACKUPCHANNEL', 'BOXOFFICE1', 'BOXOFFICE2', 'CANALPLAY', 'AFRIQUE', 'DEUTSCH', 'GERMAN'
 ];
 
 // Logos VIP (Optionnels via le bouton ON/OFF)
@@ -123,7 +123,7 @@ function parseConfig(encodedConfig) {
     }
 }
 
-// === MOTEUR D'EXTRACTION ADN (Isolant rigoureusement LIGUE 1+) ===
+// === MOTEUR D'EXTRACTION ADN ===
 function getChannelData(rawName) {
     if (!rawName) return null;
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -725,7 +725,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '2.0.8',
+        version: '2.0.9',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -859,14 +859,19 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         let score = 0;
                         let up = (s.title || '').toUpperCase() + ' ' + (s.name || '').toUpperCase();
                         
-                        // ANTI-INTOXICATION DOUCE POUR CANAL+
+                        // ANTI-INTOXICATION CHIRURGICALE DES CHAINES CANAL+ & CINEMA
                         if (channel.id === 'hyb_canal_cplus') {
-                            if (up.match(/(SPORT|FOOT|CINEMA|DECALE|KIDS|DOC|BOX|GRAND|SERIE|F1|MOTO|360|FAMILY|LIGUE|\bJ\b|CANALJ|LIVE)/)) {
-                                score -= 50000;
+                            // Canal+ de base rejette tout ce qui est Cinéma, Sport, Séries, Docs, etc.
+                            if (up.match(/(SPORT|FOOT|CINEMA|CNEMA|DECALE|KIDS|DOC|BOX|GRAND|SERIE|F1|MOTO|360|FAMILY|LIGUE|\bJ\b|CANALJ|LIVE|PREMIER|FRISSON|EMOTION|COMEDIE)/)) {
+                                score -= 100000;
                             }
+                        } else if (channel.id.startsWith('hyb_canal_') || channel.id.startsWith('hyb_cine_')) {
+                            // Si on demande une chaîne spécifique (ex: Canal+ Cinéma), on s'assure qu'elle ne récupère pas le flux d'une autre
+                            let targetKey = channel.id.replace('hyb_canal_', '').replace('hyb_cine_', '').toUpperCase();
+                            if (up.includes('SPORT') && !targetKey.includes('SPORT')) score -= 50000;
                         }
 
-                        // SCORING PRINCIPAL STABLE (1080p > 720p > 4K > SD)
+                        // SCORING DE QUALITÉ (1080p > 720p > 4K > SD)
                         if (up.includes('FHD') || up.includes('1080')) { qual = "Haute Qualité (1080p)"; score += 1000; } 
                         else if (up.includes('HD') || up.includes('720')) { qual = "Haute Qualité (720p)"; score += 800; } 
                         else if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) { qual = "Ultra Haute Qualité (4K)"; score += 600; } 
@@ -879,7 +884,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         if (up.includes('360P') || up.includes('480P') || up.includes('LQ')) score -= 100;
                         if (up.includes('BACKUP') || up.includes('SECOURS') || up.includes('ALT') || up.includes('TEST')) score -= 150;
                         
-                        // TRI SECONDAIRE STABLE : Conserve l'ordre d'origine de la source pour éviter d'envoyer les bons flux au fond
+                        // Conserve l'ordre d'origine de la source (évite d'envoyer les bons flux en bas)
                         score -= idx; 
                         score += (10 - source.sourceIndex) * 10;
 
@@ -893,7 +898,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
 
-        // Tri mathématique stable
         allStreams.sort((a, b) => b._score - a._score);
         const limitedStreams = allStreams.slice(0, 15);
 
