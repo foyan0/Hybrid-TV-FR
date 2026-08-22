@@ -19,7 +19,7 @@ const BLACKLIST = [
     'TEST', 'MIRROR', 'BACKUPCHANNEL', 'BOXOFFICE1', 'BOXOFFICE2', 'CANALPLAY', 'AFRIQUE'
 ];
 
-// Logos VIP (Optionnels via le bouton ON/OFF du site)
+// Logos VIP (Optionnels via le bouton ON/OFF)
 const LOGOS = {
     'hyb_tnt_1': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cc/TF1_2013_logo.svg/512px-TF1_2013_logo.svg.png',
     'hyb_tnt_2': 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/France_2_logo_2018.svg/512px-France_2_logo_2018.svg.png',
@@ -73,7 +73,6 @@ const LOGOS = {
     'hyb_canal_decale': 'https://www.staderochelais.com/sites/stade-rochelais/files/logos/canal-decale-1622622027.png',
     'hyb_jeu_canalj': 'https://upload.wikimedia.org/wikipedia/fr/6/69/Logo_canal_J.png',
     
-    // LIGUE 1+ ISOLÉ ET SÉCURISÉ EN POSITION 1 ABSOLUE
     'hyb_sport_ligue1plus': 'https://focus.telerama.fr/500x500/0000/00/01/clear-1845.png',
     'hyb_canal_sport': 'https://upload.wikimedia.org/wikipedia/commons/1/1a/Canal%2B_Sport_2015.png',
     'hyb_canal_foot': 'https://upload.wikimedia.org/wikipedia/commons/e/eb/Canal%2BFoot.png',
@@ -136,7 +135,7 @@ function getChannelData(rawName) {
     const tags = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'DIRECT', 'RAW', 'ACCESS'];
     tags.forEach(tag => { n = n.replace(new RegExp(`\\b${tag}\\b`, 'gi'), ''); });
 
-    // --- 0. LE CAS SPÉCIAL LIGUE 1+ (Détecté en premier pour éviter toute confusion avec Canal+) ---
+    // --- 0. LIGUE 1+ ISOLÉ AU SOMMET ---
     if (n.includes('LIGUE 1+') || n.includes('LIGUE1+') || n === 'LIGUE 1+') {
         return { id: 'hyb_sport_ligue1plus', name: 'Ligue 1+', categories: ['sports'], index: 1 };
     }
@@ -508,7 +507,6 @@ async function getChannelsForSources(sourcesList, enableLogos) {
 
             const id = channelInfo.id;
             
-            // Gestion de l'interrupteur ON/OFF des logos VIP
             let finalPoster = DEFAULT_POSTER;
             if (enableLogos) {
                 let forceLogo = LOGOS[id];
@@ -727,7 +725,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '2.0.7',
+        version: '2.0.8',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -856,29 +854,33 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                     headers: { 'X-Forwarded-For': clientIp }, timeout: 4000 
                 });
                 if (streamRes.data && streamRes.data.streams) {
-                    return streamRes.data.streams.map(s => {
+                    return streamRes.data.streams.map((s, idx) => {
                         let qual = "Qualité Standard (SD)";
                         let score = 0;
                         let up = (s.title || '').toUpperCase() + ' ' + (s.name || '').toUpperCase();
                         
+                        // ANTI-INTOXICATION DOUCE POUR CANAL+
                         if (channel.id === 'hyb_canal_cplus') {
                             if (up.match(/(SPORT|FOOT|CINEMA|DECALE|KIDS|DOC|BOX|GRAND|SERIE|F1|MOTO|360|FAMILY|LIGUE|\bJ\b|CANALJ|LIVE)/)) {
-                                score -= 100000;
+                                score -= 50000;
                             }
                         }
 
-                        if (up.includes('FHD') || up.includes('1080')) { qual = "Haute Qualité (1080p)"; score += 800; } 
-                        else if (up.includes('HD') || up.includes('720')) { qual = "Haute Qualité (720p)"; score += 600; } 
-                        else if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) { qual = "Ultra Haute Qualité (4K)"; score += 400; } 
-                        else { score += 200; } 
+                        // SCORING PRINCIPAL STABLE (1080p > 720p > 4K > SD)
+                        if (up.includes('FHD') || up.includes('1080')) { qual = "Haute Qualité (1080p)"; score += 1000; } 
+                        else if (up.includes('HD') || up.includes('720')) { qual = "Haute Qualité (720p)"; score += 800; } 
+                        else if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) { qual = "Ultra Haute Qualité (4K)"; score += 600; } 
+                        else { score += 400; } 
 
                         if (up.match(/\bFR\b/) || up.match(/\bVF\b/) || up.includes('FRENCH') || up.includes('FRANCE')) {
-                            score += 100;
+                            score += 200;
                         }
                         
-                        if (up.includes('360P') || up.includes('480P') || up.includes('LQ')) score -= 500;
-                        if (up.includes('BACKUP') || up.includes('SECOURS') || up.includes('ALT') || up.includes('TEST')) score -= 500;
+                        if (up.includes('360P') || up.includes('480P') || up.includes('LQ')) score -= 100;
+                        if (up.includes('BACKUP') || up.includes('SECOURS') || up.includes('ALT') || up.includes('TEST')) score -= 150;
                         
+                        // TRI SECONDAIRE STABLE : Conserve l'ordre d'origine de la source pour éviter d'envoyer les bons flux au fond
+                        score -= idx; 
                         score += (10 - source.sourceIndex) * 10;
 
                         return { ...s, _qualText: qual, _score: score };
@@ -891,6 +893,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
 
+        // Tri mathématique stable
         allStreams.sort((a, b) => b._score - a._score);
         const limitedStreams = allStreams.slice(0, 15);
 
