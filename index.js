@@ -65,8 +65,6 @@ const LOGOS = {
     'hyb_canal_series': 'https://upload.wikimedia.org/wikipedia/fr/e/e3/C%2B_S%C3%A9ries.png',
     'hyb_canal_kids': 'https://upload.wikimedia.org/wikipedia/commons/0/0c/Canal%2B_Kids.png',
     'hyb_canal_docs': 'https://upload.wikimedia.org/wikipedia/commons/2/27/Canal%2B_Docs.png',
-    'hyb_canal_premier': 'https://upload.wikimedia.org/wikipedia/commons/7/73/Canalplus_fr_cine_plus_premier_hd.png',
-    'hyb_canal_frisson': 'https://focus.telerama.fr/500x500/0000/00/01/clear-147.png',
     'hyb_canal_boxoffice': 'https://upload.wikimedia.org/wikipedia/fr/5/55/C%2B_Box_Office.png',
     'hyb_cine_comedie': 'https://upload.wikimedia.org/wikipedia/commons/3/3e/Com%C3%A9die%2B_logo_%C3%A0_l%27antenne.png',
     'hyb_canal_family': 'http://schedulesdirect-api20141201-logos.s3.amazonaws.com/stationLogos/s87283_dark_360w_270h.png',
@@ -128,7 +126,7 @@ function parseConfig(encodedConfig) {
     }
 }
 
-// === MOTEUR D'EXTRACTION ADN (Ligue 1+ blindée avec ses déclinaisons numérotées) ===
+// === MOTEUR D'EXTRACTION ADN ===
 function getChannelData(rawName) {
     if (!rawName) return null;
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -140,11 +138,10 @@ function getChannelData(rawName) {
     const tags = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'DIRECT', 'RAW', 'ACCESS'];
     tags.forEach(tag => { n = n.replace(new RegExp(`\\b${tag}\\b`, 'gi'), ''); });
 
-    // --- 0. LIGUE 1+ ET SES DÉCLINAISONS (1, 2, 3...) ISOLÉES AU SOMMET ---
+    // --- 0. LIGUE 1+ ---
     if (n.includes('LIGUE 1+') || n.includes('LIGUE1+') || n.includes('LIGUE 1 PLUS') || n.includes('LIGUE1+')) {
         let m = n.match(/\d+/g); 
         let num = m ? m[m.length-1] : '';
-        // Si c'est juste Ligue 1+ ou Ligue 1+ 1
         if (!num || num === '1') {
             return { id: 'hyb_sport_ligue1plus', name: 'Ligue 1+', categories: ['sports'], index: 1 };
         } else {
@@ -322,12 +319,6 @@ function getChannelData(rawName) {
     prettyName = prettyName.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.substr(1).toLowerCase());
     
     return { id: 'hyb_id_' + c, name: prettyName, categories: [cat], index: idx };
-}
-
-function toSyncId(rawName) {
-    if (!rawName) return '';
-    let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    return n.replace(/[^A-Z0-9]/g, ''); 
 }
 
 function parseXmltvDate(str) {
@@ -739,7 +730,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '2.1.2',
+        version: '2.1.3',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -864,8 +855,9 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             }
 
             try {
+                // Timeout élargi à 8000ms (8 secondes) pour éviter les échecs de chargement sur les sources lentes
                 const streamRes = await axios.get(`${source.providerBase}/stream/tv/${source.metaId}.json`, {
-                    headers: { 'X-Forwarded-For': clientIp }, timeout: 4000 
+                    headers: { 'X-Forwarded-For': clientIp }, timeout: 8000 
                 });
                 if (streamRes.data && streamRes.data.streams) {
                     return streamRes.data.streams.map((s, idx) => {
