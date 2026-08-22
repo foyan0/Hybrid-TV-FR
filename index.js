@@ -24,21 +24,30 @@ function parseConfig(encodedConfig) {
     }
 }
 
+// Normalisation avancée avec détection des pays et nettoyage des flux de sport
 function normalizeChannelName(rawName) {
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     n = n.replace(/\s*\([Tt][Vv]\)\s*/g, '');
     n = n.replace(/DURING EVENT ONLY/g, '');
     n = n.replace(/EVENT ONLY/g, '');
-    n = n.replace(/^(FR|BE|CH|CA|VIP)\s*[:|/-]+\s*/, '');
-    n = n.replace(/^FR\s+/, '');
     
-    if (n === 'DISNEY+' || n === 'DISNEY PLUS') return '';
-
+    // Nettoyage des balises de qualité parasites pour uniformiser les noms de sport/cinéma
     const tags = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'VAVOO', 'DIRECT', 'RAW', 'ACCESS'];
-    n = n.replace(/[^A-Z0-9+ ]/g, ' '); 
     tags.forEach(tag => { n = n.replace(new RegExp(`\\b${tag}\\b`, 'g'), ' '); });
     n = n.replace(/\bHD\b/g, ' '); 
     n = n.replace(/\s+/g, ' ').trim();
+
+    // Normalisation spécifique DAZN et Ligue 1
+    if (n.includes('DAZN LIGUE 1') || n.includes('PASS LIGUE 1')) {
+        let match = n.match(/(\d+)/);
+        let num = match ? match[1] : '1';
+        return `DAZN LIGUE 1 LIVE ${num}`;
+    }
+    if (n.startsWith('DAZN')) {
+        let match = n.match(/(\d+)/);
+        let num = match ? match[1] : '1';
+        return `DAZN ${num}`;
+    }
 
     if (n.includes('BFM') && !n.includes('BUSINESS') && !n.includes('PARIS') && !n.includes('LYON')) return 'BFMTV';
     if (n.includes('CNEWS') || n.includes('C NEWS')) return 'CNEWS';
@@ -96,66 +105,6 @@ function toSyncId(name) {
     if (!name) return '';
     let n = name.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     n = n.replace(/[^A-Z0-9]/g, ''); 
-    
-    if (n === 'TF1' || n === 'TF1HD' || n === 'TF1FR' || n === 'TF14K') return 'TF1';
-    if (n === 'TF1SERIESFILMS' || n === 'TF1SERIES') return 'TF1SERIESFILMS';
-    if (n === 'FRANCE2' || n === 'FRANCETV2' || n === 'FRANCE2HD' || n === 'FRANCE2UHD') return 'FRANCE2';
-    if (n === 'FRANCE3' || n === 'FRANCE3HD' || n === 'FRANCETV3') return 'FRANCE3';
-    if (n === 'FRANCE4' || n === 'FRANCE4HD') return 'FRANCE4';
-    if (n === 'FRANCE5' || n === 'FRANCE5HD') return 'FRANCE5';
-    if (n === 'M6' || n === 'M6HD' || n === 'M6FR' || n === 'M64K') return 'M6';
-    if (n === 'ARTE' || n === 'ARTEHD' || n === 'ARTEFR') return 'ARTE';
-    if (n === 'C8' || n === 'C8HD') return 'C8';
-    if (n === 'W9' || n === 'W9HD') return 'W9';
-    if (n === 'TMC' || n === 'TMCHD') return 'TMC';
-    if (n === 'TFX' || n === 'TFXHD') return 'TFX';
-    if (n === 'NRJ12' || n === 'NRJ12HD') return 'NRJ12';
-    if (n === 'LCP' || n === 'LCPAN' || n === 'PUBLICSENAT') return 'LCP';
-    
-    if (n === 'BFMTV' || n === 'BFMTVHD' || n === 'BFMTVFR' || n === 'BFM') return 'BFMTV';
-    if (n === 'CNEWS' || n === 'CNEWSHD' || n === 'CNEWSFR') return 'CNEWS';
-    if (n === 'CSTAR' || n === 'CSTARHD' || n === 'CSTARHITS') return 'CSTAR';
-    if (n === 'GULLI' || n === 'GULLIHD') return 'GULLI';
-    if (n === 'GAMEONE' || n === 'GAMEONEHD' || n === 'GAMEONEFR') return 'GAMEONE';
-    if (n.startsWith('MTV') && !n.includes('HITS')) return 'MTV';
-    
-    if (n.startsWith('BEINSPORT')) {
-        if (n.includes('1')) return 'BEINSPORTS1';
-        if (n.includes('2')) return 'BEINSPORTS2';
-        if (n.includes('3')) return 'BEINSPORTS3';
-    }
-    
-    if (n.startsWith('CANAL')) {
-        if (n.includes('SPORT360')) return 'CANALSPORT360';
-        if (n.includes('SPORT')) return 'CANALSPORT';
-        if (n.includes('CINEMA')) return 'CANALCINEMA';
-        if (n.includes('SERIES')) return 'CANALSERIES';
-        if (n.includes('GRAND') || n.includes('ECRAN')) return 'CANALGRANDECRAN';
-        if (n.includes('DOC')) return 'CANALDOCS';
-        if (n.includes('KIDS')) return 'CANALKIDS';
-        if (n.includes('FOOT')) return 'CANALFOOT';
-        if (n.includes('BOXOFFICE')) return 'CANALBOXOFFICE';
-        if (n.includes('DECALE')) return 'CANALDECALE';
-        if (n === 'CANALPLUS' || n === 'CANAL' || n === 'CANALPLUSFRANCE' || n === 'CANALHD' || n === 'CANALPLUSHD') return 'CANAL'; 
-    }
-
-    if (n.startsWith('DISCOVERY')) {
-        if (n.includes('SCIENCE')) return 'DISCOVERYSCIENCE';
-        if (n.includes('INVESTIGATION') || n.includes('ID')) return 'DISCOVERYINVESTIGATION';
-        return 'DISCOVERYCHANNEL';
-    }
-    
-    if (n.startsWith('PLANETE')) {
-        if (n.includes('CRIME')) return 'PLANETECRIME';
-        if (n.includes('AVENTURE')) return 'PLANETEAVENTURE';
-        if (n === 'PLANETE' || n === 'PLANETEPLUS' || n === 'PLANETEHD') return 'PLANETE';
-    }
-    
-    if (n.startsWith('NATIONALGEOGRAPHIC') || n.startsWith('NATGEO')) {
-        if (n.includes('WILD')) return 'NATIONALGEOGRAPHICWILD';
-        return 'NATIONALGEOGRAPHIC';
-    }
-
     return n;
 }
 
@@ -169,13 +118,34 @@ function getPrettyName(n) {
     if (n === 'CNEWS') return 'CNews';
     if (n === 'GULLI') return 'Gulli';
     if (n === 'ARTE') return 'Arte';
+    if (n.startsWith('DAZN')) return n.replace('DAZN', 'DAZN ');
     if (n.startsWith('CANAL+')) return n.replace('CANAL+', 'Canal+').replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.substr(1).toLowerCase()).replace('Canal+ ', 'Canal+ ');
     return n.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.substr(1).toLowerCase());
 }
 
-function getChannelPlacements(n) {
+// Rangement intelligent avec les nouvelles catégories Internationales (BE, CH, CA)
+function getChannelPlacements(rawOriginalName, n) {
     let placements = [];
-    
+    let upperRaw = rawOriginalName.toUpperCase();
+
+    // Détection internationale par préfixe ou nom de chaîne spécifique
+    let isBelgian = upperRaw.startsWith('BE') || ['RTL-TVI', 'CLUB RTL', 'PLUG RTL', 'LA UNE', 'LA DEUX', 'LA TROIS', 'AB3'].some(k => upperRaw.includes(k));
+    let isSwiss = upperRaw.startsWith('CH') || ['RTS 1', 'RTS 2', 'RTS UN', 'RTS DEUX', 'SRF'].some(k => upperRaw.includes(k));
+    let isCanadian = upperRaw.startsWith('CA') || ['ICI TELE', 'RDS', 'TVA SPORTS', 'NOVO'].some(k => upperRaw.includes(k));
+
+    if (isBelgian) {
+        placements.push({ category: 'belgique', index: 10 });
+        return placements;
+    }
+    if (isSwiss) {
+        placements.push({ category: 'suisse', index: 10 });
+        return placements;
+    }
+    if (isCanadian) {
+        placements.push({ category: 'canada', index: 10 });
+        return placements;
+    }
+
     // Information
     if (['FRANCE INFO', 'LA CHAINE METEO', 'CNEWS', 'LCI', 'BFMTV', 'FRANCE 24', 'EURONEWS', 'LCN', '20 MINUTES TV'].includes(n) || n.startsWith('BFM ')) {
         let idx = 50;
@@ -183,7 +153,7 @@ function getChannelPlacements(n) {
         placements.push({ category: 'info', index: idx });
     }
 
-    // Jeunesse
+    // Jeunesse (avec Boing, Baby TV)
     let jeuIdx = -1;
     if (n === 'CARTOON NETWORK') jeuIdx = 1; 
     else if (n === 'DISNEY CHANNEL') jeuIdx = 2; 
@@ -235,7 +205,7 @@ function getChannelPlacements(n) {
         placements.push({ category: 'decouverte', index: decIndex });
     }
 
-    // Cinéma & Séries
+    // Cinéma & Séries (Ciné+)
     if (['PARAMOUNT', 'WARNER', 'ACTION', 'TCM', 'CINE+', 'CINE +', 'OCS', 'SYFY', 'SCI FI', 'SERIE CLUB', 'TV BREIZH', 'COMEDY CENTRAL', 'POLAR+'].some(k => n.includes(k))) {
         let cineIdx = 10;
         if (n.includes('PREMIER')) cineIdx = 1;
@@ -254,27 +224,27 @@ function getChannelPlacements(n) {
         placements.push({ category: 'musique', index: musIndex });
     }
 
-    // Sports (Ordre personnalisé : Ligue 1 -> DAZN -> beIN Sports -> RMC Sport -> Eurosport -> Canal+ Sport/Foot -> Autres)
-    if (n.includes('LIGUE 1') || n.includes('PASS LIGUE')) {
-        let match = n.match(/\d+/);
-        let l1Idx = match ? parseInt(match[0]) : 1;
+    // Sports (Ordre rigoureux demandé : Ligue 1 -> DAZN -> beIN -> RMC -> Eurosport -> Canal+ Sport)
+    if (n.includes('LIGUE 1')) {
+        let match = n.match(/(\d+)/);
+        let l1Idx = match ? parseInt(match[1]) : 1;
         placements.push({ category: 'sports', index: 10 + l1Idx }); 
     } else if (n.startsWith('DAZN')) {
-        let match = n.match(/\d+/);
-        let daznIdx = match ? parseInt(match[0]) : 1;
+        let match = n.match(/(\d+)/);
+        let daznIdx = match ? parseInt(match[1]) : 1;
         placements.push({ category: 'sports', index: 30 + daznIdx }); 
     } else if (n.startsWith('BEIN SPORTS') || n.includes('BING SPORT')) {
-        let match = n.match(/\d+/); 
-        let beinIdx = match ? parseInt(match[0]) : 0; 
+        let match = n.match(/(\d+)/); 
+        let beinIdx = match ? parseInt(match[1]) : 0; 
         if (n.includes('MAX')) beinIdx += 10; 
         placements.push({ category: 'sports', index: 50 + beinIdx }); 
     } else if (n.startsWith('RMC SPORT') && !n.includes('MULTICANAL')) {
-        let match = n.match(/\d+/);
-        let rmcIdx = match ? parseInt(match[0]) : 1;
+        let match = n.match(/(\d+)/);
+        let rmcIdx = match ? parseInt(match[1]) : 1;
         placements.push({ category: 'sports', index: 90 + rmcIdx });
     } else if (n.startsWith('EUROSPORT')) {
-        let match = n.match(/\d+/);
-        let euroIdx = match ? parseInt(match[0]) : 1;
+        let match = n.match(/(\d+)/);
+        let euroIdx = match ? parseInt(match[1]) : 1;
         placements.push({ category: 'sports', index: 120 + euroIdx });
     } else if (n === 'CANAL+ SPORT' || n === 'CANAL+ FOOT' || n === 'CANAL+ SPORT 360' || n === 'CANAL+ FORMULA 1') {
         let cIdx = 150;
@@ -293,7 +263,7 @@ function getChannelPlacements(n) {
         placements.push({ category: 'sports', index: 230 });
     }
 
-    // TNT
+    // TNT France
     const tntList = ['TF1', 'FRANCE 2', 'FRANCE 3', 'FRANCE 4', 'FRANCE 5', 'M6', 'ARTE', 'C8', 'W9', 'TMC', 'TFX', 'NRJ 12', 'LCP', 'PUBLIC SENAT', 'CSTAR', 'GULLI', 'TF1 SERIES', 'L EQUIPE', '6TER', 'RMC STORY', 'RMC DECOUVERTE', 'CHERIE 25'];
     if (tntList.includes(n)) {
         placements.push({ category: 'tnt', index: tntList.indexOf(n) + 1 });
@@ -489,7 +459,8 @@ async function getChannelsForSources(sourcesList) {
         const base = cleanUrl.replace(/\/manifest\.json$/, '');
 
         metas.forEach(meta => {
-            let dName = normalizeChannelName(meta.name);
+            let rawName = meta.name || '';
+            let dName = normalizeChannelName(rawName);
             if (!dName || dName.length < 2) return; 
 
             const id = 'hyb_id_' + dName.replace(/[^a-zA-Z0-9+]/g, '_').toLowerCase();
@@ -516,7 +487,7 @@ async function getChannelsForSources(sourcesList) {
     Object.values(tempChannelsMap).forEach(ch => {
         if (ch.sources.length > 0) {
             ch.sources.sort((a, b) => a.sourceIndex - b.sourceIndex);
-            ch.placements = getChannelPlacements(ch.name);
+            ch.placements = getChannelPlacements(ch.name, ch.name);
             tempChannelsData.push(ch);
         }
     });
@@ -564,7 +535,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <h1>📺 HybridTV</h1>
             <div class="intro-desc">
-                <b>HybridTV</b> centralise vos sources de flux en une véritable bibliothèque thématisée et triée sur le volet. Fini le désordre : tout est classé par catégories logiques (TNT, Sport, Cinéma, etc.) avec une sélection automatique de la meilleure qualité et des sources les plus stables selon vos priorités.
+                <b>HybridTV</b> centralise vos sources de flux en une véritable bibliothèque thématisée et triée sur le volet. Fini le désordre : tout est classé par catégories logiques (TNT FR, Belgique, Suisse, Canada, Sport, Cinéma, etc.) avec une sélection automatique de la meilleure qualité et des sources les plus stables selon vos priorités.
             </div>
             
             <div class="section">
@@ -729,20 +700,23 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '1.0.9',
+        version: '1.1.0',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
-            { type: 'tv', id: 'tnt', name: '📺 TNT' },
-            { type: 'tv', id: 'info', name: '📰 Information' },
-            { type: 'tv', id: 'jeunesse', name: '👶 Jeunesse' },
-            { type: 'tv', id: 'decouverte', name: '🔬 Découverte & Docu' },
-            { type: 'tv', id: 'cinema', name: '🍿 Cinéma & Séries' },
-            { type: 'tv', id: 'musique', name: '🎵 Musique' },
-            { type: 'tv', id: 'canal', name: '🎟️ Bouquet Canal' },
+            { type: 'tv', id: 'tnt', name: '📺 TNT FR' },
+            { type: 'tv', id: 'belgique', name: '🇧🇪 Belgique' },
+            { type: 'tv', id: 'suisse', name: '🇨🇭 Suisse' },
+            { type: 'tv', id: 'canada', name: '🇨🇦 Canada' },
             { type: 'tv', id: 'sports', name: '⚽ Sports' },
+            { type: 'tv', id: 'cinema', name: '🍿 Cinéma & Séries' },
+            { type: 'tv', id: 'canal', name: '🎟️ Bouquet Canal' },
+            { type: 'tv', id: 'decouverte', name: '🔬 Découverte & Docu' },
+            { type: 'tv', id: 'jeunesse', name: '👶 Jeunesse' },
+            { type: 'tv', id: 'info', name: '📰 Information' },
+            { type: 'tv', id: 'musique', name: '🎵 Musique' },
             { type: 'tv', id: 'autres', name: '📂 Autres' }
         ]
     });
@@ -766,7 +740,7 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
         if (match) skip = parseInt(match[1], 10);
     }
 
-    const validCatalogs = ['tnt', 'info', 'jeunesse', 'decouverte', 'cinema', 'musique', 'canal', 'sports', 'autres'];
+    const validCatalogs = ['tnt', 'belgique', 'suisse', 'canada', 'sports', 'cinema', 'canal', 'decouverte', 'jeunesse', 'info', 'musique', 'autres'];
     if (!validCatalogs.includes(requestedCatalog)) return res.json({ metas: [] });
     
     const filteredChannels = channelsData
