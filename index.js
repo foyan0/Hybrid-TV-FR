@@ -11,18 +11,17 @@ let isUpdatingEPG = false;
 let lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
 let epgData = {}; 
 let channelsCache = {}; 
+let m3uChannelsCache = []; // Cache en mémoire vive pour le M3U (vitesse instantanée)
 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 
-// La Blacklist : Uniquement les VOD et mires absolues
 const BLACKLIST = [
     'ALACARTE', 'DISNEYPLUS', 'NETFLIX', 'PRIMEVIDEO', 'APPLETV',
     'TEST', 'MIRROR', 'BACKUPCHANNEL', 'BOXOFFICE1', 'BOXOFFICE2', 'CANALPLAY', 'AFRIQUE'
 ];
 
-// Logos VIP : Sources Officielles GitHub & Wikimedia (Carrés parfaits)
+// Logos officiels et stables (Format carré parfait)
 const LOGOS = {
-    // TNT & Généralistes
     'hyb_tnt_1': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/tf1.png',
     'hyb_tnt_2': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/france_2.png',
     'hyb_tnt_3': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/france_3.png',
@@ -48,16 +47,15 @@ const LOGOS = {
     'hyb_tnt_teva': 'https://upload.wikimedia.org/wikipedia/fr/thumb/7/75/T%C3%A9va_logo_2020.svg/512px-T%C3%A9va_logo_2020.svg.png',
     'hyb_tnt_ab1': 'https://upload.wikimedia.org/wikipedia/fr/9/9a/Logo_AB1_2021.png',
     
-    // INFO
+    // Info
     'hyb_info_1': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/bfm_tv.png',
-    'hyb_info_1b': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/bfm_business.png',
     'hyb_info_2': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/cnews.png',
     'hyb_info_3': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/lci.png',
     'hyb_info_4': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/france_info.png',
     'hyb_info_5': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/France_24_logo_2013.svg/512px-France_24_logo_2013.svg.png',
     'hyb_info_meteo': 'https://upload.wikimedia.org/wikipedia/fr/thumb/7/70/La_Cha%C3%AEne_M%C3%A9t%C3%A9o_logo.svg/512px-La_Cha%C3%AEne_M%C3%A9t%C3%A9o_logo.svg.png',
     
-    // CANAL+ BOUQUET
+    // Bouquet Canal
     'hyb_canal_cplus': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/canal_plus.png',
     'hyb_canal_cinema': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/canal_plus_cinema.png',
     'hyb_canal_grandecran': 'https://upload.wikimedia.org/wikipedia/fr/d/da/C%2B_Grand_%C3%89cran.png',
@@ -67,7 +65,7 @@ const LOGOS = {
     'hyb_canal_family': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/canal_plus_family.png',
     'hyb_canal_decale': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/canal_plus_decale.png',
     
-    // SPORTS
+    // Sports
     'hyb_sport_ligue1plus': 'https://upload.wikimedia.org/wikipedia/fr/thumb/f/fa/Logo_Ligue_1%2B_%28Ic%C3%B4ne%29.svg/512px-Logo_Ligue_1%2B_%28Ic%C3%B4ne%29.svg.png',
     'hyb_canal_sport': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/canal_plus_sport.png',
     'hyb_canal_foot': 'https://upload.wikimedia.org/wikipedia/commons/e/eb/Canal%2BFoot.png',
@@ -80,7 +78,7 @@ const LOGOS = {
     'hyb_sport_lequipe': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/l_equipe.png',
     'dazn_generic': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/06/DAZN_Logo_Master.svg/512px-DAZN_Logo_Master.svg.png',
 
-    // CINE
+    // Cinéma
     'hyb_cine_premier': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/cine_plus_premier.png',
     'hyb_cine_frisson': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/cine_plus_frisson.png',
     'hyb_cine_emotion': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/cine_plus_emotion.png',
@@ -88,13 +86,13 @@ const LOGOS = {
     'hyb_cine_club': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/cine_plus_club.png',
     'hyb_cine_classic': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/cine_plus_classic.png',
 
-    // DECOUVERTE & DOCS
+    // Découverte
     'hyb_dec_natgeo': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/National_Geographic_Channel_logo.svg/512px-National_Geographic_Channel_logo.svg.png',
     'hyb_dec_discovery': 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/27/Discovery_Channel_-_Logo_2019.svg/512px-Discovery_Channel_-_Logo_2019.svg.png',
     'hyb_dec_planete': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/planete_plus.png',
     'hyb_dec_histoire': 'https://raw.githubusercontent.com/paomedia/chaines-tv-francaises/master/tv/histoire.png',
     
-    // JEUNESSE
+    // Jeunesse
     'hyb_jeu_cartoon': 'https://upload.wikimedia.org/wikipedia/commons/f/fe/CARTOON_NETWORK_logo.png',
     'hyb_jeu_disney': 'https://upload.wikimedia.org/wikipedia/commons/7/78/Disney_Channel_Germany_Logo_2014.png',
     'hyb_jeu_nick': 'https://upload.wikimedia.org/wikipedia/commons/f/fa/Nickelodeon_logo_2009.png',
@@ -104,15 +102,9 @@ const LOGOS = {
     'hyb_jeu_mangas': 'https://upload.wikimedia.org/wikipedia/fr/thumb/9/91/Mangas_logo.svg/512px-Mangas_logo.svg.png',
     'hyb_jeu_gameone': 'https://upload.wikimedia.org/wikipedia/fr/thumb/a/a0/Game_One_%281998%29_Logo.svg/512px-Game_One_%281998%29_Logo.svg.png',
 
-    // MUSIQUE
+    // Musique
     'hyb_mus_mtv': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/MTV-2021.svg/512px-MTV-2021.svg.png'
 };
-
-// Formateur de logo carré parfait (zéro zoom Stremio)
-function makePerfectSquare(url) {
-    if (!url || url === DEFAULT_POSTER) return DEFAULT_POSTER;
-    return `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=400&h=400&fit=contain&output=png`;
-}
 
 function parseConfig(encodedConfig) {
     try {
@@ -124,7 +116,7 @@ function parseConfig(encodedConfig) {
     }
 }
 
-// === MOTEUR D'EXTRACTION ADN ===
+// === MOTEUR D'EXTRACTION ADN (Robuste & Non-destructif) ===
 function getChannelData(rawName) {
     if (!rawName) return null;
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -141,7 +133,7 @@ function getChannelData(rawName) {
 
     if (BLACKLIST.some(b => c.includes(b))) return null;
 
-    // --- 1. TNT ET GENERALISTES ---
+    // --- 1. TNT ---
     if (c.startsWith('TF1')) {
         if (c.includes('SERIE') || c.includes('FILM')) return { id: 'hyb_tnt_20', name: 'TF1 Séries Films', categories: ['tnt', 'cinema'], index: 20 };
         return { id: 'hyb_tnt_1', name: 'TF1', categories: ['tnt'], index: 1 };
@@ -403,16 +395,15 @@ async function updateEPG() {
     } finally { isUpdatingEPG = false; }
 }
 
-// Fonction universelle pour parser un lien Stremio Manifest OU un lien direct .m3u / .m3u8
+// === LECTURE ET CACHE DU M3U DIRECT ===
 async function fetchCatalogFromSource(sourceInput) {
     let metas = [];
     let cleanInput = sourceInput.trim();
     if (!cleanInput) return metas;
 
-    // Cas 1 : C'est une playlist M3U / M3U8 directe !
     if (cleanInput.endsWith('.m3u') || cleanInput.endsWith('.m3u8') || cleanInput.includes('get.php') || cleanInput.includes('/live/')) {
         try {
-            const res = await axios.get(cleanInput, { timeout: 8000 });
+            const res = await axios.get(cleanInput, { timeout: 10000 });
             const lines = res.data.split('\n');
             let currentLogo = DEFAULT_POSTER;
             let currentName = '';
@@ -425,10 +416,9 @@ async function fetchCatalogFromSource(sourceInput) {
                     let parts = line.split(',');
                     if (parts.length > 1) currentName = parts[parts.length - 1].trim();
                 } else if (line && !line.startsWith('#')) {
-                    // C'est l'URL du flux direct
                     if (currentName) {
                         let streamUrl = line;
-                        let metaId = Buffer.from(streamUrl).toString('base64'); // ID unique basé sur l'URL
+                        let metaId = Buffer.from(streamUrl).toString('base64');
                         metas.push({
                             id: metaId,
                             name: currentName,
@@ -442,17 +432,15 @@ async function fetchCatalogFromSource(sourceInput) {
                 }
             }
         } catch (e) {
-            console.error("Erreur de lecture M3U :", e.message);
+            console.error("Erreur lecture M3U :", e.message);
         }
         return metas;
     }
 
-    // Cas 2 : C'est un Add-on Stremio classique (manifest.json)
+    // Sinon, Add-on Stremio standard (manifest.json)
     try {
         let cleanUrl = cleanInput;
-        if (!cleanUrl.endsWith('manifest.json')) {
-            cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
-        }
+        if (!cleanUrl.endsWith('manifest.json')) cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
         const base = cleanUrl.replace(/\/manifest\.json$/, '');
 
         const manifestRes = await axios.get(cleanUrl, { timeout: 4000 });
@@ -475,9 +463,7 @@ async function fetchCatalogFromSource(sourceInput) {
 
         const results = await Promise.all(catalogPromises);
         results.flat().forEach(m => {
-            if (m && m.id) {
-                metas.push({ ...m, _providerBase: base, _isDirectStream: false });
-            }
+            if (m && m.id) metas.push({ ...m, _providerBase: base, _isDirectStream: false });
         });
     } catch (err) {}
 
@@ -502,12 +488,11 @@ async function getChannelsForSources(sourcesList) {
 
             const id = channelInfo.id;
             
-            // LOGOS VIP + makePerfectSquare pour un rendu carré irréprochable
+            // LOGOS : Priorité au dictionnaire VIP, sinon le logo d'origine de la source
             let forceLogo = LOGOS[id];
             if (id.startsWith('hyb_sport_dazn')) forceLogo = LOGOS['dazn_generic']; 
 
-            let rawPoster = forceLogo || meta.poster || DEFAULT_POSTER;
-            let finalPoster = makePerfectSquare(rawPoster);
+            let finalPoster = forceLogo || meta.poster || DEFAULT_POSTER;
 
             if (!tempChannelsMap[id]) {
                 tempChannelsMap[id] = { 
@@ -519,11 +504,10 @@ async function getChannelsForSources(sourcesList) {
                     sources: [], 
                     poster: finalPoster 
                 };
-            } else if (!forceLogo && meta.poster && tempChannelsMap[id].poster === makePerfectSquare(DEFAULT_POSTER)) {
-                tempChannelsMap[id].poster = makePerfectSquare(meta.poster); 
+            } else if (!forceLogo && meta.poster && tempChannelsMap[id].poster === DEFAULT_POSTER) {
+                tempChannelsMap[id].poster = meta.poster; 
             }
             
-            // Gestion intelligente : Source M3U directe ou Source Add-on Stremio
             if (meta._isDirectStream) {
                 const sourceExists = tempChannelsMap[id].sources.find(s => s.directUrl === meta._directUrl);
                 if (!sourceExists) {
@@ -587,12 +571,11 @@ app.get('/', async (req, res) => {
         <div class="container">
             <h1>📺 HybridTV</h1>
             <div class="intro-desc">
-                <b>HybridTV</b> centralise vos sources (Add-ons Stremio <b>manifest.json</b> ou liens de playlists <b>.m3u/.m3u8</b>) en une bibliothèque francophone propre, triée et dotée d'un guide TV.
+                <b>HybridTV</b> centralise vos sources (Add-ons Stremio ou liens de playlists <b>.m3u/.m3u8</b>) en une bibliothèque francophone propre, triée et dotée d'un guide TV.
             </div>
             
             <div class="section">
-                <label style="font-size: 14px; color: #ccc; font-weight: bold;">Sources de flux (Add-on ou Lien .m3u) :</label><br>
-                <span style="font-size: 11px; color: #777; display: block; margin-bottom: 12px;">L'ordre de priorité s'effectue du haut vers le bas.</span>
+                <label style="font-size: 14px; color: #ccc; font-weight: bold;">Sources de flux (Add-on manifest.json ou .m3u) :</label><br>
                 <div id="sourcesContainer"></div>
                 <button type="button" onclick="addSourceField()" class="btn btn-small">+ Ajouter une source</button>
             </div>
@@ -711,7 +694,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '1.9.0',
+        version: '2.0.0',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -826,17 +809,17 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     
     try {
         let streamPromises = channel.sources.map(async (source) => {
-            // Cas A : C'est une source M3U directe (On renvoie directement l'URL du flux)
+            // Si c'est un flux direct issu d'un fichier .m3u
             if (source.type === 'm3u') {
                 return [{
                     url: source.directUrl,
-                    name: `▶ Flux direct (M3U)`,
+                    name: `▶ Flux direct M3U`,
                     title: `Haute Qualité (1080p)`,
                     _score: 1000
                 }];
             }
 
-            // Cas B : C'est un Add-on Stremio classique
+            // Si c'est un Add-on Stremio
             try {
                 const streamRes = await axios.get(`${source.providerBase}/stream/tv/${source.metaId}.json`, {
                     headers: { 'X-Forwarded-For': clientIp }, timeout: 4000 
@@ -847,7 +830,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         let score = 0;
                         let up = (s.title || '').toUpperCase() + ' ' + (s.name || '').toUpperCase();
                         
-                        // Scoring souple (1080p > 720p > 4K)
                         if (up.includes('FHD') || up.includes('1080')) { qual = "Haute Qualité (1080p)"; score += 800; } 
                         else if (up.includes('HD') || up.includes('720')) { qual = "Haute Qualité (720p)"; score += 600; } 
                         else if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) { qual = "Ultra Haute Qualité (4K)"; score += 400; } 
