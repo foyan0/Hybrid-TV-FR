@@ -13,53 +13,52 @@ let epgData = {};
 let channelsCache = {}; 
 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
-const EVENT_POSTER = 'https://cdn-icons-png.flaticon.com/512/861/861512.png'; // Icône générique propre pour les matchs
+const EVENT_POSTER = 'https://cdn-icons-png.flaticon.com/512/861/861512.png';
 
 const BLACKLIST = [
     'ALACARTE', 'DISNEYPLUS', 'NETFLIX', 'PRIMEVIDEO', 'APPLETV',
     'TEST', 'MIRROR', 'BACKUPCHANNEL', 'BOXOFFICE1', 'BOXOFFICE2', 'CANALPLAY', 'AFRIQUE', 'DEUTSCH', 'GERMAN'
 ];
 
-// Logos VIP
+// Logos VIP isolés et stables
 const LOGOS = {
-    'hyb_tnt_1': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cc/TF1_2013_logo.svg/512px-TF1_2013_logo.svg.png',
-    'hyb_tnt_2': 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/France_2_logo_2018.svg/512px-France_2_logo_2018.svg.png',
-    'hyb_tnt_3': 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d1/France_3_logo_2018.svg/512px-France_3_logo_2018.svg.png',
-    'hyb_tnt_4': 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7b/France_4_logo_2018.svg/512px-France_4_logo_2018.svg.png',
-    'hyb_tnt_5': 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/67/France_5_logo_2018.svg/512px-France_5_logo_2018.svg.png',
-    'hyb_tnt_6': 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8c/M6_logo_2020.svg/512px-M6_logo_2020.svg.png',
-    'hyb_tnt_7': 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Arte_logo_2017.svg/512px-Arte_logo_2017.svg.png',
+    'hyb_tnt_1': 'https://upload.wikimedia.org/wikipedia/commons/c/cc/TF1_2013_logo.svg',
+    'hyb_tnt_2': 'https://upload.wikimedia.org/wikipedia/commons/9/91/France_2_logo_2018.svg',
+    'hyb_tnt_3': 'https://upload.wikimedia.org/wikipedia/commons/d/d1/France_3_logo_2018.svg',
+    'hyb_tnt_4': 'https://upload.wikimedia.org/wikipedia/commons/7/7b/France_4_logo_2018.svg',
+    'hyb_tnt_5': 'https://upload.wikimedia.org/wikipedia/commons/6/67/France_5_logo_2018.svg',
+    'hyb_tnt_6': 'https://upload.wikimedia.org/wikipedia/commons/8/8c/M6_logo_2020.svg',
+    'hyb_tnt_7': 'https://upload.wikimedia.org/wikipedia/commons/4/4b/Arte_logo_2017.svg',
     'hyb_tnt_8': 'https://upload.wikimedia.org/wikipedia/commons/0/07/C8_t%C3%A9l%C3%A9.png',
-    'hyb_tnt_9': 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/62/W9-Logo.svg/512px-W9-Logo.svg.png',
-    'hyb_tnt_10': 'https://upload.wikimedia.org/wikipedia/fr/thumb/a/a8/TMC_logo_2016.svg/512px-TMC_logo_2016.svg.png',
-    'hyb_tnt_11': 'https://upload.wikimedia.org/wikipedia/fr/thumb/8/83/TFX_logo_2018.svg/512px-TFX_logo_2018.svg.png',
+    'hyb_tnt_9': 'https://upload.wikimedia.org/wikipedia/commons/6/62/W9-Logo.svg',
+    'hyb_tnt_10': 'https://upload.wikimedia.org/wikipedia/fr/a/a8/TMC_logo_2016.svg',
+    'hyb_tnt_11': 'https://upload.wikimedia.org/wikipedia/fr/8/83/TFX_logo_2018.svg',
     'hyb_tnt_12': 'https://upload.wikimedia.org/wikipedia/fr/4/44/NRJ12-Logo.png',
-    'hyb_tnt_13': 'https://upload.wikimedia.org/wikipedia/fr/thumb/b/b3/LCP_Assemblée_Nationale_logo_2018.svg/512px-LCP_Assemblée_Nationale_logo_2018.svg.png',
-    'hyb_tnt_17': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c0/Logo_CStar_2016.svg/512px-Logo_CStar_2016.svg.png',
-    'hyb_jeu_gulli': 'https://focus.telerama.fr/500x500/0000/00/01/clear-43.png',
-    'hyb_tnt_20': 'https://upload.wikimedia.org/wikipedia/fr/thumb/4/4b/TF1_Séries_Films_logo_2020.svg/512px-TF1_Séries_Films_logo_2020.svg.png',
+    'hyb_tnt_13': 'https://upload.wikimedia.org/wikipedia/fr/b/b3/LCP_Assemblée_Nationale_logo_2018.svg',
+    'hyb_tnt_17': 'https://upload.wikimedia.org/wikipedia/commons/c/c0/Logo_CStar_2016.svg',
+    'hyb_tnt_20': 'https://upload.wikimedia.org/wikipedia/fr/4/4b/TF1_Séries_Films_logo_2020.svg',
     'hyb_tnt_22': 'https://upload.wikimedia.org/wikipedia/fr/a/a9/6ter_2012.png',
-    'hyb_tnt_23': 'https://upload.wikimedia.org/wikipedia/fr/thumb/8/8a/RMC_Story_logo_2018.svg/512px-RMC_Story_logo_2018.svg.png',
-    'hyb_tnt_24': 'https://upload.wikimedia.org/wikipedia/fr/thumb/c/c6/RMC_Découverte_logo_2018.svg/512px-RMC_Découverte_logo_2018.svg.png',
+    'hyb_tnt_23': 'https://upload.wikimedia.org/wikipedia/fr/8/8a/RMC_Story_logo_2018.svg',
+    'hyb_tnt_24': 'https://upload.wikimedia.org/wikipedia/fr/c/c6/RMC_Découverte_logo_2018.svg',
     'hyb_tnt_25': 'https://logowik.com/content/uploads/images/cherie-255806.logowik.com.webp',
     'hyb_tnt_rtl9': 'https://www.rtl9.com/upload/media/logo-rtl9-rvb-64784327dd675.png',
     'hyb_tnt_13rue': 'https://www.lyngsat.com/logo/tv/num/13eme_rue_fr.png',
     'hyb_tnt_teva': 'https://focus.telerama.fr/500x500/0000/00/01/clear-197.png',
     'hyb_tnt_ab1': 'https://upload.wikimedia.org/wikipedia/fr/9/9a/Logo_AB1_2021.png',
-    
+
     'hyb_info_1': 'https://upload.wikimedia.org/wikipedia/commons/4/40/BFM_TV_logo.png',
-    'hyb_info_biz': 'https://upload.wikimedia.org/wikipedia/fr/thumb/c/ca/BFM_Business_logo_2019.svg/512px-BFM_Business_logo_2019.svg.png',
-    'hyb_info_2': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/CNews_logo_2017.svg/512px-CNews_logo_2017.svg.png',
+    'hyb_info_biz': 'https://upload.wikimedia.org/wikipedia/fr/c/ca/BFM_Business_logo_2019.svg',
+    'hyb_info_2': 'https://upload.wikimedia.org/wikipedia/commons/5/5a/CNews_logo_2017.svg',
     'hyb_info_3': 'https://upload.wikimedia.org/wikipedia/fr/b/b4/LCI_logo_%282016%29.png',
-    'hyb_info_4': 'https://upload.wikimedia.org/wikipedia/fr/thumb/c/c2/Franceinfo_logo_2016.svg/512px-Franceinfo_logo_2016.svg.png',
+    'hyb_info_4': 'https://upload.wikimedia.org/wikipedia/fr/c/c2/Franceinfo_logo_2016.svg',
     'hyb_info_5': 'https://i.postimg.cc/TPwp9d9B/640px-France24.png',
     'hyb_info_meteo': 'https://focus.telerama.fr/500x500/0000/00/01/clear-158.png',
-    'hyb_info_vosges': 'https://focus.telerama.fr/500x500/0000/00/01/clear-1776.png',
+    'hyb_info_vosges': 'https://upload.wikimedia.org/wikipedia/fr/f/f0/Vosges_Télé_logo_2020.svg',
     'hyb_info_tlm': 'https://upload.wikimedia.org/wikipedia/fr/0/0a/TLM_logo.png',
-    'hyb_info_lille': 'https://upload.wikimedia.org/wikipedia/fr/thumb/1/15/BFM_Grand_Lille_logo_2022.svg/512px-BFM_Grand_Lille_logo_2022.svg.png',
-    'hyb_info_lyon': 'https://upload.wikimedia.org/wikipedia/fr/thumb/f/f7/BFM_Lyon_logo_2022.svg/512px-BFM_Lyon_logo_2022.svg.png',
-    'hyb_info_paris': 'https://upload.wikimedia.org/wikipedia/fr/thumb/8/8c/BFM_Paris_Île-de-France_logo_2022.svg/512px-BFM_Paris_Île-de-France_logo_2022.svg.png',
-    
+    'hyb_info_lille': 'https://upload.wikimedia.org/wikipedia/fr/1/15/BFM_Grand_Lille_logo_2022.svg',
+    'hyb_info_lyon': 'https://upload.wikimedia.org/wikipedia/fr/f/f7/BFM_Lyon_logo_2022.svg',
+    'hyb_info_paris': 'https://upload.wikimedia.org/wikipedia/fr/8/8c/BFM_Paris_Île-de-France_logo_2022.svg',
+
     'hyb_canal_cplus': 'https://upload.wikimedia.org/wikipedia/commons/3/39/Canal%2B_Film_HD.png',
     'hyb_canal_cinema': 'https://upload.wikimedia.org/wikipedia/fr/e/eb/C%2B_Cin%C3%A9ma%28s%29.png',
     'hyb_canal_grandecran': 'https://upload.wikimedia.org/wikipedia/fr/d/da/C%2B_Grand_%C3%89cran.png',
@@ -70,20 +69,17 @@ const LOGOS = {
     'hyb_cine_comedie': 'https://upload.wikimedia.org/wikipedia/commons/3/3e/Com%C3%A9die%2B_logo_%C3%A0_l%27antenne.png',
     'hyb_canal_family': 'http://schedulesdirect-api20141201-logos.s3.amazonaws.com/stationLogos/s87283_dark_360w_270h.png',
     'hyb_canal_decale': 'https://www.staderochelais.com/sites/stade-rochelais/files/logos/canal-decale-1622622027.png',
-    'hyb_jeu_canalj': 'https://upload.wikimedia.org/wikipedia/fr/6/69/Logo_canal_J.png',
-    
+
     'hyb_sport_ligue1plus': 'https://focus.telerama.fr/500x500/0000/00/01/clear-1845.png',
     'hyb_canal_sport': 'https://upload.wikimedia.org/wikipedia/commons/1/1a/Canal%2B_Sport_2015.png',
     'hyb_canal_foot': 'https://upload.wikimedia.org/wikipedia/commons/e/eb/Canal%2BFoot.png',
     'hyb_canal_sport360': 'https://upload.wikimedia.org/wikipedia/commons/6/64/Canal%2BSport_360.png',
-    'hyb_sport_bein1': 'https://c0.klipartz.com/pngpicture/320/259/gratis-png-bein-sports-1-logo-bein-taquilla-bein-media-group-canal-de-television.png',
-    'hyb_sport_bein2': 'https://upload.wikimedia.org/wikipedia/commons/c/c9/Logo_bein_sports_2.png',
-    'hyb_sport_bein3': 'https://upload.wikimedia.org/wikipedia/commons/c/c4/Logo_bein_sports_3.png',
-    'hyb_sport_rmc1': 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/Logo_RMC_Sport_1_2018.svg/512px-Logo_RMC_Sport_1_2018.svg.png',
-    'hyb_sport_euro1': 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d0/Eurosport_1_Logo_2015.svg/512px-Eurosport_1_Logo_2015.svg.png',
+    'hyb_sport_bein_1': 'https://c0.klipartz.com/pngpicture/320/259/gratis-png-bein-sports-1-logo-bein-taquilla-bein-media-group-canal-de-television.png',
+    'hyb_sport_rmc_1': 'https://upload.wikimedia.org/wikipedia/commons/3/3b/Logo_RMC_Sport_1_2018.svg',
+    'hyb_sport_euro_1': 'https://upload.wikimedia.org/wikipedia/commons/d/d0/Eurosport_1_Logo_2015.svg',
     'hyb_sport_lequipe': 'https://focus.telerama.fr/500x500/0000/00/01/clear-46.png',
-    'dazn_generic': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/06/DAZN_Logo_Master.svg/512px-DAZN_Logo_Master.svg.png',
-    'hyb_esport_lfl': 'https://upload.wikimedia.org/wikipedia/fr/thumb/3/3f/Ligue_Fran%C3%A7aise_de_League_of_Legends_logo.svg/512px-Ligue_Fran%C3%A7aise_de_League_of_Legends_logo.svg.png',
+    'dazn_generic': 'https://upload.wikimedia.org/wikipedia/commons/0/06/DAZN_Logo_Master.svg',
+    'hyb_esport_lfl': 'https://upload.wikimedia.org/wikipedia/fr/3/3f/Ligue_Fran%C3%A7aise_de_League_of_Legends_logo.svg',
 
     'hyb_cine_premier': 'https://upload.wikimedia.org/wikipedia/commons/7/73/Canalplus_fr_cine_plus_premier_hd.png',
     'hyb_cine_frisson': 'https://focus.telerama.fr/500x500/0000/00/01/clear-147.png',
@@ -92,27 +88,29 @@ const LOGOS = {
     'hyb_cine_club': 'https://upload.wikimedia.org/wikipedia/fr/7/77/Cin%C3%A9Cin%C3%A9ma_Club_logo_2008.png',
     'hyb_cine_classic': 'https://upload.wikimedia.org/wikipedia/fr/f/f3/Cin%C3%A9_Cin%C3%A9ma_Classic.png',
     'hyb_cine_action': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRPdxSas0cWbgadzbAuhDjqLEd_Y4iMG0odsUoZy8ch1NJYK3ZVez_yrHCoAA&s',
-    'hyb_cine_paramount': 'https://upload.wikimedia.org/wikipedia/fr/thumb/5/59/Paramount_Channel.svg/512px-Paramount_Channel.svg.png',
+    'hyb_cine_paramount': 'https://upload.wikimedia.org/wikipedia/fr/5/59/Paramount_Channel.svg.png',
 
     'hyb_dec_crime': 'https://www.lyngsat.com/logo/tv/cc/crime_district_fr.png',
     'hyb_dec_natgeo': 'https://focus.telerama.fr/500x500/0000/00/01/clear-243.png',
-    'hyb_dec_discovery': 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/27/Discovery_Channel_-_Logo_2019.svg/512px-Discovery_Channel_-_Logo_2019.svg.png',
+    'hyb_dec_discovery': 'https://upload.wikimedia.org/wikipedia/commons/2/27/Discovery_Channel_-_Logo_2019.svg',
     'hyb_dec_planete': 'https://focus.telerama.fr/500x500/0000/00/01/clear-147.png',
-    'hyb_dec_histoire': 'https://upload.wikimedia.org/wikipedia/fr/thumb/5/5c/Histoire_TV_logo_2019.svg/512px-Histoire_TV_logo_2019.svg.png',
+    'hyb_dec_histoire': 'https://upload.wikimedia.org/wikipedia/fr/5/5c/Histoire_TV_logo_2019.svg',
     
-    'hyb_jeu_cartoon': 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/fe/CARTOON_NETWORK_logo.png/512px-CARTOON_NETWORK_logo.png',
+    'hyb_jeu_cartoon': 'https://upload.wikimedia.org/wikipedia/commons/f/fe/CARTOON_NETWORK_logo.png',
     'hyb_jeu_disney': 'https://upload.wikimedia.org/wikipedia/commons/7/78/Disney_Channel_Germany_Logo_2014.png',
+    'hyb_jeu_gulli': 'https://focus.telerama.fr/500x500/0000/00/01/clear-43.png',
     'hyb_jeu_nick': 'https://upload.wikimedia.org/wikipedia/commons/f/fa/Nickelodeon_logo_2009.png',
-    'hyb_jeu_gameone': 'https://upload.wikimedia.org/wikipedia/fr/thumb/a/a0/Game_One_%281998%29_Logo.svg/512px-Game_One_%281998%29_Logo.svg.png',
+    'hyb_jeu_canalj': 'https://upload.wikimedia.org/wikipedia/fr/6/69/Logo_canal_J.png',
+    'hyb_jeu_gameone': 'https://upload.wikimedia.org/wikipedia/fr/a/a0/Game_One_%281998%29_Logo.svg',
     'hyb_jeu_boom': 'https://focus.telerama.fr/500x500/0000/00/01/clear-321.png',
-    'hyb_jeu_boing': 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Boing_logo_2016_%28France%29.svg/512px-Boing_logo_2016_%28France%29.svg.png',
+    'hyb_jeu_boing': 'https://upload.wikimedia.org/wikipedia/commons/9/91/Boing_logo_2016_%28France%29.svg',
     'hyb_jeu_disneyjr': 'https://upload.wikimedia.org/wikipedia/fr/3/36/Disney_Junior_2011.png',
     'hyb_jeu_tiji': 'https://focus.telerama.fr/500x500/0000/00/01/clear-229.png',
     'hyb_jeu_piwi': 'https://focus.telerama.fr/500x500/0000/00/01/clear-344.png',
     'hyb_jeu_mangas': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQrBITj8D4ehy326isxvvHDFUivw37wiREtViWbndOOtqIoq8ykrTbVbQQADg&s',
 
-    'hyb_mus_mtv': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/MTV-2021.svg/512px-MTV-2021.svg.png',
-    'hyb_mus_mcm': 'https://upload.wikimedia.org/wikipedia/fr/thumb/a/ab/MCM_logo_2017.svg/512px-MCM_logo_2017.svg.png'
+    'hyb_mus_mtv': 'https://upload.wikimedia.org/wikipedia/commons/0/0d/MTV-2021.svg',
+    'hyb_mus_mcm': 'https://upload.wikimedia.org/wikipedia/fr/a/ab/MCM_logo_2017.svg'
 };
 
 function makePerfectSquare(url) {
@@ -130,138 +128,121 @@ function parseConfig(encodedConfig) {
     }
 }
 
-// === L'INTELLIGENCE ARTIFICIELLE DE TRI (MATCHS & CANAUX) ===
+// === MOTEUR INTELLIGENT DE TRI (L'ORDRE DES VÉRIFICATIONS EST VITAL) ===
 function getChannelData(rawName) {
     if (!rawName) return null;
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-    // --- 0. LA DÉTECTION MAGIQUE DES MATCHS ET ÉVÉNEMENTS ---
-    // Si un humain a tapé "VS" ou "CONTRE", on crée un canal temporaire pour regrouper les sources !
-    if (/\b(?:VS\.?|CONTRE)\b/i.test(rawName)) {
-        let parts = rawName.split(/\b(?:VS\.?|CONTRE)\b/i);
-        // On nettoie tout ce qui est avant le nom de l'équipe (ex: FR | LIGUE 1 : PSG -> PSG)
-        let team1 = parts[0].split(/[|\]:-]/).pop().replace(/^(?:\s*FR\s*|\s*LIVE\s*|\s*DIRECT\s*|\s*⚽\s*)/i, '').trim();
-        let team2 = parts[1].split(/[|\[:-]/)[0].trim(); // On retire l'heure (ex: OM - 20H45 -> OM)
-        
-        if (team1 && team2 && team1.length < 25 && team2.length < 25) {
-            let eventName = '⚽ ' + team1 + ' VS ' + team2;
-            let syncId = 'hyb_ev_' + toSyncId(team1 + team2);
-            return { id: syncId, name: eventName, categories: ['events'], index: 5, customPoster: EVENT_POSTER };
-        }
-    }
-    
-    // Regroupement des flux Multiplex éparpillés
-    if (n.includes('MULTIPLEX') && !n.includes('CANAL')) {
-        return { id: 'hyb_ev_multi', name: '⚽ MULTIPLEX', categories: ['events'], index: 1, customPoster: EVENT_POSTER };
+    // --- 1. LE DÉTECTEUR INTELLIGENT D'ÉVÉNEMENTS (MATCHS EN DIRECT) ---
+    let isEvent = false;
+    let eventName = "";
+
+    // Reconnaissance d'un nom de match (ex: DAZN 1 : PSG VS OM ou FR | LIGUE 1 : OL - MONACO)
+    if (/\b(?:VS\.?|CONTRE)\b/i.test(n)) {
+        isEvent = true;
+        eventName = n.replace(/^(?:FR|BE|CH|VIP|LIGUE 1|DAZN|BEIN|RMC|CANAL\+?|MULTI|MULTIPLEX)\s*[:|-]*\s*/gi, '').trim();
+    } else if (n.match(/^(LIGUE 1|DAZN|BEIN|RMC|UCL|LDC|EURO|PREMIER LEAGUE)\s*[:|-]\s*(.+? - .+)/i)) {
+        isEvent = true;
+        eventName = n.match(/^(?:LIGUE 1|DAZN|BEIN|RMC|UCL|LDC|EURO|PREMIER LEAGUE)\s*[:|-]\s*(.+)/i)[1].trim();
+    } else if (n.includes('MULTIPLEX') && !n.includes('CANAL')) {
+        return { id: 'hyb_ev_multi', name: '🔴 MULTIPLEX EN DIRECT', categories: ['events', 'sports'], index: 1, customPoster: EVENT_POSTER };
     }
 
+    if (isEvent) {
+        // Nettoyage de l'heure (ex: 20H45) et des tags résiduels
+        eventName = eventName.replace(/\d{1,2}[H:]\d{2}/gi, '').replace(/\b(?:FHD|HD|SD|4K|1080P|720P|LIVE|DIRECT|RAW|ACCESS)\b/gi, '').trim();
+        eventName = eventName.replace(/[-|:]$/, '').trim();
+        if (eventName.length > 5 && eventName.length < 40) {
+            return { id: 'hyb_ev_' + toSyncId(eventName), name: '🔴 ' + eventName, categories: ['events', 'sports'], index: 5, customPoster: EVENT_POSTER };
+        }
+    }
+
+    // --- NETTOYAGE CLASSIQUE POUR LES CHAÎNES FIXES ---
     n = n.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s*\[[^\]]*\]\s*/g, ' ');
-    n = n.replace(/^(?:FR|BE|CH|CA|VIP|VAVOO)\s*[:|/-]+\s*/i, '');
+    n = n.replace(/^(?:FR|BE|CH|CA|VIP|VAVOO|FRANCE)\s*[:|/-]+\s*/i, '');
     n = n.replace(/DURING EVENT ONLY/g, '').replace(/EVENT ONLY/g, '');
     
     const tags = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'DIRECT', 'RAW', 'ACCESS'];
     tags.forEach(tag => { n = n.replace(new RegExp(`\\b${tag}\\b`, 'gi'), ''); });
 
-    // --- 0.1 ISOLATION ESPORT (LFL) ---
+    // Isolation eSport
     if (n.includes('LFL') || n.includes('LEAGUE OF LEGENDS') || n.includes('LOL LFL')) {
         return { id: 'hyb_esport_lfl', name: 'LFL (eSport)', categories: ['autres'], index: 10 };
     }
 
-    // --- 0.2 LIGUE 1+ ET SES DÉCLINAISONS (MOTEUR SÉCURISÉ) ---
-    if (n.includes('LIGUE 1') || n.includes('LIGUE1') || n.match(/\bL1\b/)) {
-        if (n.includes('DAZN') && !n.includes('+')) return null; // Laisse DAZN gérer DAZN
-        
-        let m = n.match(/(?:LIGUE 1|LIGUE1|L1)\+?\s*(\d+)/i);
-        let num = m ? m[1] : '';
-        if (!num || num === '1') {
-            return { id: 'hyb_sport_ligue1plus', name: 'Ligue 1+', categories: ['sports'], index: 1 };
-        } else {
-            return { id: 'hyb_sport_ligue1plus_' + num, name: 'Ligue 1+ ' + num, categories: ['sports'], index: 1 + parseInt(num) };
-        }
-    }
-
+    // C ne contient plus que les lettres et chiffres attachés
     let c = n.replace(/[^A-Z0-9+]/g, '');
     if (!c || c.length < 2) return null;
-
     if (BLACKLIST.some(b => c.includes(b))) return null;
 
-    // --- 1. TNT ---
-    if (c.startsWith('TF1')) {
-        if (c.includes('SERIE') || c.includes('FILM')) return { id: 'hyb_tnt_20', name: 'TF1 Séries Films', categories: ['tnt', 'cinema'], index: 20 };
-        return { id: 'hyb_tnt_1', name: 'TF1', categories: ['tnt'], index: 1 };
+    // --- LIGUE 1+ (SÉCURITÉ MAXIMALE) ---
+    if (c.includes('LIGUE1+') || c.includes('LIGUE1PLUS') || (c.includes('LIGUE1') && !c.includes('DAZN'))) {
+        let m = c.match(/LIGUE1\+?PLUS?(\d+)/) || c.match(/LIGUE1\+?(\d*)/);
+        let num = (m && m[1]) ? m[1] : '';
+        if (!num || num === '1') return { id: 'hyb_sport_ligue1plus', name: 'Ligue 1+', categories: ['sports'], index: 1 };
+        return { id: 'hyb_sport_ligue1plus_' + num, name: 'Ligue 1+ ' + num, categories: ['sports'], index: 1 + parseInt(num) };
     }
-    if (c.startsWith('FRANCE2') || c === 'FR2' || c === 'FRANCETV2') return { id: 'hyb_tnt_2', name: 'France 2', categories: ['tnt'], index: 2 };
-    if (c.startsWith('FRANCE3') || c === 'FR3' || c === 'FRANCETV3') return { id: 'hyb_tnt_3', name: 'France 3', categories: ['tnt'], index: 3 };
-    if (c.startsWith('FRANCE4') || c === 'FR4' || c === 'FRANCETV4') return { id: 'hyb_tnt_4', name: 'France 4', categories: ['tnt'], index: 4 };
-    if (c.startsWith('FRANCE5') || c === 'FR5' || c === 'FRANCETV5') return { id: 'hyb_tnt_5', name: 'France 5', categories: ['tnt'], index: 5 };
-    if (c.startsWith('M6')) {
-        if (c.includes('MUSIC')) return { id: 'hyb_mus_m6', name: 'M6 Music', categories: ['musique'], index: 1 };
-        return { id: 'hyb_tnt_6', name: 'M6', categories: ['tnt'], index: 6 };
-    }
+
+    // --- INFO PRIORITAIRES (Évite que FRANCE 2 absorbe FRANCE 24) ---
+    if (c.startsWith('FRANCE24')) return { id: 'hyb_info_5', name: 'France 24', categories: ['info'], index: 6 };
+    
+    // --- TNT ---
+    if (c.startsWith('TF1SERIESFILMS') || c.startsWith('TF1SF')) return { id: 'hyb_tnt_20', name: 'TF1 Séries Films', categories: ['tnt', 'cinema'], index: 20 };
+    if (c.startsWith('TF1')) return { id: 'hyb_tnt_1', name: 'TF1', categories: ['tnt'], index: 1 };
+    if (c.startsWith('FRANCE2') || c === 'FR2') return { id: 'hyb_tnt_2', name: 'France 2', categories: ['tnt'], index: 2 };
+    if (c.startsWith('FRANCE3') || c === 'FR3') return { id: 'hyb_tnt_3', name: 'France 3', categories: ['tnt'], index: 3 };
+    if (c.startsWith('FRANCE4') || c === 'FR4') return { id: 'hyb_tnt_4', name: 'France 4', categories: ['tnt'], index: 4 };
+    if (c.startsWith('FRANCE5') || c === 'FR5') return { id: 'hyb_tnt_5', name: 'France 5', categories: ['tnt'], index: 5 };
+    if (c.startsWith('M6MUSIC')) return { id: 'hyb_mus_m6', name: 'M6 Music', categories: ['musique'], index: 1 };
+    if (c.startsWith('M6')) return { id: 'hyb_tnt_6', name: 'M6', categories: ['tnt'], index: 6 };
     if (c.startsWith('ARTE')) return { id: 'hyb_tnt_7', name: 'Arte', categories: ['tnt'], index: 7 };
     if (c.startsWith('C8')) return { id: 'hyb_tnt_8', name: 'C8', categories: ['tnt'], index: 8 };
     if (c.startsWith('W9')) return { id: 'hyb_tnt_9', name: 'W9', categories: ['tnt'], index: 9 };
     if (c.startsWith('TMC')) return { id: 'hyb_tnt_10', name: 'TMC', categories: ['tnt'], index: 10 };
     if (c.startsWith('TFX') || c === 'NT1') return { id: 'hyb_tnt_11', name: 'TFX', categories: ['tnt'], index: 11 };
     if (c.startsWith('NRJ12') || c.startsWith('NRJ')) return { id: 'hyb_tnt_12', name: 'NRJ 12', categories: ['tnt'], index: 12 };
-    if (c.includes('LCP') || c.includes('PUBLICSENAT')) return { id: 'hyb_tnt_13', name: 'LCP / Public Sénat', categories: ['tnt', 'info'], index: 13 };
+    if (c.includes('PUBLICSENAT') || c === 'LCP') return { id: 'hyb_tnt_13', name: 'LCP / Public Sénat', categories: ['tnt', 'info'], index: 13 };
     if (c.includes('CSTAR')) return { id: 'hyb_tnt_17', name: 'CStar', categories: ['tnt', 'musique'], index: 17 };
-    if (c.includes('GULLI')) return { id: 'hyb_jeu_gulli', name: 'Gulli', categories: ['jeunesse', 'tnt'], index: 3 };
     if (c.includes('6TER')) return { id: 'hyb_tnt_22', name: '6ter', categories: ['tnt'], index: 22 };
     if (c.includes('RMCSTORY') || c.includes('NUMERO23')) return { id: 'hyb_tnt_23', name: 'RMC Story', categories: ['tnt', 'decouverte'], index: 23 };
     if (c.includes('RMCDECOUVERTE')) return { id: 'hyb_tnt_24', name: 'RMC Découverte', categories: ['tnt', 'decouverte'], index: 24 };
-    if (c.includes('CHERIE25') || c.includes('CHERIE')) return { id: 'hyb_tnt_25', name: 'Chérie 25', categories: ['tnt'], index: 25 };
+    if (c.includes('CHERIE25') || c === 'CHERIE') return { id: 'hyb_tnt_25', name: 'Chérie 25', categories: ['tnt'], index: 25 };
     if (c.includes('13EMERUE') || c.includes('13RUE')) return { id: 'hyb_tnt_13rue', name: '13ème Rue', categories: ['tnt', 'cinema'], index: 30 };
     if (c.includes('TEVA')) return { id: 'hyb_tnt_teva', name: 'Téva', categories: ['tnt'], index: 31 };
     if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
     if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
 
-    // --- 2. INFORMATION ---
-    if (c === 'BFMTV' || c === 'BFM') return { id: 'hyb_info_1', name: 'BFMTV', categories: ['info'], index: 1 };
-    if (c.includes('BFMBUSINESS')) return { id: 'hyb_info_biz', name: 'BFM Business', categories: ['info'], index: 2 };
-    if (c.includes('CNEWS')) return { id: 'hyb_info_2', name: 'CNews', categories: ['info'], index: 3 };
-    if (c === 'LCI') return { id: 'hyb_info_3', name: 'LCI', categories: ['info'], index: 4 };
-    if (c.includes('FRANCEINFO')) return { id: 'hyb_info_4', name: 'France Info', categories: ['info'], index: 5 };
-    if (c.includes('FRANCE24')) return { id: 'hyb_info_5', name: 'France 24', categories: ['info'], index: 6 };
-    if (c.includes('METEO')) return { id: 'hyb_info_meteo', name: 'La Chaîne Météo', categories: ['info'], index: 7 };
-    if (c.includes('VOSGESTV') || c.includes('VOSGE')) return { id: 'hyb_info_vosges', name: 'Vosges TV', categories: ['info'], index: 8 };
-    if (c === 'TLM' || c.includes('TELELYON')) return { id: 'hyb_info_tlm', name: 'Télé Lyon Métropole (TLM)', categories: ['info'], index: 9 };
-    if (c.includes('BFMLILLE') || c.includes('GRANDLILLE')) return { id: 'hyb_info_lille', name: 'BFM Grand Lille', categories: ['info'], index: 50 };
-    if (c.includes('BFMLYON')) return { id: 'hyb_info_lyon', name: 'BFM Lyon', categories: ['info'], index: 51 };
-    if (c.includes('BFMPARIS')) return { id: 'hyb_info_paris', name: 'BFM Paris Île-de-France', categories: ['info'], index: 52 };
-
-    // --- 3. SPORTS ---
-    if (c.includes('DAZNLIGUE1') || c.includes('DAZNLIVE')) {
+    // --- 3. SPORTS (Suite DAZN / beIN) ---
+    if (c.includes('DAZNLIGUE1') || c.includes('DAZNLIVE') || c.includes('DAZNEVENT')) {
         let m = c.match(/\d+/g); let num = m ? m[m.length-1] : '1';
-        if (parseInt(num) > 8) return null; 
-        return { id: 'hyb_sport_daznlive'+num, name: 'DAZN Live '+num, categories: ['sports'], index: 20 + parseInt(num) };
+        return { id: 'hyb_sport_daznlive_'+num, name: 'DAZN Live '+num, categories: ['sports'], index: 20 + parseInt(num) };
     }
     if (c.includes('DAZN')) {
-        let m = c.match(/\d+/g); let num = m ? m[m.length-1] : '1';
-        return { id: 'hyb_sport_dazn'+num, name: 'DAZN '+num, categories: ['sports'], index: 10 + parseInt(num) };
+        let m = c.match(/DAZN(\d*)/); let num = (m && m[1]) ? m[1] : '1';
+        return { id: 'hyb_sport_dazn_'+num, name: 'DAZN '+num, categories: ['sports'], index: 10 + parseInt(num) };
     }
     if (c.includes('BEINSPORT') || c.includes('BEIN')) {
         let isMax = c.includes('MAX');
         let m = c.match(/\d+/g); let num = m ? m[m.length-1] : '1';
-        return { id: 'hyb_sport_bein' + (isMax?'max':'') + num, name: isMax ? 'beIN SPORTS MAX '+num : 'beIN SPORTS '+num, categories: ['sports'], index: isMax ? 40 + parseInt(num) : 30 + parseInt(num) };
+        return { id: 'hyb_sport_bein_' + (isMax?'max':'') + num, name: isMax ? 'beIN SPORTS MAX '+num : 'beIN SPORTS '+num, categories: ['sports'], index: isMax ? 40 + parseInt(num) : 30 + parseInt(num) };
     }
     if (c.includes('RMCSPORT')) {
         let isLive = c.includes('LIVE');
         let m = c.match(/\d+/g); let num = m ? m[m.length-1] : '1';
-        if (isLive) return { id: 'hyb_sport_rmclive'+num, name: 'RMC Sport Live '+num, categories: ['sports'], index: 60 + parseInt(num) };
-        return { id: 'hyb_sport_rmc'+num, name: 'RMC Sport '+num, categories: ['sports'], index: 50 + parseInt(num) };
+        if (isLive) return { id: 'hyb_sport_rmclive_'+num, name: 'RMC Sport Live '+num, categories: ['sports'], index: 60 + parseInt(num) };
+        return { id: 'hyb_sport_rmc_'+num, name: 'RMC Sport '+num, categories: ['sports'], index: 50 + parseInt(num) };
     }
     if (c.includes('EUROSPORT')) {
         let is360 = c.includes('360');
         let m = c.match(/\d+/g); let num = m ? m[m.length-1] : '1';
         if (is360) return { id: 'hyb_sport_euro360_'+num, name: 'Eurosport 360 - '+num, categories: ['sports'], index: 80 + parseInt(num) };
-        return { id: 'hyb_sport_euro'+num, name: 'Eurosport '+num, categories: ['sports'], index: 70 + parseInt(num) };
+        return { id: 'hyb_sport_euro_'+num, name: 'Eurosport '+num, categories: ['sports'], index: 70 + parseInt(num) };
     }
     if (c === 'LEQUIPE' || c === 'LEQUIPETV') return { id: 'hyb_sport_lequipe', name: "L'Équipe", categories: ['sports', 'tnt'], index: 95 };
 
-    // --- 4. CANAL+ ---
-    if (c.startsWith('CANAL') || c === 'CPLUS') {
-        if (c.includes('J') || c === 'CANALJ') return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 99 };
+    // --- 4. CANAL+ (Ordre protégé) ---
+    if (c.includes('CANAL') || c.includes('CPLUS')) {
+        if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 99 };
         if (c.includes('CINEMA') || c.includes('CNEMA')) return { id: 'hyb_canal_cinema', name: 'Canal+ Cinéma', categories: ['canal', 'cinema'], index: 2 };
         if (c.includes('GRANDECRAN') || c.includes('ECRAN')) return { id: 'hyb_canal_grandecran', name: 'Canal+ Grand Écran', categories: ['canal', 'cinema'], index: 3 };
         if (c.includes('SERIES')) return { id: 'hyb_canal_series', name: 'Canal+ Séries', categories: ['canal', 'cinema'], index: 4 };
@@ -282,7 +263,7 @@ function getChannelData(rawName) {
 
     if (c.includes('COMEDIE') || c.includes('COMEDY')) return { id: 'hyb_cine_comedie', name: 'Comédie+', categories: ['canal', 'cinema'], index: 10 };
 
-    // --- 5. CINEMA ---
+    // --- 5. CINEMA & DECOUVERTE ---
     if (c.includes('CINE') || c.includes('CINA')) {
         if (c.includes('PREMIER')) return { id: 'hyb_cine_premier', name: 'Ciné+ Premier', categories: ['cinema', 'canal'], index: 11 };
         if (c.includes('FRISSON') || c.includes('ISSON')) return { id: 'hyb_cine_frisson', name: 'Ciné+ Frisson', categories: ['cinema', 'canal'], index: 12 };
@@ -298,7 +279,6 @@ function getChannelData(rawName) {
     if (c.includes('WARNER')) return { id: 'hyb_cine_warner', name: 'Warner TV', categories: ['cinema'], index: 34 };
     if (c.includes('SYFY') || c.includes('SCIFI')) return { id: 'hyb_cine_syfy', name: 'Syfy', categories: ['cinema'], index: 35 };
 
-    // --- 6. DECOUVERTE ---
     if (c.includes('CRIMEDISTRICT') || c.includes('CRIMED')) return { id: 'hyb_dec_crime', name: 'Crime District', categories: ['decouverte'], index: 1 };
     if (c.includes('NATGEO') || c.includes('NATIONALGEO')) {
         if (c.includes('WILD')) return { id: 'hyb_dec_natgeowild', name: 'Nat Geo Wild', categories: ['decouverte'], index: 2 };
@@ -315,12 +295,24 @@ function getChannelData(rawName) {
     if (c.includes('CHASSE') || c.includes('PECHE')) return { id: 'hyb_dec_chasse', name: 'Chasse et Pêche', categories: ['decouverte'], index: 34 };
     if (c.includes('ANIMAUX')) return { id: 'hyb_dec_animaux', name: 'Animaux', categories: ['decouverte'], index: 35 };
 
+    // --- 6. INFO (Le reste) ---
+    if (c === 'BFMTV' || c === 'BFM') return { id: 'hyb_info_1', name: 'BFMTV', categories: ['info'], index: 1 };
+    if (c.includes('BFMBUSINESS')) return { id: 'hyb_info_biz', name: 'BFM Business', categories: ['info'], index: 2 };
+    if (c.includes('CNEWS')) return { id: 'hyb_info_2', name: 'CNews', categories: ['info'], index: 3 };
+    if (c === 'LCI') return { id: 'hyb_info_3', name: 'LCI', categories: ['info'], index: 4 };
+    if (c.includes('FRANCEINFO')) return { id: 'hyb_info_4', name: 'France Info', categories: ['info'], index: 5 };
+    if (c.includes('METEO')) return { id: 'hyb_info_meteo', name: 'La Chaîne Météo', categories: ['info'], index: 7 };
+    if (c.includes('VOSGESTV') || c.includes('VOSGE')) return { id: 'hyb_info_vosges', name: 'Vosges TV', categories: ['info'], index: 8 };
+    if (c === 'TLM' || c.includes('TELELYON')) return { id: 'hyb_info_tlm', name: 'Télé Lyon Métropole (TLM)', categories: ['info'], index: 9 };
+    if (c.includes('BFMLILLE') || c.includes('GRANDLILLE')) return { id: 'hyb_info_lille', name: 'BFM Grand Lille', categories: ['info'], index: 50 };
+    if (c.includes('BFMLYON')) return { id: 'hyb_info_lyon', name: 'BFM Lyon', categories: ['info'], index: 51 };
+    if (c.includes('BFMPARIS')) return { id: 'hyb_info_paris', name: 'BFM Paris Île-de-France', categories: ['info'], index: 52 };
+
     // --- 7. JEUNESSE ---
     if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
     if (c.includes('DISNEY') && !c.includes('JR') && !c.includes('JUNIOR')) return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 2 };
     if (c === 'GULLI' || c.includes('GULLI')) return { id: 'hyb_jeu_gulli', name: 'Gulli', categories: ['jeunesse', 'tnt'], index: 3 };
     if (c.includes('NICKELODEON') || c.includes('NICK')) return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 4 };
-    if (c.includes('CANALJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 5 };
     if (c.includes('GAMEONE') || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 6 };
     if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 7 };
     if (c.includes('BOING')) return { id: 'hyb_jeu_boing', name: 'Boing', categories: ['jeunesse'], index: 9 };
@@ -329,32 +321,28 @@ function getChannelData(rawName) {
     if (c.includes('PIWI')) return { id: 'hyb_jeu_piwi', name: 'Piwi+', categories: ['jeunesse'], index: 13 };
     if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 14 };
     if (c.includes('PITCHOUN')) return { id: 'hyb_jeu_pitchoun', name: 'Pitchoun TV', categories: ['jeunesse'], index: 15 };
+    if (c.includes('APLUS') || c.includes('APLUSIVOIRE')) return { id: 'hyb_ivoire', name: 'A+ Ivoire', categories: ['autres', 'jeunesse'], index: 50 };
 
-    // --- 8. MUSIQUE ---
     if (c.includes('MTV')) return { id: 'hyb_mus_mtv', name: 'MTV', categories: ['musique'], index: 10 };
     if (c.includes('MCM')) return { id: 'hyb_mus_mcm', name: 'MCM', categories: ['musique'], index: 20 };
 
-    // --- 9. FALLBACK INTELLIGENT ---
     let cat = 'autres';
     let idx = 300;
-
-    if (c.includes('SPORT') || c.includes('FOOT') || c.includes('GOLF') || c.includes('MOTO') || c.includes('TENNIS') || c.includes('EQUIDIA')) { cat = 'sports'; }
-    else if (c.includes('CINE') || c.includes('FILM') || c.includes('MOVIE') || c.includes('SERIE') || c.includes('ACTION') || c.includes('PARAMOUNT') || c.includes('WARNER') || c.includes('SYFY') || c.includes('OCS') || c.includes('COMEDIE')) { cat = 'cinema'; }
+    if (c.includes('SPORT') || c.includes('FOOT') || c.includes('GOLF') || c.includes('MOTO') || c.includes('TENNIS')) { cat = 'sports'; }
+    else if (c.includes('CINE') || c.includes('FILM') || c.includes('MOVIE') || c.includes('SERIE') || c.includes('ACTION')) { cat = 'cinema'; }
     else if (c.includes('INFO') || c.includes('NEWS') || c.includes('24') || c.includes('METEO')) { cat = 'info'; }
-    else if (c.includes('DOC') || c.includes('GEO') || c.includes('NATURE') || c.includes('HISTOIRE') || c.includes('ANIMAUX') || c.includes('SCIENCE') || c.includes('VOYAGE') || c.includes('CHASSE') || c.includes('PECHE') || c.includes('CRIME')) { cat = 'decouverte'; }
-    else if (c.includes('KIDS') || c.includes('JUNIOR') || c.includes('TOON') || c.includes('BABY') || c.includes('DISNEY') || c.includes('NICKELODEON') || c.includes('GULLI') || c.includes('BOING')) { cat = 'jeunesse'; }
-    else if (c.includes('MUSIC') || c.includes('HIT') || c.includes('POP') || c.includes('ROCK') || c.includes('MTV') || c.includes('MCM') || c.includes('MELODY') || c.includes('TRACE')) { cat = 'musique'; }
+    else if (c.includes('DOC') || c.includes('GEO') || c.includes('NATURE') || c.includes('HISTOIRE')) { cat = 'decouverte'; }
+    else if (c.includes('KIDS') || c.includes('JUNIOR') || c.includes('TOON') || c.includes('BABY')) { cat = 'jeunesse'; }
+    else if (c.includes('MUSIC') || c.includes('HIT') || c.includes('POP') || c.includes('ROCK')) { cat = 'musique'; }
 
     let prettyName = rawName.replace(/\[.*?\]|\(.*?\)/g, '').replace(/\b(?:FHD|HD|SD|4K|1080P|720P)\b/gi, '').trim();
     prettyName = prettyName.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.substr(1).toLowerCase());
-    
     return { id: 'hyb_id_' + c, name: prettyName, categories: [cat], index: idx };
 }
 
 function toSyncId(rawName) {
     if (!rawName) return '';
-    let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    return n.replace(/[^A-Z0-9]/g, ''); 
+    return rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, ''); 
 }
 
 function parseXmltvDate(str) {
@@ -364,8 +352,7 @@ function parseXmltvDate(str) {
     let offset = str.substring(15).trim() || '+0200';
     if (!offset.includes(':') && offset.length >= 5) offset = offset.slice(0,3) + ':' + offset.slice(3);
     else if (offset.length < 5) offset = '+02:00';
-    const ts = new Date(`${y}-${m}-${d}T${h}:${min}:${s}${offset}`).getTime();
-    return isNaN(ts) ? 0 : ts;
+    return new Date(`${y}-${m}-${d}T${h}:${min}:${s}${offset}`).getTime() || 0;
 }
 
 function formatTime(timestamp) {
@@ -386,7 +373,6 @@ async function fetchAndParseEPG(url, isGz) {
 
             rl.on('line', (line) => {
                 if (line.includes('<desc') || line.includes('<icon')) return;
-
                 if (line.includes('<channel ')) { inChannel = true; chanBlock = line; }
                 else if (inChannel) { chanBlock += '\n' + line; }
                 
@@ -549,7 +535,8 @@ async function getChannelsForSources(sourcesList, enableLogos) {
             
             let finalPoster = DEFAULT_POSTER;
             if (enableLogos) {
-                let forceLogo = channelInfo.customPoster || LOGOS[id];
+                let baseId = id.replace(/_\d+$/, ''); 
+                let forceLogo = channelInfo.customPoster || LOGOS[id] || LOGOS[baseId];
                 if (id.startsWith('hyb_sport_dazn')) forceLogo = LOGOS['dazn_generic'];
                 let rawPoster = forceLogo || meta.poster || DEFAULT_POSTER;
                 finalPoster = makePerfectSquare(rawPoster);
@@ -766,7 +753,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '2.2.0',
+        version: '2.3.0',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -780,7 +767,7 @@ app.get('/:config/manifest.json', (req, res) => {
             { type: 'tv', id: 'musique', name: '🎵 Musique' },
             { type: 'tv', id: 'canal', name: '🎟️ Bouquet Canal' },
             { type: 'tv', id: 'sports', name: '⚽ Sports' },
-            { type: 'tv', id: 'events', name: '🔴 Événements & Lives' }, // Nouvelle catégorie spéciale
+            { type: 'tv', id: 'events', name: '🔴 Événements & Lives' },
             { type: 'tv', id: 'autres', name: '📂 Autres' }
         ]
     });
@@ -901,22 +888,28 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         let score = 0;
                         let up = (s.title || '').toUpperCase() + ' ' + (s.name || '').toUpperCase();
                         
-                        // ANTI-INTOXICATION (PÉNALITÉ DOUCE : On désordonne, on ne supprime pas)
+                        // ANTI-POISON DOUX : Ne détruit pas le flux, le classe juste en bas (-2000)
+                        let penalty = 0;
                         if (channel.id === 'hyb_canal_cplus') {
-                            if (up.match(/(SPORT|FOOT|CINEMA|CNEMA|DECALE|KIDS|DOC|BOX|GRAND|SERIE|PREMIER|FRISSON|EMOTION|FAMIZ|CLUB|CLASSIC|COMEDIE|F1|MOTO|360|FAMILY|LIGUE|\bJ\b|CANALJ|LIVE)/)) {
-                                score -= 500; // Le flux va au fond de la liste, mais tu peux toujours le cliquer
+                            if (up.match(/(SPORT|FOOT|CINEMA|CNEMA|DECALE|KIDS|DOC|BOX|GRAND|SERIE|PREMIER|FRISSON|EMOTION|FAMIZ|CLUB|CLASSIC|COMEDIE|F1|MOTO|360|FAMILY|LIGUE|\bJ\b|CANALJ|MULTI)/)) {
+                                penalty = 2000;
                             }
                         } else if (channel.id.startsWith('hyb_sport_ligue1plus')) {
-                            if (up.includes('DAZN') || up.includes('BEIN') || up.includes('RMC')) {
-                                score -= 500;
+                            if (up.includes('DAZN') || up.includes('BEIN') || up.includes('RMC') || up.includes('EUROSPORT') || up.includes('MULT')) {
+                                penalty = 2000;
                             }
-                        } else if (channel.id.startsWith('hyb_sport_dazn')) {
-                            if (up.includes('LIGUE1+') || up.includes('LIGUE 1+') || up.includes('BEIN')) {
-                                score -= 500;
+                        } else if (channel.id.startsWith('hyb_sport_dazn') && !channel.id.includes('live')) {
+                            if (up.includes('LIGUE1+') || up.includes('LIGUE 1+') || up.includes('BEIN') || up.includes('MULTI')) {
+                                penalty = 2000;
+                            }
+                        } else if (channel.id.startsWith('hyb_canal_') || channel.id.startsWith('hyb_cine_')) {
+                            let target = channel.id.replace('hyb_canal_', '').replace('hyb_cine_', '').toUpperCase();
+                            if (up.includes('SPORT') && !target.includes('SPORT') && !target.includes('FOOT')) {
+                                penalty = 2000;
                             }
                         }
 
-                        // SCORING DE QUALITÉ STABLE (Préserve l'ordre M3U)
+                        // SCORE DE QUALITÉ STABLE
                         if (up.includes('FHD') || up.includes('1080')) { qual = "Haute Qualité (1080p)"; score += 1000; } 
                         else if (up.includes('HD') || up.includes('720')) { qual = "Haute Qualité (720p)"; score += 800; } 
                         else if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) { qual = "Ultra Haute Qualité (4K)"; score += 600; } 
@@ -929,7 +922,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         if (up.includes('360P') || up.includes('480P') || up.includes('LQ')) score -= 100;
                         if (up.includes('BACKUP') || up.includes('SECOURS') || up.includes('ALT') || up.includes('TEST')) score -= 150;
                         
-                        score -= idx; // Respecte l'ordre fourni par ta source originale
+                        score -= penalty;
+                        score -= idx; 
                         score += (10 - source.sourceIndex) * 10;
 
                         return { ...s, _qualText: qual, _score: score };
