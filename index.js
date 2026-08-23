@@ -11,6 +11,7 @@ let isUpdatingEPG = false;
 let lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
 let epgData = {}; 
 let channelsCache = {}; 
+let streamCache = new Map(); // NOUVEAU : Cache pour éviter les erreurs "Échec de chargement" de Stremio
 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 const EVENT_POSTER = 'https://cdn-icons-png.flaticon.com/512/861/861512.png';
@@ -20,7 +21,7 @@ const BLACKLIST = [
     'TEST', 'MIRROR', 'BACKUPCHANNEL', 'BOXOFFICE1', 'BOXOFFICE2', 'CANALPLAY', 'AFRIQUE', 'DEUTSCH', 'GERMAN'
 ];
 
-// Base de Données Logos VIP Complète
+// Base de Données Logos VIP Complète & Corrigée
 const LOGOS = {
     // TNT & Généralistes
     'hyb_tnt_1': 'https://upload.wikimedia.org/wikipedia/commons/c/cc/TF1_2013_logo.svg',
@@ -37,6 +38,7 @@ const LOGOS = {
     'hyb_tnt_12': 'https://upload.wikimedia.org/wikipedia/fr/4/44/NRJ12-Logo.png',
     'hyb_tnt_13': 'https://upload.wikimedia.org/wikipedia/fr/b/b3/LCP_Assemblée_Nationale_logo_2018.svg',
     'hyb_tnt_17': 'https://upload.wikimedia.org/wikipedia/commons/c/c0/Logo_CStar_2016.svg',
+    'hyb_jeu_gulli': 'https://focus.telerama.fr/500x500/0000/00/01/clear-43.png',
     'hyb_tnt_20': 'https://upload.wikimedia.org/wikipedia/fr/4/4b/TF1_Séries_Films_logo_2020.svg',
     'hyb_tnt_22': 'https://upload.wikimedia.org/wikipedia/fr/a/a9/6ter_2012.png',
     'hyb_tnt_23': 'https://upload.wikimedia.org/wikipedia/fr/8/8a/RMC_Story_logo_2018.svg',
@@ -55,6 +57,11 @@ const LOGOS = {
     'hyb_info_4': 'https://upload.wikimedia.org/wikipedia/fr/c/c2/Franceinfo_logo_2016.svg',
     'hyb_info_5': 'https://i.postimg.cc/TPwp9d9B/640px-France24.png',
     'hyb_info_meteo': 'https://focus.telerama.fr/500x500/0000/00/01/clear-158.png',
+    'hyb_info_vosges': 'https://upload.wikimedia.org/wikipedia/fr/f/f0/Vosges_Télé_logo_2020.svg',
+    'hyb_info_tlm': 'https://upload.wikimedia.org/wikipedia/fr/0/0a/TLM_logo.png',
+    'hyb_info_paris': 'https://upload.wikimedia.org/wikipedia/fr/8/8c/BFM_Paris_Île-de-France_logo_2022.svg',
+    'hyb_info_lyon': 'https://upload.wikimedia.org/wikipedia/fr/f/f7/BFM_Lyon_logo_2022.svg',
+    'hyb_info_lille': 'https://upload.wikimedia.org/wikipedia/fr/1/15/BFM_Grand_Lille_logo_2022.svg',
     
     // Bouquet Canal
     'hyb_canal_cplus': 'https://upload.wikimedia.org/wikipedia/commons/3/39/Canal%2B_Film_HD.png',
@@ -83,6 +90,7 @@ const LOGOS = {
     'hyb_cine_premier': 'https://upload.wikimedia.org/wikipedia/commons/7/73/Canalplus_fr_cine_plus_premier_hd.png',
     'hyb_cine_frisson': 'https://focus.telerama.fr/500x500/0000/00/01/clear-147.png',
     'hyb_cine_emotion': 'https://thumb.canalplus.pro/http/unsafe/epg.canal-plus.com/mycanal/img/CHN43FN/PNG/213X160/CHN43FB_396.PNG',
+    'hyb_cine_famiz': 'https://static.wikia.nocookie.net/logo-chaines/images/6/64/CinePlusFamiz_Logo.svg.png',
     'hyb_cine_club': 'https://upload.wikimedia.org/wikipedia/fr/7/77/Cin%C3%A9Cin%C3%A9ma_Club_logo_2008.png',
     'hyb_cine_classic': 'https://upload.wikimedia.org/wikipedia/fr/f/f3/Cin%C3%A9_Cin%C3%A9ma_Classic.png',
     'hyb_cine_action': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRPdxSas0cWbgadzbAuhDjqLEd_Y4iMG0odsUoZy8ch1NJYK3ZVez_yrHCoAA&s',
@@ -101,7 +109,6 @@ const LOGOS = {
     'hyb_jeu_disney': 'https://upload.wikimedia.org/wikipedia/commons/7/78/Disney_Channel_Germany_Logo_2014.png',
     'hyb_jeu_disneyxd': 'https://upload.wikimedia.org/wikipedia/commons/0/00/Disney_XD_logo.svg',
     'hyb_jeu_disney_plus1': 'https://upload.wikimedia.org/wikipedia/commons/7/78/Disney_Channel_Germany_Logo_2014.png',
-    'hyb_jeu_gulli': 'https://focus.telerama.fr/500x500/0000/00/01/clear-43.png',
     'hyb_jeu_nick': 'https://upload.wikimedia.org/wikipedia/commons/f/fa/Nickelodeon_logo_2009.png',
     'hyb_jeu_canalj': 'https://upload.wikimedia.org/wikipedia/fr/6/69/Logo_canal_J.png',
     'hyb_jeu_gameone': 'https://upload.wikimedia.org/wikipedia/fr/a/a0/Game_One_%281998%29_Logo.svg',
@@ -110,12 +117,16 @@ const LOGOS = {
     'hyb_jeu_disneyjr': 'https://upload.wikimedia.org/wikipedia/fr/3/36/Disney_Junior_2011.png',
     'hyb_jeu_tiji': 'https://focus.telerama.fr/500x500/0000/00/01/clear-229.png',
     'hyb_jeu_piwi': 'https://focus.telerama.fr/500x500/0000/00/01/clear-344.png',
+    'hyb_jeu_mangas': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQrBITj8D4ehy326isxvvHDFUivw37wiREtViWbndOOtqIoq8ykrTbVbQQADg&s',
 
     // Musique
     'hyb_mus_mtv': 'https://upload.wikimedia.org/wikipedia/commons/0/0d/MTV-2021.svg',
     'hyb_mus_mcm': 'https://upload.wikimedia.org/wikipedia/fr/a/ab/MCM_logo_2017.svg',
     'hyb_mus_trace': 'https://upload.wikimedia.org/wikipedia/fr/9/98/Trace_Urban_logo.svg',
-    'hyb_mus_nrjhits': 'https://upload.wikimedia.org/wikipedia/fr/1/1a/NRJ_Hits_logo.png'
+    'hyb_mus_nrjhits': 'https://upload.wikimedia.org/wikipedia/fr/1/1a/NRJ_Hits_logo.png',
+    'hyb_mus_melody': 'https://upload.wikimedia.org/wikipedia/fr/4/44/Melody_logo_2018.png',
+    'hyb_mus_mezzo': 'https://upload.wikimedia.org/wikipedia/commons/e/ec/Mezzo_TV_logo.svg',
+    'hyb_mus_rfm': 'https://upload.wikimedia.org/wikipedia/fr/5/52/Logo_RFM_TV.png'
 };
 
 function parseConfig(encodedConfig) {
@@ -129,19 +140,19 @@ function parseConfig(encodedConfig) {
 }
 
 // ============================================================================
-// 1. EXTRACTEUR D'ÉVÉNEMENTS EN DIRECT ("MATCH TIME" INCLUS)
+// 1. EXTRACTEUR D'ÉVÉNEMENTS EN DIRECT (MATCH TIME & ISOLATION)
 // ============================================================================
 function extractMatchEvent(rawName) {
     if (!rawName) return null;
     let s = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-    // Nettoyage immédiat des parenthèses/crochets pour l'analyse
+    // Nettoyage immédiat des parenthèses/crochets pour l'analyse (Évite les faux doublons)
     s = s.replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
 
     let isMatch = false;
     let eventName = '';
 
-    // Détection 1 : Le mot "MATCH TIME" (Forçage direct)
+    // Détection 1 : Le mot "MATCH TIME" (Mot-clé absolu IPTV)
     if (s.includes('MATCH TIME') || s.includes('MATCHTIME')) {
         let cleanName = s.replace(/^(?:FR|BE|CH|VIP|LIVE|DIRECT|EVENT|MATCH|LIGUE\s*1|DAZN|BEIN|RMC|CANAL\+?|MULTI|MULTIPLEX)\s*[:|-|\|]*\s*/gi, '')
                  .replace(/\d{1,2}[hH:]\d{2}/g, '')
@@ -203,13 +214,12 @@ function extractMatchEvent(rawName) {
 function getChannelData(rawName) {
     if (!rawName) return null;
     
-    // Sortie immédiate pour les matchs
     let eventData = extractMatchEvent(rawName);
     if (eventData) return eventData;
 
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-    // GOMMAGE DES PARENTHÈSES : Supprime (1), (2), [FHD] etc. pour nettoyer l'ADN
+    // Nettoyage intelligent : Gomme (1), (2), [FHD], mais préserve le nom des chaînes
     n = n.replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
     n = n.replace(/^(?:FR|BE|CH|CA|VIP|VAVOO)\s*[:|/-]+\s*/i, '');
     n = n.replace(/DURING EVENT ONLY/g, '').replace(/EVENT ONLY/g, '');
@@ -222,19 +232,22 @@ function getChannelData(rawName) {
 
     n = n.replace(/\+/g, 'PLUS');
 
-    // Moteur LIGUE 1+
+    // --- MOTEUR LIGUE 1+ ---
     if (n.includes('LIGUE 1') || n.includes('LIGUE1') || n.match(/\bL1\b/)) {
         if (!n.includes('DAZN') && !n.includes('BEIN') && !n.includes('RMC')) {
             let m = n.match(/(?:LIGUE\s*1|L1|LIGUE1)\s*(?:PLUS)?\s*(\d+)/i);
-            let num = (m && m[1]) ? m[1] : '';
-            if (!num || num === '1') {
+            let num = (m && m[1]) ? m[1] : '1';
+            if (num === '1') {
                 return { id: 'hyb_sport_ligue1plus_1', name: 'Ligue 1+', categories: ['sports'], index: 1 };
             } else {
                 return { id: 'hyb_sport_ligue1plus_' + num, name: 'Ligue 1+ ' + num, categories: ['sports'], index: 1 + parseInt(num, 10) };
             }
         }
     }
+    
+    // --- DAZN ---
     if (n.includes('DAZN')) {
+        if (n.includes('RISE')) return { id: 'hyb_sport_dazn_rise', name: 'DAZN Rise', categories: ['sports'], index: 19 };
         let m = n.match(/DAZN\s*(\d+)/i); let num = m ? m[1] : '1';
         return { id: 'hyb_sport_dazn_'+num, name: 'DAZN '+num, categories: ['sports'], index: 10 + parseInt(num, 10) };
     }
@@ -243,18 +256,23 @@ function getChannelData(rawName) {
     if (!c || c.length < 2) return null;
     if (BLACKLIST.some(b => c.includes(b))) return null;
 
+    // --- INFOS RÉGIONALES ET INTERNATIONALES ---
     if (c.startsWith('FRANCE24')) return { id: 'hyb_info_5', name: 'France 24', categories: ['info'], index: 6 };
+    if (c.includes('BFMPARIS')) return { id: 'hyb_info_paris', name: 'BFM Paris Île-de-France', categories: ['info'], index: 50 };
+    if (c.includes('BFMLYON')) return { id: 'hyb_info_lyon', name: 'BFM Lyon', categories: ['info'], index: 51 };
+    if (c.includes('BFMLILLE') || c.includes('GRANDLILLE')) return { id: 'hyb_info_lille', name: 'BFM Grand Lille', categories: ['info'], index: 52 };
+    if (c.includes('BFM') && !c.includes('BFMTV') && !c.includes('BUSINESS')) return { id: 'hyb_info_bfm_reg', name: 'BFM Régions', categories: ['info'], index: 55 };
 
     // --- BOUQUET CANAL PLUS ---
     if (c.includes('CANAL') || c.includes('CPLUS')) {
-        // Exclure Canal+ L(iga)
+        // Exclure L(iga)
         if (c.includes('LIGA')) return null;
 
-        // Relégation Canal J & Kids à la fin
+        // Relégation Canal J & Kids à la fin du bouquet
         if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 100 };
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
         
-        // Sous-chaînes Canal+
+        // Sous-chaînes Sport (Canal+ Live 1-18)
         if (c.includes('LIVE')) {
             let m = c.match(/LIVE(\d+)/); let num = m ? m[1] : '1';
             return { id: 'hyb_canal_live_' + num, name: 'Canal+ Live ' + num, categories: ['sports', 'canal'], index: 50 + parseInt(num, 10) };
@@ -263,6 +281,8 @@ function getChannelData(rawName) {
         if (c.includes('FOOT')) return { id: 'hyb_canal_foot', name: 'Canal+ Foot', categories: ['canal', 'sports'], index: 91 };
         if (c.includes('FORMULA1') || c.includes('F1')) return { id: 'hyb_canal_f1', name: 'Canal+ Formula 1', categories: ['canal', 'sports'], index: 93 };
         if (c.includes('SPORT')) return { id: 'hyb_canal_sport', name: 'Canal+ Sport', categories: ['canal', 'sports'], index: 94 };
+        
+        // Sous-chaînes Cinéma / Séries
         if (c.includes('CINEMA') || c.includes('CNEMA')) return { id: 'hyb_canal_cinema', name: 'Canal+ Cinéma', categories: ['canal', 'cinema'], index: 2 };
         if (c.includes('GRANDECRAN') || c.includes('ECRAN')) return { id: 'hyb_canal_grandecran', name: 'Canal+ Grand Écran', categories: ['canal', 'cinema'], index: 3 };
         if (c.includes('SERIES') || c.includes('SERIE')) return { id: 'hyb_canal_series', name: 'Canal+ Séries', categories: ['canal', 'cinema'], index: 4 };
@@ -276,19 +296,20 @@ function getChannelData(rawName) {
 
     if (c.includes('COMEDIE') || c.includes('COMEDY')) return { id: 'hyb_cine_comedie', name: 'Comédie+', categories: ['canal', 'cinema'], index: 10 };
 
+    // --- AUTRES SPORTS (Ordre Eurosport > RMC) ---
     if (c.includes('BEINSPORT') || c.includes('BEIN')) {
         let isMax = c.includes('MAX'); let m = c.match(/BEIN(?:SPORT|MAX)?(\d+)/); let num = (m && m[1]) ? m[1] : '1';
         return { id: 'hyb_sport_bein_' + (isMax?'max':'') + num, name: isMax ? 'beIN SPORTS MAX '+num : 'beIN SPORTS '+num, categories: ['sports'], index: isMax ? 40 + parseInt(num, 10) : 30 + parseInt(num, 10) };
     }
-    if (c.includes('RMCSPORT')) {
-        let isLive = c.includes('LIVE'); let m = c.match(/RMCSPORT(?:LIVE)?(\d+)/); let num = (m && m[1]) ? m[1] : '1';
-        if (isLive) return { id: 'hyb_sport_rmclive_'+num, name: 'RMC Sport Live '+num, categories: ['sports'], index: 60 + parseInt(num, 10) };
-        return { id: 'hyb_sport_rmc_'+num, name: 'RMC Sport '+num, categories: ['sports'], index: 50 + parseInt(num, 10) };
-    }
     if (c.includes('EUROSPORT')) {
         let is360 = c.includes('360'); let m = c.match(/EUROSPORT(?:360)?(\d+)/); let num = (m && m[1]) ? m[1] : '1';
-        if (is360) return { id: 'hyb_sport_euro360_'+num, name: 'Eurosport 360 - '+num, categories: ['sports'], index: 80 + parseInt(num, 10) };
-        return { id: 'hyb_sport_euro_'+num, name: 'Eurosport '+num, categories: ['sports'], index: 70 + parseInt(num, 10) };
+        if (is360) return { id: 'hyb_sport_euro360_'+num, name: 'Eurosport 360 - '+num, categories: ['sports'], index: 50 + parseInt(num, 10) };
+        return { id: 'hyb_sport_euro_'+num, name: 'Eurosport '+num, categories: ['sports'], index: 40 + parseInt(num, 10) };
+    }
+    if (c.includes('RMCSPORT')) {
+        let isLive = c.includes('LIVE'); let m = c.match(/RMCSPORT(?:LIVE)?(\d+)/); let num = (m && m[1]) ? m[1] : '1';
+        if (isLive) return { id: 'hyb_sport_rmclive_'+num, name: 'RMC Sport Live '+num, categories: ['sports'], index: 70 + parseInt(num, 10) };
+        return { id: 'hyb_sport_rmc_'+num, name: 'RMC Sport '+num, categories: ['sports'], index: 60 + parseInt(num, 10) };
     }
     if (c.includes('LEQUIPE')) return { id: 'hyb_sport_lequipe', name: "L'Équipe", categories: ['sports', 'tnt'], index: 95 };
 
@@ -318,7 +339,7 @@ function getChannelData(rawName) {
     if (c.startsWith('TFX') || c === 'NT1') return { id: 'hyb_tnt_11', name: 'TFX', categories: ['tnt'], index: 11 };
     if (c.startsWith('NRJ12') || c.startsWith('NRJ')) return { id: 'hyb_tnt_12', name: 'NRJ 12', categories: ['tnt'], index: 12 };
     if (c.includes('PUBLICSENAT') || c === 'LCP') return { id: 'hyb_tnt_13', name: 'LCP / Public Sénat', categories: ['tnt', 'info'], index: 13 };
-    if (c.includes('GULLI')) return { id: 'hyb_jeu_gulli', name: 'Gulli', categories: ['jeunesse', 'tnt'], index: 18 };
+    if (c.includes('GULLI')) return { id: 'hyb_jeu_gulli', name: 'Gulli', categories: ['jeunesse', 'tnt'], index: 18 }; // Replacé correctement
     if (c.includes('CSTAR')) return { id: 'hyb_tnt_17', name: 'CStar', categories: ['tnt', 'musique'], index: 17 };
     if (c.includes('6TER')) return { id: 'hyb_tnt_22', name: '6ter', categories: ['tnt'], index: 22 };
     if (c.includes('RMCSTORY') || c.includes('NUMERO23')) return { id: 'hyb_tnt_23', name: 'RMC Story', categories: ['tnt', 'decouverte'], index: 23 };
@@ -349,15 +370,31 @@ function getChannelData(rawName) {
     if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 11 };
     if (c.includes('GAMEONE') || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 12 };
 
-    // --- MUSIQUE ---
+    // --- MUSIQUE (Restaurée et Élargie) ---
     if (c.includes('MTV')) return { id: 'hyb_mus_mtv', name: 'MTV', categories: ['musique'], index: 10 };
     if (c.includes('MCM')) return { id: 'hyb_mus_mcm', name: 'MCM', categories: ['musique'], index: 20 };
-    if (c.includes('TRACE')) return { id: 'hyb_mus_trace', name: 'Trace TV', categories: ['musique'], index: 30 };
+    if (c.includes('TRACE')) {
+        let m = n.match(/TRACE\s*([A-Z]*)/i); let suffix = (m && m[1]) ? ' ' + m[1] : '';
+        return { id: 'hyb_mus_trace' + suffix.trim(), name: 'Trace' + suffix, categories: ['musique'], index: 30 };
+    }
     if (c.includes('NRJHITS') || (c.includes('NRJ') && c.includes('HIT'))) return { id: 'hyb_mus_nrjhits', name: 'NRJ Hits', categories: ['musique'], index: 31 };
     if (c.includes('MELODY')) return { id: 'hyb_mus_melody', name: 'Melody', categories: ['musique'], index: 32 };
     if (c.includes('MEZZO')) return { id: 'hyb_mus_mezzo', name: 'Mezzo', categories: ['musique'], index: 33 };
     if (c.includes('RFMTV') || c.includes('RFM')) return { id: 'hyb_mus_rfm', name: 'RFM TV', categories: ['musique'], index: 34 };
     if (c.includes('CLUBBING')) return { id: 'hyb_mus_clubbing', name: 'Clubbing TV', categories: ['musique'], index: 35 };
+
+    // --- DECOUVERTE ---
+    if (c.includes('DISCOVERY')) {
+        let m = n.match(/DISCOVERY\s*([A-Z]*)/i); let suffix = (m && m[1]) ? ' ' + m[1] : '';
+        return { id: 'hyb_dec_discovery' + suffix.trim(), name: 'Discovery' + suffix, categories: ['decouverte'], index: 20 };
+    }
+    if (c.includes('CRIMEDISTRICT') || c.includes('CRIMED')) return { id: 'hyb_dec_crime', name: 'Crime District', categories: ['decouverte'], index: 1 };
+    if (c.includes('NATGEO') || c.includes('NATIONALGEO')) return { id: 'hyb_dec_natgeo', name: 'National Geographic', categories: ['decouverte'], index: 1 };
+    if (c.includes('PLANET')) return { id: 'hyb_dec_planete', name: 'Planète+', categories: ['decouverte'], index: 210 };
+    if (c.includes('USHUAIA')) return { id: 'hyb_dec_ushuaia', name: 'Ushuaïa TV', categories: ['decouverte'], index: 30 };
+    if (c.includes('HISTOIRE')) return { id: 'hyb_dec_histoire', name: 'Histoire TV', categories: ['decouverte'], index: 32 };
+    if (c.includes('CHASSE') || c.includes('PECHE')) return { id: 'hyb_dec_chasse', name: 'Chasse et Pêche', categories: ['decouverte'], index: 34 };
+    if (c.includes('ANIMAUX')) return { id: 'hyb_dec_animaux', name: 'Animaux', categories: ['decouverte'], index: 35 };
 
     // --- FALLBACK GENÉRIQUE ROBUSTE ---
     let cat = 'autres';
@@ -572,7 +609,6 @@ async function getChannelsForSources(sourcesList, enableLogos) {
             if (enableLogos) {
                 let baseId = id.replace(/_\d+$/, ''); 
                 let forceLogo = channelInfo.customPoster || LOGOS[id] || LOGOS[baseId];
-                if (id.startsWith('hyb_sport_dazn')) forceLogo = LOGOS['dazn_generic'];
                 finalPoster = forceLogo || meta.poster || DEFAULT_POSTER;
             } else {
                 finalPoster = meta.poster || DEFAULT_POSTER;
@@ -593,6 +629,7 @@ async function getChannelsForSources(sourcesList, enableLogos) {
             if (meta._isDirectStream) {
                 const sourceExists = tempChannelsMap[id].sources.find(s => s.directUrl === meta._directUrl);
                 if (!sourceExists) {
+                    // On conserve précieusement le nom original
                     tempChannelsMap[id].sources.push({ type: 'm3u', directUrl: meta._directUrl, sourceIndex: i, originalName: meta.name });
                 }
             } else {
@@ -785,7 +822,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '3.3.0',
+        version: '3.4.0',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -891,6 +928,12 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
     
+    // NOUVEAU : Cache pour régler les erreurs "Failed to load stream details" (Timeout Stremio)
+    const cacheKey = req.params.id + '|' + config.sources.join(',');
+    if (streamCache.has(cacheKey)) {
+        return res.json({ streams: streamCache.get(cacheKey) });
+    }
+
     let channelsData = await getChannelsForSources(config.sources, config.logos);
     res.setHeader('Cache-Control', 'max-age=1800, public'); 
     const rawIp = req.headers['x-forwarded-for'];
@@ -904,16 +947,17 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             if (source.type === 'm3u') {
                 return [{
                     url: source.directUrl,
-                    name: `▶ Flux direct M3U`,
-                    title: `Full HD (1080p)`,
+                    name: `▶ Full HD (1080p)`,
+                    title: source.originalName || "Source M3U",
                     _score: 1500,
                     _originalTitle: source.originalName || "Source M3U"
                 }];
             }
 
             try {
+                // Timeout réduit à 6s pour renvoyer les flux M3U si l'addon Vavoo rame (empêche l'erreur Stremio)
                 const streamRes = await axios.get(`${source.providerBase}/stream/tv/${source.metaId}.json`, {
-                    headers: { 'X-Forwarded-For': clientIp }, timeout: 8000 
+                    headers: { 'X-Forwarded-For': clientIp }, timeout: 6000 
                 });
                 
                 if (streamRes.data && streamRes.data.streams) {
@@ -921,13 +965,18 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         let qual = "SD";
                         let score = 0;
                         
-                        let up = (s.title || '').toUpperCase() + ' ' + (s.name || '').toUpperCase();
+                        let rawName = s.name || '';
+                        let rawTitle = s.title || '';
+                        let originalTitle = (rawName !== rawTitle) ? `${rawName} ${rawTitle}` : rawName || rawTitle;
+                        originalTitle = originalTitle.replace(/http\S+/g, '').trim() || `Source Add-on ${idx + 1}`;
+
+                        let up = originalTitle.toUpperCase();
                         
-                        // Nettoyage radical des parenthèses et crochets pour évaluer l'ADN pur du flux
+                        // Nettoyage radical des parenthèses/crochets pour analyser l'ADN
                         let nStream = up.normalize("NFD")
                             .replace(/[\u0300-\u036f]/g, "")
-                            .replace(/\([^)]*\)/g, '') // Gomme (1), (2)...
-                            .replace(/\[[^\]]*\]/g, '') // Gomme [FHD], [FR]...
+                            .replace(/\([^)]*\)/g, '')
+                            .replace(/\[[^\]]*\]/g, '')
                             .replace(/\+/g, 'PLUS')
                             .replace(/[^A-Z0-9]/g, '');
 
@@ -955,7 +1004,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             if (nStream.includes('JR') || nStream.includes('JUNIOR') || nStream.includes('CINEMA') || nStream.includes('XD') || nStream.includes('PLUS1')) penalty += 5000;
                         }
 
-                        // --- 3. MULTIPLEX SPORT : SÉCURISATION DES CANAUX ---
+                        // --- 3. MULTIPLEX SPORT ---
                         if (channel.id.startsWith('hyb_sport_ligue1plus')) {
                             let targetNumMatch = channel.id.match(/_(\d+)$/);
                             let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
@@ -964,7 +1013,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             if (streamNumMatch) {
                                 if (streamNumMatch[1] !== targetNum) penalty += 5000;
                             } else if (targetNum !== '1') {
-                                penalty += 5000; // Si le flux n'a pas de numéro mais qu'on est sur le canal 3, ce n'est pas le bon flux
+                                penalty += 5000; 
                             }
                         }
 
@@ -978,7 +1027,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             }
                         }
 
-                        // --- 4. SCORING DE QUALITÉ STABLE ---
+                        // --- 4. SCORING QUALITÉ RÉALISTE ---
                         if (up.includes('FHD') || up.includes('1080')) { qual = "Full HD (1080p)"; score += 1500; } 
                         else if (up.includes('HD') || up.includes('720')) { qual = "HD (720p)"; score += 1000; } 
                         else if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) { qual = "4K (UHD)"; score += 500; } 
@@ -994,12 +1043,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         score -= idx; 
                         score += (10 - source.sourceIndex) * 10;
 
-                        // Extraction du nom brut original sans écrasement
-                        let rawName = s.name || '';
-                        let rawTitle = s.title || '';
-                        let originalTitle = (rawName !== rawTitle) ? `${rawName} ${rawTitle}` : rawName || rawTitle;
-                        originalTitle = originalTitle.replace(/http\S+/g, '').trim() || `Source Add-on ${idx + 1}`;
-
                         return { ...s, _qualText: qual, _score: score, _originalTitle: originalTitle };
                     });
                 }
@@ -1013,14 +1056,17 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         allStreams.sort((a, b) => b._score - a._score);
         const limitedStreams = allStreams.slice(0, 15);
 
-        // AFFICHAGE INVERSÉ ET TRANSPARENT
-        // Nom du flux brut en gros (name), qualité en petit en dessous (title)
+        // NOUVEL AFFICHAGE TRANSPARENT ET INVERSÉ (Nom original en GRAND)
         const finalStreams = limitedStreams.map((s) => ({
             url: s.url, 
             name: s._originalTitle, 
             title: `▶ ${s._qualText}`
         }));
         
+        // Mise en cache pour 5 minutes
+        streamCache.set(cacheKey, finalStreams);
+        setTimeout(() => streamCache.delete(cacheKey), 300000);
+
         res.json({ streams: finalStreams });
     } catch (err) { res.json({ streams: [] }); }
 });
