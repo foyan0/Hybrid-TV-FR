@@ -10,11 +10,12 @@ app.use(cors());
 let isUpdatingEPG = false;
 let lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
 let epgData = {}; 
-let channelsCache = {}; 
-let streamCache = new Map(); 
+let channelsCache = {}; // Cache intelligent
+let streamCache = new Map(); // Anti-timeout Stremio
 
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 const EVENT_POSTER = 'https://cdn-icons-png.flaticon.com/512/861/861512.png';
+const LOADING_POSTER = 'https://cdn-icons-png.flaticon.com/512/3284/3284568.png'; // Icone de sablier
 
 const BLACKLIST = [
     'ALACARTE', 'DISNEYPLUS', 'NETFLIX', 'PRIMEVIDEO', 'APPLETV',
@@ -26,7 +27,7 @@ function parseConfig(encodedConfig) {
         if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], epg: true, logos: false };
         const jsonStr = Buffer.from(encodedConfig, 'base64').toString('utf8');
         let parsed = JSON.parse(jsonStr);
-        parsed.logos = false; 
+        parsed.logos = false; // Désactivation forcée des logos selon ton choix
         return parsed;
     } catch (e) {
         return { sources: [], epg: true, logos: false };
@@ -100,7 +101,6 @@ function getChannelData(rawName) {
     if (eventData) return eventData;
 
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    let originalUpper = n; 
 
     n = n.replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
     n = n.replace(/^(?:FR|BE|CH|CA|VIP|VAVOO)\s*[:|/-]+\s*/i, '');
@@ -117,8 +117,9 @@ function getChannelData(rawName) {
     // --- MOTEUR LIGUE 1+ ---
     if (n.includes('LIGUE 1') || n.includes('LIGUE1') || n.match(/\bL1\b/)) {
         if (!n.includes('DAZN') && !n.includes('BEIN') && !n.includes('RMC')) {
-            let m = n.match(/(?:LIGUE\s*1|L1|LIGUE1)\s*(?:PLUS)?\s*(\d+)/i);
-            let num = (m && m[1]) ? m[1] : '1';
+            // Regex robuste pour attraper n'importe quel chiffre après PLUS ou LIGUE 1
+            let m = n.match(/(?:LIGUE\s*1|L1|LIGUE1)(?:.*?PLUS)?[^\d]*([1-9]|1[0-8])/i);
+            let num = m ? m[1] : '1';
             if (num === '1') {
                 return { id: 'hyb_sport_ligue1plus_1', name: 'Ligue 1+', categories: ['sports'], index: 1 };
             } else {
@@ -127,22 +128,15 @@ function getChannelData(rawName) {
         }
     }
     
-    // --- DAZN ---
     if (n.includes('DAZN')) {
         if (n.includes('RISE')) return { id: 'hyb_sport_dazn_rise', name: 'DAZN Rise', categories: ['sports'], index: 150 };
-        let m = n.match(/DAZN\s*(\d+)/i); let num = m ? m[1] : '1';
+        let m = n.match(/DAZN[^\d]*([1-9]|1[0-8])/i); let num = m ? m[1] : '1';
         return { id: 'hyb_sport_dazn_'+num, name: 'DAZN '+num, categories: ['sports'], index: 10 + parseInt(num, 10) };
     }
 
     let c = n.replace(/[^A-Z0-9]/g, '');
     if (!c || c.length < 2) return null;
     if (BLACKLIST.some(b => c.includes(b))) return null;
-
-    // --- FAUX-AMIS CANAL+ (Expédiés dans Autres) ---
-    if (c.includes('JURAS') || c.includes('TOP14') || c.includes('LCENTRE') || c.includes('LIGA') || c === 'CANALPLUSL' || c === 'CPLUSL' || c === 'CPLUSSPORT') {
-        let pretty = rawName.replace(/\[.*?\]|\(.*?\)/g, '').replace(/\b(?:FHD|HD|SD|4K|1080P|720P)\b/gi, '').trim();
-        return { id: 'hyb_aut_' + c.substring(0, 15), name: pretty, categories: ['autres'], index: 200 };
-    }
 
     if (c.startsWith('FRANCE24')) return { id: 'hyb_info_06', name: 'France 24', categories: ['info'], index: 6 };
     if (c.startsWith('FRANCEINFO')) return { id: 'hyb_info_07', name: 'France Info', categories: ['info'], index: 7 };
@@ -162,8 +156,9 @@ function getChannelData(rawName) {
     if (c.includes('COMEDYCENTRAL')) return { id: 'hyb_aut_comedycentral', name: 'Comedy Central', categories: ['autres'], index: 11 };
     if (c.includes('COMEDIE') || c.includes('COMEDY')) return { id: 'hyb_canal_comedie', name: 'Comédie+', categories: ['canal', 'autres'], index: 10 };
 
-    // --- BOUQUET CANAL PLUS ---
     if (c.includes('CANAL') || c.includes('CPLUS')) {
+        if (c.includes('LIGA') || c === 'CANALPLUSL' || c === 'CPLUSSPORT') return null;
+
         if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 100 };
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
         
@@ -251,7 +246,6 @@ function getChannelData(rawName) {
     if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
     if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
 
-    // --- JEUNESSE ---
     if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 150 };
     if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
     if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 3 };
@@ -266,7 +260,6 @@ function getChannelData(rawName) {
     if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 11 };
     if (c.includes('PIWI')) return { id: 'hyb_jeu_piwi', name: 'Piwi+', categories: ['jeunesse'], index: 100 };
 
-    // --- MUSIQUE ---
     if (c.includes('MTV')) return { id: 'hyb_mus_mtv', name: 'MTV', categories: ['musique'], index: 10 };
     if (c.includes('MCM')) return { id: 'hyb_mus_mcm', name: 'MCM', categories: ['musique'], index: 20 };
     if (c.includes('TRACE')) {
@@ -279,7 +272,6 @@ function getChannelData(rawName) {
     if (c.includes('RFMTV') || c.includes('RFM')) return { id: 'hyb_mus_rfm', name: 'RFM TV', categories: ['musique'], index: 34 };
     if (c.includes('CLUBBING')) return { id: 'hyb_mus_clubbing', name: 'Clubbing TV', categories: ['musique'], index: 35 };
 
-    // --- DECOUVERTE ---
     if (c.includes('DISCOVERY')) {
         let m = n.match(/DISCOVERY\s*([A-Z]*)/i); let suffix = (m && m[1]) ? ' ' + m[1] : '';
         return { id: 'hyb_dec_discovery' + suffix.trim().replace(/\s/g, '_'), name: 'Discovery' + suffix, categories: ['decouverte'], index: 20 };
@@ -292,7 +284,6 @@ function getChannelData(rawName) {
     if (c.includes('CHASSE') || c.includes('PECHE')) return { id: 'hyb_dec_chasse', name: 'Chasse et Pêche', categories: ['decouverte'], index: 34 };
     if (c.includes('ANIMAUX')) return { id: 'hyb_dec_animaux', name: 'Animaux', categories: ['decouverte'], index: 35 };
 
-    // --- FALLBACK GENÉRIQUE ---
     let cat = 'autres';
     let idx = 300;
     if (c.includes('SPORT') || c.includes('FOOT') || c.includes('GOLF') || c.includes('TENNIS') || c.includes('RUGBY') || c.includes('AUTO') || c.includes('MOTO')) cat = 'sports';
@@ -456,38 +447,35 @@ async function fetchCatalogFromSource(sourceInput) {
         if (!cleanUrl.endsWith('manifest.json')) cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
         const base = cleanUrl.replace(/\/manifest\.json$/, '');
 
-        const manifestRes = await axios.get(cleanUrl, { timeout: 4000 });
+        const manifestRes = await axios.get(cleanUrl, { timeout: 6000 });
         const catalogs = manifestRes.data.catalogs || [];
         
         const catalogPromises = catalogs.map(async (catalog) => {
-            let catMetas = [];
-            let hasMore = true;
+            let catMetas = []; 
+            let hasMore = true; 
             let skip = 0;
-            const maxSkip = 3000; // 30 pages max
-            const batchSize = 5;  // 5 requêtes en parallèle pour éviter le timeout Stremio
+            const maxSkip = 5000; // Scanne jusqu'à 50 pages !
+            const batchSize = 4;  // En parallèle pour la vitesse
 
             while (hasMore && skip < maxSkip) {
                 let requests = [];
                 for (let i = 0; i < batchSize; i++) {
                     let currentSkip = skip + (i * 100);
                     let url = currentSkip > 0 ? `${base}/catalog/${catalog.type}/${catalog.id}/skip=${currentSkip}.json` : `${base}/catalog/${catalog.type}/${catalog.id}.json`;
-                    requests.push(axios.get(url, { timeout: 5000 }).catch(e => null));
+                    requests.push(axios.get(url, { timeout: 6000 }).catch(e => null));
                 }
                 
                 let responses = await Promise.all(requests);
-                let batchHadData = false;
+                let foundAnyInBatch = false;
                 
                 for (let res of responses) {
                     if (res && res.data && res.data.metas && res.data.metas.length > 0) {
                         catMetas.push(...res.data.metas);
-                        batchHadData = true;
+                        foundAnyInBatch = true;
                         if (res.data.metas.length < 100) hasMore = false; 
-                    } else {
-                        hasMore = false;
                     }
                 }
-                
-                if (!batchHadData) break;
+                if (!foundAnyInBatch) hasMore = false; 
                 skip += (batchSize * 100);
             }
             return catMetas;
@@ -502,59 +490,100 @@ async function fetchCatalogFromSource(sourceInput) {
     return metas;
 }
 
+// 🔴 LE SYSTÈME DE SCAN EN ARRIÈRE-PLAN (Anti-Timeout)
 async function getChannelsForSources(sourcesList) {
     const cacheKey = sourcesList.join('|');
-    if (channelsCache[cacheKey] && (Date.now() - channelsCache[cacheKey].timestamp < 3600000)) return channelsCache[cacheKey].data;
 
-    let tempChannelsMap = {};
-    for (let i = 0; i < sourcesList.length; i++) {
-        const sourceInput = sourcesList[i].trim();
-        if (!sourceInput) continue;
-        
-        const metas = await fetchCatalogFromSource(sourceInput);
-        let cleanUrl = sourceInput.replace(/\/manifest\.json$/, '').trim();
-
-        metas.forEach(meta => {
-            let channelInfo = getChannelData(meta.name || '');
-            if (!channelInfo) return; 
-
-            const id = channelInfo.id;
-            let finalPoster = meta.poster || DEFAULT_POSTER;
-
-            if (!tempChannelsMap[id]) {
-                tempChannelsMap[id] = { 
-                    id: id, 
-                    name: channelInfo.name, 
-                    displayName: channelInfo.name, 
-                    categories: channelInfo.categories,
-                    sortIndex: channelInfo.index,
-                    sources: [], 
-                    poster: finalPoster 
-                };
-            }
-            
-            if (meta._isDirectStream) {
-                const sourceExists = tempChannelsMap[id].sources.find(s => s.directUrl === meta._directUrl);
-                if (!sourceExists) {
-                    tempChannelsMap[id].sources.push({ type: 'm3u', directUrl: meta._directUrl, sourceIndex: i, originalName: meta.name });
-                }
-            } else {
-                const sourceExists = tempChannelsMap[id].sources.find(s => s.metaId === meta.id && s.providerBase === cleanUrl);
-                if (!sourceExists) {
-                    tempChannelsMap[id].sources.push({ type: 'addon', metaId: meta.id, providerBase: cleanUrl, sourceIndex: i, originalName: meta.name });
-                }
-            }
-        });
+    if (!channelsCache[cacheKey]) {
+        channelsCache[cacheKey] = { status: 'idle', data: [], timestamp: 0 };
     }
 
-    let tempChannelsData = Object.values(tempChannelsMap).filter(ch => ch.sources.length > 0);
-    tempChannelsData.sort((a, b) => {
-        if (a.sortIndex !== b.sortIndex) return a.sortIndex - b.sortIndex;
-        return a.displayName.localeCompare(b.displayName);
-    });
+    let cacheObj = channelsCache[cacheKey];
 
-    channelsCache[cacheKey] = { data: tempChannelsData, timestamp: Date.now() };
-    return tempChannelsData;
+    if (cacheObj.status === 'done' && (Date.now() - cacheObj.timestamp < 6 * 3600 * 1000)) {
+        return cacheObj.data;
+    }
+
+    if (cacheObj.status === 'syncing') {
+        if (cacheObj.data.length > 0) return cacheObj.data; 
+        return [{ 
+            id: 'hyb_loading', 
+            displayName: '⏳ Scan en cours... (Patientez 1 min et rechargez)', 
+            categories: ['tnt','info','sports','cinema','jeunesse','musique','decouverte','canal','autres','events'], 
+            poster: LOADING_POSTER, 
+            sources: [] 
+        }];
+    }
+
+    cacheObj.status = 'syncing';
+
+    // Lancement asynchrone furtif (ne bloque pas Stremio)
+    (async () => {
+        try {
+            let tempChannelsMap = {};
+            for (let i = 0; i < sourcesList.length; i++) {
+                const sourceInput = sourcesList[i].trim();
+                if (!sourceInput) continue;
+                
+                const metas = await fetchCatalogFromSource(sourceInput);
+                let cleanUrl = sourceInput.replace(/\/manifest\.json$/, '').trim();
+
+                metas.forEach(meta => {
+                    let channelInfo = getChannelData(meta.name || '');
+                    if (!channelInfo) return; 
+
+                    const id = channelInfo.id;
+                    let finalPoster = meta.poster || DEFAULT_POSTER;
+
+                    if (!tempChannelsMap[id]) {
+                        tempChannelsMap[id] = { 
+                            id: id, 
+                            name: channelInfo.name, 
+                            displayName: channelInfo.name, 
+                            categories: channelInfo.categories,
+                            sortIndex: channelInfo.index,
+                            sources: [], 
+                            poster: finalPoster 
+                        };
+                    }
+                    
+                    if (meta._isDirectStream) {
+                        const sourceExists = tempChannelsMap[id].sources.find(s => s.directUrl === meta._directUrl);
+                        if (!sourceExists) {
+                            tempChannelsMap[id].sources.push({ type: 'm3u', directUrl: meta._directUrl, sourceIndex: i, originalName: meta.name });
+                        }
+                    } else {
+                        const sourceExists = tempChannelsMap[id].sources.find(s => s.metaId === meta.id && s.providerBase === cleanUrl);
+                        if (!sourceExists) {
+                            tempChannelsMap[id].sources.push({ type: 'addon', metaId: meta.id, providerBase: cleanUrl, sourceIndex: i, originalName: meta.name });
+                        }
+                    }
+                });
+            }
+
+            let tempChannelsData = Object.values(tempChannelsMap).filter(ch => ch.sources.length > 0);
+            tempChannelsData.sort((a, b) => {
+                if (a.sortIndex !== b.sortIndex) return a.sortIndex - b.sortIndex;
+                return a.displayName.localeCompare(b.displayName);
+            });
+
+            cacheObj.data = tempChannelsData;
+            cacheObj.status = 'done';
+            cacheObj.timestamp = Date.now();
+        } catch (e) {
+            cacheObj.status = 'idle';
+        }
+    })();
+
+    if (cacheObj.data && cacheObj.data.length > 0) return cacheObj.data;
+    
+    return [{ 
+        id: 'hyb_loading', 
+        displayName: '⏳ Scan IPTV en cours... (Patientez 1 min et rechargez)', 
+        categories: ['tnt','info','sports','cinema','jeunesse','musique','decouverte','canal','autres','events'], 
+        poster: LOADING_POSTER, 
+        sources: [] 
+    }];
 }
 
 app.get('/api/stats', (req, res) => {
@@ -573,8 +602,10 @@ app.get('/api/stats', (req, res) => {
     if (latestCache) {
         totalChannels = latestCache.length;
         latestCache.forEach(ch => {
+            if (ch.id === 'hyb_loading') return;
             ch.sources.forEach(src => {
                 let base = src.type === 'm3u' ? 'Playlist M3U' : src.providerBase;
+                if (base.length > 40) base = base.substring(0, 37) + '...'; // Troncature propre
                 sourcesCount[base] = (sourcesCount[base] || 0) + 1;
             });
         });
@@ -583,7 +614,7 @@ app.get('/api/stats', (req, res) => {
     res.json({
         epgCount: Object.keys(epgData).length,
         epgLastUpdate: lastUpdate,
-        totalChannels: totalChannels,
+        totalChannels: totalChannels > 1 ? totalChannels : 0,
         sourcesCount: sourcesCount
     });
 });
@@ -770,7 +801,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '4.2.0',
+        version: '4.3.0',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -816,6 +847,20 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
 });
 
 app.get('/:config/meta/tv/:id.json', async (req, res) => {
+    // Si l'utilisateur clique sur la chaîne virtuelle de chargement
+    if (req.params.id === 'hyb_loading') {
+        return res.json({
+            meta: { 
+                id: 'hyb_loading', 
+                type: 'tv', 
+                name: '⏳ Scan IPTV en cours...', 
+                poster: LOADING_POSTER, 
+                posterShape: 'square', 
+                description: 'Le serveur télécharge et analyse actuellement tous les flux de votre fournisseur (cela empêche les erreurs de chargement). \n\nCette opération prend environ 1 à 2 minutes la première fois. \n\nVeuillez revenir en arrière et patienter un instant avant de recharger la catégorie.' 
+            }
+        });
+    }
+
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ meta: {} });
     
@@ -873,6 +918,8 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
 });
 
 app.get('/:config/stream/tv/:id.json', async (req, res) => {
+    if (req.params.id === 'hyb_loading') return res.json({ streams: [] });
+
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
     
@@ -902,7 +949,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             }
 
             try {
-                // Timeout sécurisé pour Stremio (6s max)
                 const streamRes = await axios.get(`${source.providerBase}/stream/tv/${source.metaId}.json`, {
                     headers: { 'X-Forwarded-For': clientIp }, timeout: 6000 
                 });
@@ -982,7 +1028,17 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             }
                         }
 
-                        // SCORING
+                        if (channel.id.startsWith('hyb_canal_live')) {
+                            let targetNumMatch = channel.id.match(/_(\d+)$/);
+                            let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
+                            let streamNumMatch = nStream.match(/LIVE(\d+)/i);
+                            if (streamNumMatch) {
+                                if (streamNumMatch[1] !== targetNum) penalty += 5000;
+                            } else {
+                                penalty += 5000;
+                            }
+                        }
+
                         if (up.includes('FHD') || up.includes('1080')) { qual = "Full HD (1080p)"; score += 1500; } 
                         else if (up.includes('HD') || up.includes('720')) { qual = "HD (720p)"; score += 1000; } 
                         else if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) { qual = "4K (UHD)"; score += 500; } 
