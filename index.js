@@ -121,6 +121,7 @@ const LOGOS = {
     'hyb_jeu_disneyjr': 'https://upload.wikimedia.org/wikipedia/fr/3/36/Disney_Junior_2011.png',
     'hyb_jeu_tiji': 'https://focus.telerama.fr/500x500/0000/00/01/clear-229.png',
     'hyb_jeu_piwi': 'https://focus.telerama.fr/500x500/0000/00/01/clear-344.png',
+    'hyb_jeu_mangas': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQrBITj8D4ehy326isxvvHDFUivw37wiREtViWbndOOtqIoq8ykrTbVbQQADg&s',
 
     'hyb_mus_mtv': 'https://upload.wikimedia.org/wikipedia/commons/0/0d/MTV-2021.svg',
     'hyb_mus_mcm': 'https://upload.wikimedia.org/wikipedia/fr/a/ab/MCM_logo_2017.svg',
@@ -136,7 +137,7 @@ function parseConfig(encodedConfig) {
         if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], epg: true, logos: false };
         const jsonStr = Buffer.from(encodedConfig, 'base64').toString('utf8');
         let parsed = JSON.parse(jsonStr);
-        parsed.logos = false; // Always enforce native M3U logos
+        parsed.logos = false; 
         return parsed;
     } catch (e) {
         return { sources: [], epg: true, logos: false };
@@ -145,19 +146,16 @@ function parseConfig(encodedConfig) {
 
 // ============================================================================
 // LIVE EVENT PARSER
-// Extracts temporary sporting events and routes them away from linear channels.
 // ============================================================================
 function extractMatchEvent(rawName) {
     if (!rawName) return null;
     let s = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-    // Clean structural brackets prior to regex matching
     s = s.replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
 
     let isMatch = false;
     let eventName = '';
 
-    // Explicit "Match Time" keyword
     if (s.includes('MATCH TIME') || s.includes('MATCHTIME')) {
         let cleanName = s.replace(/^(?:FR|BE|CH|VIP|LIVE|DIRECT|EVENT|MATCH|LIGUE\s*1|DAZN|BEIN|RMC|CANAL\+?|MULTI|MULTIPLEX)\s*[:|-|\|]*\s*/gi, '')
                  .replace(/\d{1,2}[hH:]\d{2}/g, '')
@@ -167,14 +165,11 @@ function extractMatchEvent(rawName) {
         return { id: 'hyb_ev_' + toSyncId(cleanName), name: '🔴 ' + cleanName, categories: ['events'], index: 5, customPoster: EVENT_POSTER };
     }
 
-    // Explicit "VS" formatting
     let vsMatch = s.match(/([A-Z0-9\s]{3,20})\s+(?:VS\.?|CONTRE|\bV\b|\bVERSUS\b)\s+([A-Z0-9\s]{3,20})/i);
     if (vsMatch) {
         isMatch = true; 
         eventName = `${vsMatch[1].trim()} vs ${vsMatch[2].trim()}`;
-    } 
-    // Hyphenated formatting within a known live sports context
-    else if (/(?:LIGUE\s*1|UCL|LDC|EURO|PREMIER LEAGUE|MATCH|EVENT).+?\b([A-Z][A-Z0-9\s]{2,20})\s*[-/]\s*([A-Z][A-Z0-9\s]{2,20})\b/i.test(s)) {
+    } else if (/(?:LIGUE\s*1|UCL|LDC|EURO|PREMIER LEAGUE|MATCH|EVENT).+?\b([A-Z][A-Z0-9\s]{2,20})\s*[-/]\s*([A-Z][A-Z0-9\s]{2,20})\b/i.test(s)) {
         let dashMatch = s.match(/\b([A-Z][A-Z0-9\s]{2,20})\s*[-/]\s*([A-Z][A-Z0-9\s]{2,20})\b/i);
         if (dashMatch) {
             let inv = ['CANAL', 'CINE', 'SPORT', 'BEIN', 'RMC', 'EUROSPORT', 'TF1', 'FRANCE', 'M6', 'DAZN', '1080P', '720P', 'UHD', '4K', 'FHD', 'HD', 'SD', 'PLUS'];
@@ -201,7 +196,6 @@ function extractMatchEvent(rawName) {
         }
     }
 
-    // Generic Multiplex
     if (s.includes('MULTIPLEX') && !s.includes('CANAL')) {
         return { id: 'hyb_ev_multi', name: '🔴 MULTIPLEX EN DIRECT', categories: ['events'], index: 1, customPoster: EVENT_POSTER };
     }
@@ -210,7 +204,6 @@ function extractMatchEvent(rawName) {
 
 // ============================================================================
 // SEMANTIC CHANNEL ROUTER
-// Assigns channel ID, category, and sorting index based on parsed string data.
 // ============================================================================
 function getChannelData(rawName) {
     if (!rawName) return null;
@@ -232,7 +225,6 @@ function getChannelData(rawName) {
 
     n = n.replace(/\+/g, 'PLUS');
 
-    // --- SPORTS: LIGUE 1+ ---
     if (n.includes('LIGUE 1') || n.includes('LIGUE1') || n.match(/\bL1\b/)) {
         if (!n.includes('DAZN') && !n.includes('BEIN') && !n.includes('RMC')) {
             let m = n.match(/(?:LIGUE\s*1|L1|LIGUE1)(?:.*?PLUS)?[^\d]*([1-9]|1[0-8])/i);
@@ -245,7 +237,6 @@ function getChannelData(rawName) {
         }
     }
     
-    // --- SPORTS: DAZN ---
     if (n.includes('DAZN')) {
         if (n.includes('RISE')) return { id: 'hyb_sport_dazn_rise', name: 'DAZN Rise', categories: ['sports'], index: 150 };
         let m = n.match(/DAZN[^\d]*([1-9]|1[0-8])/i); let num = m ? m[1] : '1';
@@ -256,13 +247,11 @@ function getChannelData(rawName) {
     if (!c || c.length < 2) return null;
     if (BLACKLIST.some(b => c.includes(b))) return null;
 
-    // --- OTHER: CANAL+ FALSE FRIENDS ---
     if (c.includes('JURAS') || c.includes('TOP14') || c.includes('LCENTRE') || c.includes('LIGA') || c === 'CANALPLUSL' || c === 'CPLUSL' || c === 'CPLUSSPORT') {
         let pretty = rawName.replace(/\[.*?\]|\(.*?\)/g, '').replace(/\b(?:FHD|HD|SD|4K|1080P|720P)\b/gi, '').trim();
         return { id: 'hyb_aut_' + c.substring(0, 15), name: pretty, categories: ['autres'], index: 200 };
     }
 
-    // --- INFO ---
     if (c.startsWith('FRANCE24')) return { id: 'hyb_info_06', name: 'France 24', categories: ['info'], index: 6 };
     if (c.startsWith('FRANCEINFO')) return { id: 'hyb_info_07', name: 'France Info', categories: ['info'], index: 7 };
     if (c.includes('METEO')) return { id: 'hyb_info_08', name: 'La Chaîne Météo', categories: ['info'], index: 8 };
@@ -278,11 +267,9 @@ function getChannelData(rawName) {
     if (c.includes('CNEWS')) return { id: 'hyb_info_03', name: 'CNews', categories: ['info'], index: 3 };
     if (c === 'LCI') return { id: 'hyb_info_04', name: 'LCI', categories: ['info'], index: 4 };
 
-    // --- COMEDY ---
     if (c.includes('COMEDYCENTRAL')) return { id: 'hyb_aut_comedycentral', name: 'Comedy Central', categories: ['autres'], index: 11 };
     if (c.includes('COMEDIE') || c.includes('COMEDY')) return { id: 'hyb_canal_comedie', name: 'Comédie+', categories: ['canal', 'autres'], index: 10 };
 
-    // --- CANAL+ BUNDLE ---
     if (c.includes('CANAL') || c.includes('CPLUS')) {
         if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 100 };
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
@@ -308,7 +295,6 @@ function getChannelData(rawName) {
         return { id: 'hyb_canal_cplus', name: 'Canal+', categories: ['canal'], index: 1 };
     }
 
-    // --- SPORTS ---
     if (c.includes('BEINSPORT') || c.includes('BEIN')) {
         let isMax = c.includes('MAX'); let m = c.match(/BEIN(?:SPORT|MAX)?S?(\d+)/); let num = (m && m[1]) ? m[1] : '1';
         return { id: 'hyb_sport_bein_' + (isMax?'max':'') + num, name: isMax ? 'beIN SPORTS MAX '+num : 'beIN SPORTS '+num, categories: ['sports'], index: isMax ? 40 + parseInt(num, 10) : 30 + parseInt(num, 10) };
@@ -327,7 +313,6 @@ function getChannelData(rawName) {
     if (c.includes('OLTV') || c.includes('OLYMPIQUELYONNAIS')) return { id: 'hyb_sport_oltv', name: 'OL TV', categories: ['sports'], index: 97 };
     if (c.includes('LEQUIPE')) return { id: 'hyb_sport_lequipe', name: "L'Équipe", categories: ['sports', 'tnt'], index: 98 };
 
-    // --- CINEMA ---
     if (c.includes('CINE') || c.includes('CINA')) {
         if (c.includes('PREMIER')) return { id: 'hyb_cine_premier', name: 'Ciné+ Premier', categories: ['cinema', 'canal'], index: 11 };
         if (c.includes('FRISSON') || c.includes('ISSON')) return { id: 'hyb_cine_frisson', name: 'Ciné+ Frisson', categories: ['cinema', 'canal'], index: 12 };
@@ -347,7 +332,6 @@ function getChannelData(rawName) {
     if (c.includes('SYFY') || c.includes('SCIFI')) return { id: 'hyb_cine_syfy', name: 'Syfy', categories: ['cinema'], index: 35 };
     if (c.includes('PARAMOUNT')) return { id: 'hyb_cine_paramount', name: 'Paramount Channel', categories: ['cinema'], index: 32 };
 
-    // --- TNT ---
     if (c.startsWith('TF1SERIESFILMS') || c.startsWith('TF1SF')) return { id: 'hyb_tnt_20', name: 'TF1 Séries Films', categories: ['tnt', 'cinema'], index: 20 };
     if (c.startsWith('TF1')) return { id: 'hyb_tnt_1', name: 'TF1', categories: ['tnt'], index: 1 };
     if (c.startsWith('FRANCE2') || c === 'FR2') return { id: 'hyb_tnt_2', name: 'France 2', categories: ['tnt'], index: 2 };
@@ -374,7 +358,7 @@ function getChannelData(rawName) {
     if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
     if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
 
-    // --- KIDS (Strict Order) ---
+    // --- KIDS ---
     if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 150 };
     if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
     if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 3 };
@@ -389,8 +373,8 @@ function getChannelData(rawName) {
     if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 11 };
     if (c.includes('PIWI')) return { id: 'hyb_jeu_piwi', name: 'Piwi+', categories: ['jeunesse'], index: 100 };
 
-    // --- MUSIC (Order critical logic) ---
-    if (c.includes('RFMTV') || c.includes('RFM')) return { id: 'hyb_mus_rfm', name: 'RFM TV', categories: ['musique'], index: 34 }; // Processed before MTV to avoid overlap
+    // --- MUSIC ---
+    if (c.includes('RFMTV') || c.includes('RFM')) return { id: 'hyb_mus_rfm', name: 'RFM TV', categories: ['musique'], index: 34 }; 
     if (c.includes('MTV')) return { id: 'hyb_mus_mtv', name: 'MTV', categories: ['musique'], index: 10 };
     if (c.includes('MCM')) return { id: 'hyb_mus_mcm', name: 'MCM', categories: ['musique'], index: 20 };
     if (c.includes('TRACE')) {
@@ -415,7 +399,7 @@ function getChannelData(rawName) {
     if (c.includes('CHASSE') || c.includes('PECHE')) return { id: 'hyb_dec_chasse', name: 'Chasse et Pêche', categories: ['decouverte'], index: 34 };
     if (c.includes('ANIMAUX')) return { id: 'hyb_dec_animaux', name: 'Animaux', categories: ['decouverte'], index: 35 };
 
-    // --- FALLBACK (Generic parsing) ---
+    // --- FALLBACK ---
     let cat = 'autres';
     let idx = 300;
     if (c.includes('SPORT') || c.includes('FOOT') || c.includes('GOLF') || c.includes('TENNIS') || c.includes('RUGBY') || c.includes('AUTO') || c.includes('MOTO')) cat = 'sports';
@@ -450,7 +434,7 @@ function formatTime(timestamp) {
 }
 
 /**
- * EPG Downloader and Parser
+ * EPG Downloader
  */
 async function fetchAndParseEPG(url, isGz) {
     return new Promise(async (resolve, reject) => {
@@ -537,15 +521,13 @@ async function updateEPG() {
 }
 
 /**
- * Fetch Catalog
- * Scrapes metadata from Stremio add-ons or M3U files concurrently with Memory Safeties.
+ * Fetch Catalog (Concurrent M3U and Stremio API handling)
  */
 async function fetchCatalogFromSource(sourceInput) {
     let metas = [];
     let cleanInput = sourceInput.trim();
     if (!cleanInput) return metas;
 
-    // Routine for .M3U files
     if (cleanInput.endsWith('.m3u') || cleanInput.endsWith('.m3u8') || cleanInput.includes('get.php') || cleanInput.includes('/live/')) {
         try {
             const res = await axios.get(cleanInput, { timeout: 10000 });
@@ -577,12 +559,11 @@ async function fetchCatalogFromSource(sourceInput) {
                 }
             }
         } catch (e) {
-            console.error("[M3U Parsing Error]", e.message);
+            // Silenced fetch error
         }
         return metas;
     }
 
-    // Routine for JSON Catalogs (Stremio Addons like Vavoo)
     try {
         let cleanUrl = cleanInput;
         if (!cleanUrl.endsWith('manifest.json')) cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
@@ -595,8 +576,8 @@ async function fetchCatalogFromSource(sourceInput) {
             let catMetas = []; 
             let hasMore = true; 
             let skip = 0;
-            const maxSkip = 15000; // Cap to 150 pages (~15,000 streams per catalog) to prevent Memory Leaks.
-            const batchSize = 3;   // Lower concurrency to prevent RAM spike
+            const maxSkip = 15000; 
+            const batchSize = 3;   
 
             while (hasMore && skip < maxSkip) {
                 let requests = [];
@@ -611,7 +592,6 @@ async function fetchCatalogFromSource(sourceInput) {
                 
                 for (let res of responses) {
                     if (res && res.data && res.data.metas && res.data.metas.length > 0) {
-                        // EARLY FILTERING: Strip heavy unneeded object properties to save RAM.
                         res.data.metas.forEach(m => {
                             if (m && m.id && m.name) {
                                 catMetas.push({ id: m.id, name: m.name, poster: m.poster || null });
@@ -638,13 +618,12 @@ async function fetchCatalogFromSource(sourceInput) {
 
 /**
  * Background Sync Implementation
- * Prevents Stremio catalog timeout on massive provider databases.
  */
 async function getChannelsForSources(sourcesList) {
     const cacheKey = sourcesList.join('|');
 
     if (!channelsCache[cacheKey]) {
-        channelsCache[cacheKey] = { status: 'idle', data: [], timestamp: 0 };
+        channelsCache[cacheKey] = { status: 'idle', data: [], sourceReport: {}, timestamp: 0 };
     }
 
     let cacheObj = channelsCache[cacheKey];
@@ -666,48 +645,61 @@ async function getChannelsForSources(sourcesList) {
 
     cacheObj.status = 'syncing';
 
-    // Async extraction
     (async () => {
         try {
             let tempChannelsMap = {};
+            let sourceReport = {};
+
             for (let i = 0; i < sourcesList.length; i++) {
                 const sourceInput = sourcesList[i].trim();
                 if (!sourceInput) continue;
                 
-                const metas = await fetchCatalogFromSource(sourceInput);
                 let cleanUrl = sourceInput.replace(/\/manifest\.json$/, '').trim();
+                sourceReport[cleanUrl] = { count: 0, status: 'fetching' };
 
-                metas.forEach(meta => {
-                    let channelInfo = getChannelData(meta.name || '');
-                    if (!channelInfo) return; 
-
-                    const id = channelInfo.id;
-                    let finalPoster = meta.poster || DEFAULT_POSTER;
-
-                    if (!tempChannelsMap[id]) {
-                        tempChannelsMap[id] = { 
-                            id: id, 
-                            name: channelInfo.name, 
-                            displayName: channelInfo.name, 
-                            categories: channelInfo.categories,
-                            sortIndex: channelInfo.index,
-                            sources: [], 
-                            poster: finalPoster 
-                        };
-                    }
+                try {
+                    const metas = await fetchCatalogFromSource(sourceInput);
                     
-                    if (meta._isDirectStream) {
-                        const sourceExists = tempChannelsMap[id].sources.find(s => s.directUrl === meta._directUrl);
-                        if (!sourceExists) {
-                            tempChannelsMap[id].sources.push({ type: 'm3u', directUrl: meta._directUrl, sourceIndex: i, originalName: meta.name });
-                        }
+                    if (metas && metas.length > 0) {
+                        sourceReport[cleanUrl] = { count: metas.length, status: 'ok' };
                     } else {
-                        const sourceExists = tempChannelsMap[id].sources.find(s => s.metaId === meta.id && s.providerBase === cleanUrl);
-                        if (!sourceExists) {
-                            tempChannelsMap[id].sources.push({ type: 'addon', metaId: meta.id, providerBase: cleanUrl, sourceIndex: i, originalName: meta.name });
-                        }
+                        sourceReport[cleanUrl] = { count: 0, status: 'empty' };
                     }
-                });
+
+                    metas.forEach(meta => {
+                        let channelInfo = getChannelData(meta.name || '');
+                        if (!channelInfo) return; 
+
+                        const id = channelInfo.id;
+                        let finalPoster = meta.poster || DEFAULT_POSTER;
+
+                        if (!tempChannelsMap[id]) {
+                            tempChannelsMap[id] = { 
+                                id: id, 
+                                name: channelInfo.name, 
+                                displayName: channelInfo.name, 
+                                categories: channelInfo.categories,
+                                sortIndex: channelInfo.index,
+                                sources: [], 
+                                poster: finalPoster 
+                            };
+                        }
+                        
+                        if (meta._isDirectStream) {
+                            const sourceExists = tempChannelsMap[id].sources.find(s => s.directUrl === meta._directUrl);
+                            if (!sourceExists) {
+                                tempChannelsMap[id].sources.push({ type: 'm3u', directUrl: meta._directUrl, sourceIndex: i, originalName: meta.name });
+                            }
+                        } else {
+                            const sourceExists = tempChannelsMap[id].sources.find(s => s.metaId === meta.id && s.providerBase === cleanUrl);
+                            if (!sourceExists) {
+                                tempChannelsMap[id].sources.push({ type: 'addon', metaId: meta.id, providerBase: cleanUrl, sourceIndex: i, originalName: meta.name });
+                            }
+                        }
+                    });
+                } catch (e) {
+                    sourceReport[cleanUrl] = { count: 0, status: 'error' };
+                }
             }
 
             let tempChannelsData = Object.values(tempChannelsMap).filter(ch => ch.sources.length > 0);
@@ -717,6 +709,7 @@ async function getChannelsForSources(sourcesList) {
             });
 
             cacheObj.data = tempChannelsData;
+            cacheObj.sourceReport = sourceReport; // Injection for dashboard
             cacheObj.status = 'done';
             cacheObj.timestamp = Date.now();
         } catch (e) {
@@ -741,34 +734,27 @@ async function getChannelsForSources(sourcesList) {
 
 app.get('/api/stats', (req, res) => {
     let totalChannels = 0;
-    let sourcesCount = {};
+    let sourceReport = {};
     let latestCache = null;
     let latestTime = 0;
 
     for (const [key, val] of Object.entries(channelsCache)) {
         if (val.timestamp > latestTime) {
             latestTime = val.timestamp;
-            latestCache = val.data;
+            latestCache = val;
         }
     }
 
-    if (latestCache) {
-        totalChannels = latestCache.length;
-        latestCache.forEach(ch => {
-            if (ch.id === 'hyb_loading') return;
-            ch.sources.forEach(src => {
-                let base = src.type === 'm3u' ? 'Playlist M3U' : src.providerBase;
-                if (base.length > 40) base = base.substring(0, 37) + '...';
-                sourcesCount[base] = (sourcesCount[base] || 0) + 1;
-            });
-        });
+    if (latestCache && latestCache.data) {
+        totalChannels = latestCache.data.length;
+        sourceReport = latestCache.sourceReport || {};
     }
     
     res.json({
         epgCount: Object.keys(epgData).length,
         epgLastUpdate: lastUpdate,
         totalChannels: totalChannels > 1 ? totalChannels : 0,
-        sourcesCount: sourcesCount
+        sourceReport: sourceReport
     });
 });
 
@@ -917,10 +903,25 @@ app.get('/', async (req, res) => {
                     
                     if (data.totalChannels > 0) {
                         html += \`📡 <b>Flux IPTV :</b> \${data.totalChannels} chaînes uniques validées<br>\`;
-                        html += \`<ul style="margin-top:5px; text-align:left; padding-left: 20px;">\`;
-                        for (const [source, count] of Object.entries(data.sourcesCount)) {
-                            html += \`<li>\${source} : <b>\${count} flux trouvés</b></li>\`;
-                        }
+                        html += \`<ul style="margin-top:5px; text-align:left; padding-left: 20px; font-size: 13px;">\`;
+                        
+                        // Itération sur toutes les sources configurées localement pour la transparence
+                        sources.forEach(src => {
+                            if (!src) return;
+                            let cleanSrc = src.replace(/\\/manifest\\.json$/, '').trim();
+                            let displaySrc = cleanSrc.length > 40 ? cleanSrc.substring(0, 37) + '...' : cleanSrc;
+                            let r = data.sourceReport[cleanSrc];
+                            
+                            if (!r || r.status === 'fetching') {
+                                html += \`<li>\${displaySrc} : <b>⏳ En attente du premier scan...</b></li>\`;
+                            } else if (r.status === 'ok') {
+                                html += \`<li>\${displaySrc} : <b>✅ \${r.count} flux trouvés</b></li>\`;
+                            } else if (r.status === 'empty') {
+                                html += \`<li>\${displaySrc} : <b>⚠️ 0 flux (Vide ou Incompatible)</b></li>\`;
+                            } else {
+                                html += \`<li>\${displaySrc} : <b style="color:#e50914;">❌ Add-on Hors Ligne</b></li>\`;
+                            }
+                        });
                         html += \`</ul>\`;
                     } else {
                         html += \`📡 <b>Flux IPTV :</b> <i>En attente du premier scan (Ouvrez l'add-on dans votre lecteur pour lancer l'analyse)</i>\`;
@@ -954,7 +955,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '4.3.1',
+        version: '4.4.0',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -1000,7 +1001,6 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
 });
 
 app.get('/:config/meta/tv/:id.json', async (req, res) => {
-    // Virtual loading channel response
     if (req.params.id === 'hyb_loading') {
         return res.json({
             meta: { 
@@ -1091,18 +1091,20 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     
     try {
         let streamPromises = channel.sources.map(async (source) => {
+            // TRAITEMENT VIP BELUCHON : S'applique à tous les types (M3U ou Addon)
+            let isBeluchon = source.providerBase && source.providerBase.toLowerCase().includes('beluchon');
+
             if (source.type === 'm3u') {
                 return [{
                     url: source.directUrl,
-                    name: `▶ Full HD (1080p)`,
+                    name: isBeluchon ? `▶ Source Officielle (HD)` : `▶ Full HD (1080p)`,
                     title: source.originalName || "Source M3U",
-                    _score: 1500,
+                    _score: isBeluchon ? 4500 : 1500,
                     _originalTitle: source.originalName || "Source M3U"
                 }];
             }
 
             try {
-                // Timeout sécurisé pour Stremio (6s max)
                 const streamRes = await axios.get(`${source.providerBase}/stream/tv/${source.metaId}.json`, {
                     headers: { 'X-Forwarded-For': clientIp }, timeout: 6000 
                 });
@@ -1118,14 +1120,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         originalTitle = originalTitle.replace(/http\S+/g, '').trim() || `Source Add-on ${idx + 1}`;
 
                         let up = originalTitle.toUpperCase();
-                        
-                        // Strict validation string
-                        let nStream = up.normalize("NFD")
-                            .replace(/[\u0300-\u036f]/g, "")
-                            .replace(/\([^)]*\)/g, '')
-                            .replace(/\[[^\]]*\]/g, '')
-                            .replace(/\+/g, 'PLUS')
-                            .replace(/[^A-Z0-9]/g, '');
+                        let nStream = up.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').replace(/\+/g, 'PLUS').replace(/[^A-Z0-9]/g, '');
 
                         let penalty = 0;
                         
@@ -1151,7 +1146,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             if (nStream.includes('JR') || nStream.includes('JUNIOR') || nStream.includes('XD') || nStream.includes('PLUS1')) penalty += 5000;
                         }
 
-                        // 3. Sports multiplex strict evaluation
+                        // 3. Sports multiplex validation
                         if (channel.id.startsWith('hyb_sport_bein')) {
                             let targetNumMatch = channel.id.match(/_(\d+)$/);
                             let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
@@ -1197,11 +1192,16 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             }
                         }
 
-                        // 4. Quality scoring configuration
-                        if (up.includes('FHD') || up.includes('1080')) { qual = "Full HD (1080p)"; score += 1500; } 
-                        else if (up.includes('HD') || up.includes('720')) { qual = "HD (720p)"; score += 1000; } 
-                        else if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) { qual = "4K (UHD)"; score += 500; } 
-                        else { score += 0; } 
+                        // 4. Scoring Algorithm & Overrides
+                        if (isBeluchon) {
+                            qual = "Source Officielle Légale (HD)";
+                            score += 3000; // Priorité absolue
+                        } else {
+                            if (up.includes('FHD') || up.includes('1080')) { qual = "Full HD (1080p)"; score += 1500; } 
+                            else if (up.includes('HD') || up.includes('720')) { qual = "HD (720p)"; score += 1000; } 
+                            else if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) { qual = "4K (UHD)"; score += 500; } 
+                            else { score += 0; } 
+                        }
 
                         if (up.match(/\bFR\b/) || up.match(/\bVF\b/) || up.includes('FRENCH') || up.includes('TRUEFRENCH')) {
                             score += 300; 
@@ -1211,7 +1211,9 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         
                         score -= penalty;
                         score -= idx; 
-                        score += (10 - source.sourceIndex) * 10;
+                        
+                        // L'ordre du fournisseur est respecté et amplifié (Source 1 gagne +500 points)
+                        score += (10 - source.sourceIndex) * 50;
 
                         return { ...s, _qualText: qual, _score: score, _originalTitle: originalTitle };
                     });
@@ -1226,7 +1228,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         allStreams.sort((a, b) => b._score - a._score);
         const limitedStreams = allStreams.slice(0, 15);
 
-        // Display formatting: Original string mapped to name, parsing mapped to title
         const finalStreams = limitedStreams.map((s) => ({
             url: s.url, 
             name: s._originalTitle, 
