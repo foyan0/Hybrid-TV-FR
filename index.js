@@ -121,7 +121,6 @@ const LOGOS = {
     'hyb_jeu_disneyjr': 'https://upload.wikimedia.org/wikipedia/fr/3/36/Disney_Junior_2011.png',
     'hyb_jeu_tiji': 'https://focus.telerama.fr/500x500/0000/00/01/clear-229.png',
     'hyb_jeu_piwi': 'https://focus.telerama.fr/500x500/0000/00/01/clear-344.png',
-    'hyb_jeu_mangas': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQrBITj8D4ehy326isxvvHDFUivw37wiREtViWbndOOtqIoq8ykrTbVbQQADg&s',
 
     'hyb_mus_mtv': 'https://upload.wikimedia.org/wikipedia/commons/0/0d/MTV-2021.svg',
     'hyb_mus_mcm': 'https://upload.wikimedia.org/wikipedia/fr/a/ab/MCM_logo_2017.svg',
@@ -132,15 +131,12 @@ const LOGOS = {
     'hyb_mus_rfm': 'https://upload.wikimedia.org/wikipedia/fr/5/52/Logo_RFM_TV.png'
 };
 
-/**
- * Decode base64 configuration object
- */
 function parseConfig(encodedConfig) {
     try {
         if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], epg: true, logos: false };
         const jsonStr = Buffer.from(encodedConfig, 'base64').toString('utf8');
         let parsed = JSON.parse(jsonStr);
-        parsed.logos = false; // Enforcement of static native logos logic
+        parsed.logos = false; // Always enforce native M3U logos
         return parsed;
     } catch (e) {
         return { sources: [], epg: true, logos: false };
@@ -161,7 +157,7 @@ function extractMatchEvent(rawName) {
     let isMatch = false;
     let eventName = '';
 
-    // Condition 1: Explicit "Match Time" keyword
+    // Explicit "Match Time" keyword
     if (s.includes('MATCH TIME') || s.includes('MATCHTIME')) {
         let cleanName = s.replace(/^(?:FR|BE|CH|VIP|LIVE|DIRECT|EVENT|MATCH|LIGUE\s*1|DAZN|BEIN|RMC|CANAL\+?|MULTI|MULTIPLEX)\s*[:|-|\|]*\s*/gi, '')
                  .replace(/\d{1,2}[hH:]\d{2}/g, '')
@@ -171,13 +167,13 @@ function extractMatchEvent(rawName) {
         return { id: 'hyb_ev_' + toSyncId(cleanName), name: '🔴 ' + cleanName, categories: ['events'], index: 5, customPoster: EVENT_POSTER };
     }
 
-    // Condition 2: Explicit "VS" formatting
+    // Explicit "VS" formatting
     let vsMatch = s.match(/([A-Z0-9\s]{3,20})\s+(?:VS\.?|CONTRE|\bV\b|\bVERSUS\b)\s+([A-Z0-9\s]{3,20})/i);
     if (vsMatch) {
         isMatch = true; 
         eventName = `${vsMatch[1].trim()} vs ${vsMatch[2].trim()}`;
     } 
-    // Condition 3: Hyphenated formatting within a known live sports context
+    // Hyphenated formatting within a known live sports context
     else if (/(?:LIGUE\s*1|UCL|LDC|EURO|PREMIER LEAGUE|MATCH|EVENT).+?\b([A-Z][A-Z0-9\s]{2,20})\s*[-/]\s*([A-Z][A-Z0-9\s]{2,20})\b/i.test(s)) {
         let dashMatch = s.match(/\b([A-Z][A-Z0-9\s]{2,20})\s*[-/]\s*([A-Z][A-Z0-9\s]{2,20})\b/i);
         if (dashMatch) {
@@ -205,7 +201,7 @@ function extractMatchEvent(rawName) {
         }
     }
 
-    // Condition 4: Generic Multiplex
+    // Generic Multiplex
     if (s.includes('MULTIPLEX') && !s.includes('CANAL')) {
         return { id: 'hyb_ev_multi', name: '🔴 MULTIPLEX EN DIRECT', categories: ['events'], index: 1, customPoster: EVENT_POSTER };
     }
@@ -219,13 +215,11 @@ function extractMatchEvent(rawName) {
 function getChannelData(rawName) {
     if (!rawName) return null;
     
-    // Evaluate event extraction first
     let eventData = extractMatchEvent(rawName);
     if (eventData) return eventData;
 
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-    // Sanitize string (remove tags, parentheses)
     n = n.replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
     n = n.replace(/^(?:FR|BE|CH|CA|VIP|VAVOO)\s*[:|/-]+\s*/i, '');
     n = n.replace(/DURING EVENT ONLY/g, '').replace(/EVENT ONLY/g, '');
@@ -544,13 +538,14 @@ async function updateEPG() {
 
 /**
  * Fetch Catalog
- * Scrapes metadata from Stremio add-ons or M3U files concurrently.
+ * Scrapes metadata from Stremio add-ons or M3U files concurrently with Memory Safeties.
  */
 async function fetchCatalogFromSource(sourceInput) {
     let metas = [];
     let cleanInput = sourceInput.trim();
     if (!cleanInput) return metas;
 
+    // Routine for .M3U files
     if (cleanInput.endsWith('.m3u') || cleanInput.endsWith('.m3u8') || cleanInput.includes('get.php') || cleanInput.includes('/live/')) {
         try {
             const res = await axios.get(cleanInput, { timeout: 10000 });
@@ -587,6 +582,7 @@ async function fetchCatalogFromSource(sourceInput) {
         return metas;
     }
 
+    // Routine for JSON Catalogs (Stremio Addons like Vavoo)
     try {
         let cleanUrl = cleanInput;
         if (!cleanUrl.endsWith('manifest.json')) cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
@@ -599,8 +595,8 @@ async function fetchCatalogFromSource(sourceInput) {
             let catMetas = []; 
             let hasMore = true; 
             let skip = 0;
-            const maxSkip = 50000; // Limit raised to 500 pages. Ensure full dataset extraction.
-            const batchSize = 5;   // Parallel requests
+            const maxSkip = 15000; // Cap to 150 pages (~15,000 streams per catalog) to prevent Memory Leaks.
+            const batchSize = 3;   // Lower concurrency to prevent RAM spike
 
             while (hasMore && skip < maxSkip) {
                 let requests = [];
@@ -615,7 +611,12 @@ async function fetchCatalogFromSource(sourceInput) {
                 
                 for (let res of responses) {
                     if (res && res.data && res.data.metas && res.data.metas.length > 0) {
-                        catMetas.push(...res.data.metas);
+                        // EARLY FILTERING: Strip heavy unneeded object properties to save RAM.
+                        res.data.metas.forEach(m => {
+                            if (m && m.id && m.name) {
+                                catMetas.push({ id: m.id, name: m.name, poster: m.poster || null });
+                            }
+                        });
                         foundAnyInBatch = true;
                         if (res.data.metas.length < 100) hasMore = false; 
                     }
@@ -953,7 +954,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '4.3.0',
+        version: '4.3.1',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -1101,7 +1102,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             }
 
             try {
-                // Request to external provider. Timeout locked at 6s to prevent Stremio load failure.
+                // Timeout sécurisé pour Stremio (6s max)
                 const streamRes = await axios.get(`${source.providerBase}/stream/tv/${source.metaId}.json`, {
                     headers: { 'X-Forwarded-For': clientIp }, timeout: 6000 
                 });
