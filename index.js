@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Core Engine: Raw Stream Passthrough, Semantic Routing, Custom Quality Profiling.
+ * Core Engine: French Geo-Spoofing, Semantic Routing, Quality Profiling.
  */
 
 const express = require('express');
@@ -484,7 +484,6 @@ async function fetchCatalogFromSource(sourceInput) {
                 let requests = [];
                 for (let i = 0; i < batchSize; i++) {
                     let currentSkip = skip + (i * 100);
-                    // Répare l'encodage spécifique pour TV Mio
                     let encodedCatId = encodeURIComponent(catalog.id).replace(/%3A/g, ':');
                     let url = currentSkip > 0 ? `${base}/catalog/${catalog.type}/${encodedCatId}/skip=${currentSkip}.json` : `${base}/catalog/${catalog.type}/${encodedCatId}.json`;
                     requests.push(axios.get(url, { timeout: 6000 }).catch(e => null));
@@ -533,7 +532,6 @@ async function getChannelsForSources(sourcesList) {
         return cacheObj.data;
     }
 
-    // Le Faux Chargement a été supprimé, le système attend réellement la fin du scan
     if (cacheObj.status === 'syncing') {
         while (channelsCache[cacheKey] && channelsCache[cacheKey].status === 'syncing') {
             await new Promise(r => setTimeout(r, 400));
@@ -606,7 +604,6 @@ async function getChannelsForSources(sourcesList) {
         }
     })();
 
-    // L'utilisateur attend que le cache se remplisse
     while (cacheObj.status === 'syncing') {
         await new Promise(r => setTimeout(r, 400));
     }
@@ -970,9 +967,9 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '7.0.0',
+        version: '7.2.0',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV. Universal Passthrough & Quality Profiling.',
+        description: 'Meta-Addon IPTV. Universal Passthrough & Targeted Geoblock Bypass.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -995,7 +992,6 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
     if (!config.sources || config.sources.length === 0) return res.json({ metas: [] });
     
     let channelsData = await getChannelsForSources(config.sources);
-    if (channelsData.length === 0) { res.setHeader('Cache-Control', 'no-cache'); return res.json({ metas: [] }); }
     
     res.setHeader('Cache-Control', 'max-age=14400, public'); 
     const requestedCatalog = req.params.id; 
@@ -1080,6 +1076,9 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     let channelsData = await getChannelsForSources(config.sources);
     res.setHeader('Cache-Control', 'max-age=60, public'); 
     
+    const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const clientIp = rawIp ? rawIp.split(',')[0].trim() : '';
+
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ streams: [] });
     
@@ -1098,12 +1097,28 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             }
 
             try {
-                // UNIVERSAL FIX: On récupère la donnée de manière brute (sans encodage ni header fantaisiste)
-                let targetUrl = `${source.providerBase}/stream/tv/${source.metaId}.json`;
+                let safeId = encodeURIComponent(source.metaId).replace(/%3A/g, ':');
+                let targetUrl = `${source.providerBase}/stream/tv/${safeId}.json`;
+
+                let reqHeaders = { 
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                    'Accept': 'application/json',
+                    'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7'
+                };
+                
+                // GÉO-DÉBLOCAGE CIBLÉ : Uniquement pour TV Mio
+                if (source.providerBase.toLowerCase().includes('tvmio')) {
+                    // Si Render masque l'IP du client, on injecte une IP française valide (Orange/Free)
+                    let fakeFrenchIp = clientIp || '80.12.34.56'; 
+                    reqHeaders['X-Forwarded-For'] = fakeFrenchIp;
+                    reqHeaders['CF-Connecting-IP'] = fakeFrenchIp;
+                    reqHeaders['True-Client-IP'] = fakeFrenchIp;
+                    reqHeaders['X-Real-IP'] = fakeFrenchIp;
+                }
 
                 const streamRes = await axios.get(targetUrl, {
-                    headers: { 'User-Agent': 'Mozilla/5.0' }, 
-                    timeout: 4500 // 4.5s max pour ne pas faire poireauter Stremio
+                    headers: reqHeaders, 
+                    timeout: 4000 // Limite de 4 secondes pour que Vavoo ne soit pas ralenti par les autres
                 });
                 
                 if (streamRes.data && streamRes.data.streams) {
@@ -1164,7 +1179,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             if (streamNumMatch) { if (streamNumMatch[1] !== targetNum) penalty += 5000; } else { penalty += 5000; }
                         }
 
-                        // QUALITY SCORING
+                        // QUALITY SCORING (Basé sur la configuration Utilisateur)
                         let detectedQual = 'SD';
                         if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) detectedQual = '4K';
                         else if (up.includes('FHD') || up.includes('1080')) detectedQual = '1080p';
@@ -1193,23 +1208,28 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         score -= idx; 
                         score += (10 - source.sourceIndex) * 50;
 
-                        // UNIVERSAL FIX: Clonage 100% transparent. On ne détruit plus la donnée de Stremio.
+                        // CLONAGE UNIVERSEL
                         let outStream = { ...s };
 
-                        // Si le lecteur a besoin d'une URL, on vérifie si elle est relative (ex: /play/...)
-                        if (outStream.url && outStream.url.startsWith('/')) {
-                            try {
-                                let baseObj = new URL(source.providerBase);
-                                outStream.url = baseObj.origin + outStream.url;
-                            } catch(e){}
+                        if (outStream.url) {
+                            let rawUrl = outStream.url.trim();
+                            if (rawUrl.startsWith('//')) {
+                                outStream.url = 'https:' + rawUrl;
+                            } else if (rawUrl.startsWith('/')) {
+                                try {
+                                    let baseObj = new URL(source.providerBase);
+                                    outStream.url = baseObj.origin + rawUrl;
+                                } catch(e){}
+                            } else if (!rawUrl.startsWith('http') && !rawUrl.includes('://')) {
+                                outStream.url = 'http://' + rawUrl;
+                            }
                         }
 
-                        // Ajout du nom esthétique uniquement s'il n'existe pas déjà pour ne pas écraser les données
-                        if (!outStream.name) {
-                            outStream.name = originalTitle;
-                        }
-
-                        outStream.title = s.title ? `${s.title}\n▶ ${qualStr}` : `▶ ${qualStr}`;
+                        let fallbackName = source.originalName || "Source Add-on";
+                        outStream.name = s.name ? s.name : fallbackName;
+                        
+                        let combinedTitle = s.title || s.description || "";
+                        outStream.title = combinedTitle ? `${combinedTitle}\n▶ ${qualStr}` : `▶ ${qualStr}`;
                         outStream._score = score;
                         return outStream;
                     });
