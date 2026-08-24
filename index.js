@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Core Engine: Raw Stream Passthrough, Strict Semantic Routing, Quality Profiling & Live Stream Debugger.
+ * Core Engine: Extensionless Stream Resolver, Strict Semantic Routing, Live Stream Debugger.
  */
 
 const express = require('express');
@@ -1099,9 +1099,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '8.4.0',
+        version: '8.6.0',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV. Universal Passthrough & Stream Inspector.',
+        description: 'Meta-Addon IPTV. Extensionless Stream Resolver & Inspector.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1338,14 +1338,10 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             }
                         }
 
+                        // CORRECTION EXENSIONLESS : Si le lien n'a pas d'extension évidente, on force les behaviorHints pour forcer ExoPlayer en mode live/hls
                         if (!outStream.behaviorHints) outStream.behaviorHints = {};
-                        if (!outStream.behaviorHints.proxyHeaders) {
-                            outStream.behaviorHints.proxyHeaders = {
-                                request: {
-                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                                    'Referer': source.providerBase
-                                }
-                            };
+                        if (!outStream.behaviorHints.notWebReady) {
+                            outStream.behaviorHints.notWebReady = true;
                         }
 
                         let fallbackName = source.originalName || "Source Add-on";
