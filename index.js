@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.1.2 (Stable & Restored Dashboard)
- * Core Engine: Synchronous Health Check, 45s Cache, Original UI Restored.
+ * Version: 1.2.0 (Professional Configurable Mode)
+ * Core Engine: Native Stremio Configure Route, Persistent Token State, 45s Cache.
  */
 
 const express = require('express');
@@ -58,15 +58,20 @@ const BLACKLIST = [
 
 function parseConfig(encodedConfig) {
     try {
-        if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], qualities: ['1080p', '720p', '4K', 'SD'] };
+        if (!encodedConfig || encodedConfig === 'manifest.json' || encodedConfig === 'configure') {
+            return { sources: ['', ''], qualities: ['1080p', '720p', '4K', 'SD'] };
+        }
         const jsonStr = Buffer.from(encodedConfig, 'base64').toString('utf8');
         let parsed = JSON.parse(jsonStr);
         if (!parsed.qualities || !Array.isArray(parsed.qualities)) {
             parsed.qualities = ['1080p', '720p', '4K', 'SD'];
         }
+        if (!parsed.sources || !Array.isArray(parsed.sources)) {
+            parsed.sources = ['', ''];
+        }
         return parsed;
     } catch (e) {
-        return { sources: [], qualities: ['1080p', '720p', '4K', 'SD'] };
+        return { sources: ['', ''], qualities: ['1080p', '720p', '4K', 'SD'] };
     }
 }
 
@@ -737,10 +742,11 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
     res.json({ channelName: channel.displayName, channelId: channel.id, inspectionResults });
 });
 
-app.get('/', async (req, res) => {
-    let sourcesParam = req.query.sources;
-    let sourcesList = sourcesParam ? sourcesParam.split(',') : ['', ''];
-    let defaultQualities = "['1080p', '720p', '4K', 'SD']";
+// ROUTE RACINE & CONFIGURE UNIFIEE (Supporte le mode configurable Stremio)
+const renderDashboard = (req, res) => {
+    let initialConfig = parseConfig(req.params.config);
+    let sourcesList = initialConfig.sources;
+    let initialQualities = initialConfig.qualities;
 
     const html = `
     <!DOCTYPE html>
@@ -803,7 +809,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, rapide et optimisée (v1.1.2).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, stable et configurée (v1.2.0).</p>
             </div>
 
             <div class="tabs">
@@ -891,7 +897,7 @@ app.get('/', async (req, res) => {
 
         <script>
             let sources = ${JSON.stringify(sourcesList)};
-            let qualities = ${defaultQualities};
+            let qualities = ${JSON.stringify(initialQualities)};
 
             function switchTab(tabId, btn) {
                 document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -968,7 +974,6 @@ app.get('/', async (req, res) => {
                 const temp = qualities[index];
                 qualities[index] = qualities[newIndex];
                 qualities[newIndex] = temp;
-                localStorage.setItem('hybrid_qualities', JSON.stringify(qualities));
                 renderQualities();
             }
 
@@ -977,7 +982,6 @@ app.get('/', async (req, res) => {
             
             function saveInputs() {
                 sources.forEach((_, index) => { const el = document.getElementById('src_' + index); if (el) sources[index] = el.value.trim(); });
-                localStorage.setItem('hybrid_sources', JSON.stringify(sources));
                 updateExportToken();
             }
 
@@ -996,7 +1000,7 @@ app.get('/', async (req, res) => {
                     const config = JSON.parse(jsonStr);
                     if (config.sources && Array.isArray(config.sources)) {
                         sources = config.sources; if (sources.length === 0) sources = ['', ''];
-                        if (config.qualities) { qualities = config.qualities; localStorage.setItem('hybrid_qualities', JSON.stringify(qualities)); }
+                        if (config.qualities) { qualities = config.qualities; }
                         renderSources(); renderQualities(); alert("Configuration importée avec succès !");
                     } else alert("Code invalide.");
                 } catch(e) { alert("Erreur : Ce code est corrompu."); }
@@ -1009,7 +1013,7 @@ app.get('/', async (req, res) => {
                 const token = document.getElementById('exportTokenBox').value;
                 const linkField = document.getElementById("manifestLink");
                 if (linkField) linkField.value = window.location.protocol + "//" + window.location.host + "/" + token + "/manifest.json";
-                alert("Lien généré. Veuillez désinstaller l'ancienne version dans Stremio avant d'ajouter celle-ci !");
+                alert("Lien généré avec succès !");
             }
 
             function copyLink() {
@@ -1055,24 +1059,6 @@ app.get('/', async (req, res) => {
                 } catch(e) {}
             }
 
-            let savedSources = localStorage.getItem('hybrid_sources');
-            if (savedSources && !${sourcesParam ? 'true' : 'false'}) sources = JSON.parse(savedSources);
-            
-            let savedQualities = localStorage.getItem('hybrid_qualities');
-            if (savedQualities) {
-                try { qualities = JSON.parse(savedQualities); } catch(e){}
-            }
-
-            let startConfig = {};
-            try {
-                let pathParts = window.location.pathname.split('/');
-                if (pathParts[1] && pathParts[1] !== '') {
-                    if (pathParts[1] !== 'configure') {
-                        startConfig = JSON.parse(atob(pathParts[1]));
-                    }
-                }
-            } catch(e) {}
-
             renderSources();
             renderQualities();
             setInterval(() => { if(document.getElementById('metrics').classList.contains('active')) fetchMetrics(); }, 5000);
@@ -1081,13 +1067,11 @@ app.get('/', async (req, res) => {
     </html>
     `;
     res.send(html);
-});
+};
 
-app.get('/:config/configure', (req, res) => {
-    res.redirect('/' + req.params.config);
-});
-
-// --- MANIFEST BUILDER ---
+// Routes d'accès au dashboard (Racine et Configure Stremio)
+app.get('/', (req, res) => renderDashboard({ params: { config: '' } }, res));
+app.get('/:config/configure', (req, res) => renderDashboard(req, res));
 app.get('/:config/manifest.json', (req, res) => {
     const config = parseConfig(req.params.config);
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
@@ -1107,9 +1091,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.1.2',
+        version: '1.2.0',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.1.2). Synchronous Health Check, 45s Cache & Strict Routing.',
+        description: 'Meta-Addon IPTV (v1.2.0). Configurable Mode & Strict Routing.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
