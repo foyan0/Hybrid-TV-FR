@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Core Engine: Extended Health Tester (8s Timeout), Stream Passthrough, Live Debugger.
+ * Core Engine: Live Dead-Link Scanner, Strict Semantic Routing, Dynamic Config.
  */
 
 const express = require('express');
@@ -49,7 +49,6 @@ app.use((req, res, next) => {
 // --- ASSETS & CONFIG ---
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 const EVENT_POSTER = 'https://cdn-icons-png.flaticon.com/512/861/861512.png';
-const LOADING_POSTER = 'https://cdn-icons-png.flaticon.com/512/3039/3039401.png'; 
 
 const BLACKLIST = [
     'ALACARTE', 'DISNEYPLUS', 'NETFLIX', 'PRIMEVIDEO', 'APPLETV',
@@ -58,18 +57,19 @@ const BLACKLIST = [
 
 function parseConfig(encodedConfig) {
     try {
-        if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], epg: true, search: false, qualities: ['1080p', '720p', '4K', 'SD'] };
+        if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], epg: true, search: false, checkLinks: false, qualities: ['1080p', '720p', '4K', 'SD'] };
         const jsonStr = Buffer.from(encodedConfig, 'base64').toString('utf8');
         let parsed = JSON.parse(jsonStr);
         parsed.logos = false; 
         parsed.epg = true; 
         if (typeof parsed.search === 'undefined') parsed.search = false;
+        if (typeof parsed.checkLinks === 'undefined') parsed.checkLinks = false; // Nouvelle option
         if (!parsed.qualities || !Array.isArray(parsed.qualities)) {
             parsed.qualities = ['1080p', '720p', '4K', 'SD'];
         }
         return parsed;
     } catch (e) {
-        return { sources: [], epg: true, search: false, qualities: ['1080p', '720p', '4K', 'SD'] };
+        return { sources: [], epg: true, search: false, checkLinks: false, qualities: ['1080p', '720p', '4K', 'SD'] };
     }
 }
 
@@ -280,47 +280,6 @@ function getChannelData(rawName) {
     if (c.includes('TEVA')) return { id: 'hyb_tnt_teva', name: 'Téva', categories: ['tnt'], index: 31 };
     if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
     if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
-
-    if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 150 };
-    if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
-    if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 3 };
-    if (c.includes('DISNEYJR') || c.includes('DISNEYJUNIOR') || (c.includes('DISNEY') && c.includes('JR'))) return { id: 'hyb_jeu_disneyjr', name: 'Disney Junior', categories: ['jeunesse'], index: 5 };
-    if (c.includes('DISNEY') && c.includes('PLUS1')) return { id: 'hyb_jeu_disney_plus1', name: 'Disney Channel +1', categories: ['jeunesse'], index: 50 };
-    if (c.includes('DISNEY')) return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 2 };
-    if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 5 };
-    if (c.includes('BOING')) return { id: 'hyb_jeu_boing', name: 'Boing', categories: ['jeunesse'], index: 6 };
-    if (c.includes('NICKELODEON') || c.includes('NICK')) return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 7 };
-    if (c.includes('TIJI')) return { id: 'hyb_jeu_tiji', name: 'Tiji', categories: ['jeunesse'], index: 9 };
-    if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 10 };
-    if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 11 };
-    if (c.includes('PIWI')) return { id: 'hyb_jeu_piwi', name: 'Piwi+', categories: ['jeunesse'], index: 100 };
-
-    if (c.includes('RFMTV') || c.includes('RFM')) return { id: 'hyb_mus_rfm', name: 'RFM TV', categories: ['musique'], index: 34 }; 
-    if (c.includes('MTV')) return { id: 'hyb_mus_mtv', name: 'MTV', categories: ['musique'], index: 10 };
-    if (c.includes('MCM')) return { id: 'hyb_mus_mcm', name: 'MCM', categories: ['musique'], index: 20 };
-    if (c.includes('TRACE')) {
-        let m = n.match(/TRACE\s*([A-Z]*)/i); let suffix = (m && m[1]) ? ' ' + m[1] : '';
-        return { id: 'hyb_mus_trace' + suffix.trim(), name: 'Trace' + suffix, categories: ['musique'], index: 30 };
-    }
-    if (c.includes('NRJHITS') || (c.includes('NRJ') && c.includes('HIT'))) return { id: 'hyb_mus_nrjhits', name: 'NRJ Hits', categories: ['musique'], index: 31 };
-    if (c.includes('MELODY')) return { id: 'hyb_mus_melody', name: 'Melody', categories: ['musique'], index: 32 };
-    if (c.includes('MEZZO')) return { id: 'hyb_mus_mezzo', name: 'Mezzo', categories: ['musique'], index: 33 };
-    if (c.includes('CLUBBING')) return { id: 'hyb_mus_clubbing', name: 'Clubbing TV', categories: ['musique'], index: 35 };
-
-    if (c.includes('INVESTIGATION') || c.includes('IDDISCOVERY')) return { id: 'hyb_dec_investigation', name: 'Investigation Discovery', categories: ['decouverte'], index: 21 };
-    if (c.includes('DISCOVERY')) {
-        let m = n.match(/DISCOVERY\s*([A-Z]*)/i); 
-        let suffix = (m && m[1]) ? m[1].trim() : '';
-        if (suffix === 'CHANNEL' || suffix === 'FR' || suffix === 'FRANCE') suffix = ''; 
-        return { id: 'hyb_dec_discovery' + (suffix ? '_' + suffix : ''), name: 'Discovery' + (suffix ? ' ' + suffix : ''), categories: ['decouverte'], index: 20 };
-    }
-    if (c.includes('CRIMEDISTRICT') || c.includes('CRIMED')) return { id: 'hyb_dec_crime', name: 'Crime District', categories: ['decouverte'], index: 1 };
-    if (c.includes('NATGEO') || c.includes('NATIONALGEO')) return { id: 'hyb_dec_natgeo', name: 'National Geographic', categories: ['decouverte'], index: 1 };
-    if (c.includes('PLANET')) return { id: 'hyb_dec_planete', name: 'Planète+', categories: ['decouverte'], index: 210 };
-    if (c.includes('USHUAIA')) return { id: 'hyb_dec_ushuaia', name: 'Ushuaïa TV', categories: ['decouverte'], index: 30 };
-    if (c.includes('HISTOIRE')) return { id: 'hyb_dec_histoire', name: 'Histoire TV', categories: ['decouverte'], index: 32 };
-    if (c.includes('CHASSE') || c.includes('PECHE')) return { id: 'hyb_dec_chasse', name: 'Chasse et Pêche', categories: ['decouverte'], index: 34 };
-    if (c.includes('ANIMAUX')) return { id: 'hyb_dec_animaux', name: 'Animaux', categories: ['decouverte'], index: 35 };
 
     let cat = 'autres';
     let idx = 300;
@@ -667,7 +626,6 @@ app.get('/api/metrics', (req, res) => {
     });
 });
 
-// --- API ROUTE AVEC TIMEOUT ÉTENDU À 8000MS POUR LE DEBUG ---
 app.get('/api/debug/inspect/:query', async (req, res) => {
     let q = req.params.query.toLowerCase();
     let latestCache = null;
@@ -810,9 +768,13 @@ app.get('/', async (req, res) => {
 
                 <div class="section">
                     <h3 class="section-title">Options Avancées</h3>
-                    <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
                         <input type="checkbox" id="searchToggle" style="width: 18px; height: 18px; cursor: pointer;">
-                        <b style="font-size: 14px;">Activer la Recherche Globale (Barre de recherche Stremio)</b>
+                        <b style="font-size: 14px;">Activer la Recherche Globale (Barre Stremio)</b>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="checkLinksToggle" style="width: 18px; height: 18px; cursor: pointer;">
+                        <b style="font-size: 14px; color: #ff9800;">Marquer les liens morts dans Stremio (❌ HS) - Peut ralentir l'affichage</b>
                     </div>
                 </div>
 
@@ -820,7 +782,6 @@ app.get('/', async (req, res) => {
                     <h3 class="section-title">Priorité de Qualité</h3>
                     <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Ajustez l'ordre. Le format placé en haut sera lancé en priorité.</p>
                     <div id="qualityList" style="display: flex; flex-direction: column; gap: 8px;"></div>
-                    <p style="font-size: 11px; color: #ff9800; margin-top: 10px;">⚠️ Note : Les flux 4K exigent une connexion robuste et sont parfois instables ou longs à charger.</p>
                 </div>
 
                 <div class="section">
@@ -983,7 +944,11 @@ app.get('/', async (req, res) => {
                 const validSources = sources.filter(s => s.length > 0);
                 const searchEl = document.getElementById("searchToggle");
                 const isSearch = searchEl ? searchEl.checked : false;
-                const configObj = { sources: validSources, search: isSearch, qualities: qualities }; 
+                
+                const checkLinksEl = document.getElementById("checkLinksToggle");
+                const isCheckLinks = checkLinksEl ? checkLinksEl.checked : false;
+
+                const configObj = { sources: validSources, search: isSearch, checkLinks: isCheckLinks, qualities: qualities }; 
                 const tokenBox = document.getElementById('exportTokenBox');
                 if (tokenBox) tokenBox.value = btoa(JSON.stringify(configObj));
             }
@@ -997,10 +962,16 @@ app.get('/', async (req, res) => {
                     if (config.sources && Array.isArray(config.sources)) {
                         sources = config.sources; if (sources.length === 0) sources = ['', ''];
                         if (config.qualities) { qualities = config.qualities; localStorage.setItem('hybrid_qualities', JSON.stringify(qualities)); }
+                        
                         if (config.search !== undefined) {
                             const searchEl = document.getElementById("searchToggle");
                             if (searchEl) searchEl.checked = config.search;
                         }
+                        if (config.checkLinks !== undefined) {
+                            const checkLinksEl = document.getElementById("checkLinksToggle");
+                            if (checkLinksEl) checkLinksEl.checked = config.checkLinks;
+                        }
+
                         renderSources(); renderQualities(); alert("Configuration importée avec succès !");
                     } else alert("Code invalide.");
                 } catch(e) { alert("Erreur : Ce code est corrompu."); }
@@ -1022,10 +993,8 @@ app.get('/', async (req, res) => {
                 copyText.select(); document.execCommand("copy"); alert("Copié !");
             }
 
-            const searchToggle = document.getElementById('searchToggle');
-            if (searchToggle) {
-                searchToggle.addEventListener('change', updateExportToken);
-            }
+            document.getElementById('searchToggle')?.addEventListener('change', updateExportToken);
+            document.getElementById('checkLinksToggle')?.addEventListener('change', updateExportToken);
 
             async function fetchMetrics() {
                 try {
@@ -1086,6 +1055,10 @@ app.get('/', async (req, res) => {
                 const searchEl = document.getElementById("searchToggle");
                 if (searchEl) searchEl.checked = true;
             }
+            if (startConfig.checkLinks) {
+                const checkLinksEl = document.getElementById("checkLinksToggle");
+                if (checkLinksEl) checkLinksEl.checked = true;
+            }
 
             renderSources();
             renderQualities();
@@ -1097,7 +1070,6 @@ app.get('/', async (req, res) => {
     res.send(html);
 });
 
-// Route spéciale Stremio pour le bouton "Configurer"
 app.get('/:config/configure', (req, res) => {
     res.redirect('/' + req.params.config);
 });
@@ -1128,9 +1100,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '8.7.2',
+        version: '9.0.0',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV. Universal Health Tester & Inspector.',
+        description: 'Meta-Addon IPTV. Live Dead-Link Scanner & Strict Routing.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1236,7 +1208,9 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     serverStats.cacheMisses++;
 
     let channelsData = await getChannelsForSources(config.sources);
-    res.setHeader('Cache-Control', 'max-age=60, public'); 
+    
+    // Le cache public est très court car on fait une analyse en direct
+    res.setHeader('Cache-Control', 'max-age=15, public'); 
 
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ streams: [] });
@@ -1367,24 +1341,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             }
                         }
 
-                        if (!outStream.behaviorHints) outStream.behaviorHints = {};
-                        if (!outStream.behaviorHints.notWebReady) outStream.behaviorHints.notWebReady = true;
-                        
-                        if (!outStream.behaviorHints.proxyHeaders) {
-                            let refDomain = "https://vavoo.to/";
-                            try {
-                                let uObj = new URL(source.providerBase);
-                                refDomain = uObj.origin + "/";
-                            } catch(e){}
-
-                            outStream.behaviorHints.proxyHeaders = {
-                                request: {
-                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                                    'Referer': refDomain
-                                }
-                            };
-                        }
-
                         let fallbackName = source.originalName || "Source Add-on";
                         outStream.name = s.name ? s.name : fallbackName;
                         
@@ -1402,9 +1358,40 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let allStreams = [].concat(...results);
 
         allStreams.sort((a, b) => b._score - a._score);
-        const limitedStreams = allStreams.slice(0, 15);
+        let limitedStreams = allStreams.slice(0, 15);
 
-        finalStreams = limitedStreams.map((s) => {
+        // --- NOUVEAU : SYSTÈME DE DÉTECTION DE LIENS MORTS EN DIRECT ---
+        if (config.checkLinks && limitedStreams.length > 0) {
+            await Promise.all(limitedStreams.map(async (s) => {
+                if (!s.url) return;
+                try {
+                    // Ping ultra-rapide (2 secondes max) pour vérifier la santé du serveur
+                    await axios.get(s.url, {
+                        timeout: 2500,
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                            'Range': 'bytes=0-100', // Ne télécharge qu'une fraction du flux pour ne pas consommer de data
+                            ...(s.behaviorHints && s.behaviorHints.headers ? s.behaviorHints.headers : {})
+                        }
+                    });
+                    // Si on arrive ici, le serveur a répondu (200 ou 206)
+                    // On ne modifie pas le titre, on le laisse propre.
+                } catch (err) {
+                    if (err.response) {
+                        // Le serveur a répondu avec une erreur (ex: 403 Forbidden, 512 Bad Gateway)
+                        s.title = `❌ HS (${err.response.status})\n` + s.title;
+                    } else if (err.code === 'ENOTFOUND') {
+                        // Le domaine n'existe plus
+                        s.title = `❌ HS (Serveur Mort)\n` + s.title;
+                    } else {
+                        // Timeout dépassé
+                        s.title = `⚠️ Lent ou HS\n` + s.title;
+                    }
+                }
+            }));
+        }
+
+        const finalStreams = limitedStreams.map((s) => {
             let streamObj = { ...s };
             delete streamObj._score; 
             return streamObj;
