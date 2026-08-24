@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Core Engine: Non-Destructive Sorting, Semantic Routing, Dashboard Telemetry, Search & Config.
+ * Core Engine: Robust Proxy Headers (Header Spoofing), Non-Destructive Sorting, Fixed Dashboard.
  */
 
 const express = require('express');
@@ -62,7 +62,7 @@ function parseConfig(encodedConfig) {
         const jsonStr = Buffer.from(encodedConfig, 'base64').toString('utf8');
         let parsed = JSON.parse(jsonStr);
         parsed.logos = false; 
-        parsed.epg = true; // Guide TV activé par défaut
+        parsed.epg = true; 
         if (typeof parsed.search === 'undefined') parsed.search = false;
         if (!parsed.qualities || !Array.isArray(parsed.qualities)) {
             parsed.qualities = ['1080p', '720p', '4K', 'SD'];
@@ -486,7 +486,6 @@ async function fetchCatalogFromSource(sourceInput) {
                 let requests = [];
                 for (let i = 0; i < batchSize; i++) {
                     let currentSkip = skip + (i * 100);
-                    // Répare l'encodage et préserve les conventions Stremio
                     let encodedCatId = encodeURIComponent(catalog.id);
                     let url = currentSkip > 0 ? `${base}/catalog/${catalog.type}/${encodedCatId}/skip=${currentSkip}.json` : `${base}/catalog/${catalog.type}/${encodedCatId}.json`;
                     requests.push(axios.get(url, { timeout: 6000 }).catch(e => null));
@@ -614,7 +613,7 @@ async function getChannelsForSources(sourcesList) {
 }
 
 // ============================================================================
-// APP ROUTES
+// APP ROUTES & DASHBOARD
 // ============================================================================
 
 app.get('/api/metrics', (req, res) => {
@@ -822,6 +821,7 @@ app.get('/', async (req, res) => {
 
             function renderSources() {
                 const container = document.getElementById('sourcesContainer');
+                if (!container) return;
                 container.innerHTML = '';
                 sources.forEach((src, index) => {
                     if (index >= 5) return;
@@ -841,11 +841,12 @@ app.get('/', async (req, res) => {
 
             function renderQualities() {
                 const container = document.getElementById('qualityList');
+                if (!container) return;
                 container.innerHTML = '';
                 qualities.forEach((q, index) => {
                     let badge = q === '4K' ? ' <span style="font-size:10px;color:#ff9800;">(Instable)</span>' : '';
                     container.innerHTML += \`
-                        <div style="display: flex; align-items: center; background: #222; border: 1px solid #444; border-radius: 6px; padding: 8px 12px;">
+                        <div style="display: flex; align-items: center; background: #222; border: 1px solid #444; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px;">
                             <span style="font-size: 14px; font-weight: bold; color: #e50914; min-width: 25px;">\${index + 1}.</span>
                             <span style="flex: 1; font-size: 13px;">\${q}\${badge}</span>
                             \${index > 0 ? '<button type="button" onclick="moveQuality(' + index + ', -1)" class="btn-small" style="padding: 4px 8px; margin-right: 5px;">▲</button>' : '<div style="width: 28px; margin-right: 5px;"></div>'}
@@ -887,9 +888,11 @@ app.get('/', async (req, res) => {
 
             function updateExportToken() {
                 const validSources = sources.filter(s => s.length > 0);
-                const isSearch = document.getElementById("searchToggle").checked;
+                const searchEl = document.getElementById("searchToggle");
+                const isSearch = searchEl ? searchEl.checked : false;
                 const configObj = { sources: validSources, search: isSearch, qualities: qualities }; 
-                document.getElementById('exportTokenBox').value = btoa(JSON.stringify(configObj));
+                const tokenBox = document.getElementById('exportTokenBox');
+                if (tokenBox) tokenBox.value = btoa(JSON.stringify(configObj));
             }
 
             function importToken() {
@@ -901,7 +904,10 @@ app.get('/', async (req, res) => {
                     if (config.sources && Array.isArray(config.sources)) {
                         sources = config.sources; if (sources.length === 0) sources = ['', ''];
                         if (config.qualities) { qualities = config.qualities; localStorage.setItem('hybrid_qualities', JSON.stringify(qualities)); }
-                        if (config.search !== undefined) document.getElementById("searchToggle").checked = config.search;
+                        if (config.search !== undefined) {
+                            const searchEl = document.getElementById("searchToggle");
+                            if (searchEl) searchEl.checked = config.search;
+                        }
                         renderSources(); renderQualities(); alert("Configuration importée avec succès !");
                     } else alert("Code invalide.");
                 } catch(e) { alert("Erreur : Ce code est corrompu."); }
@@ -912,17 +918,21 @@ app.get('/', async (req, res) => {
                 const validSources = sources.filter(s => s.length > 0);
                 if (validSources.length === 0) return alert("Veuillez entrer au moins un lien de source !");
                 const token = document.getElementById('exportTokenBox').value;
-                document.getElementById("manifestLink").value = window.location.protocol + "//" + window.location.host + "/" + token + "/manifest.json";
+                const linkField = document.getElementById("manifestLink");
+                if (linkField) linkField.value = window.location.protocol + "//" + window.location.host + "/" + token + "/manifest.json";
                 alert("Lien généré. Veuillez désinstaller l'ancienne version dans Stremio avant d'ajouter celle-ci !");
             }
 
             function copyLink() {
                 var copyText = document.getElementById("manifestLink");
-                if (!copyText.value) return alert("Générez le lien d'abord !");
+                if (!copyText || !copyText.value) return alert("Générez le lien d'abord !");
                 copyText.select(); document.execCommand("copy"); alert("Copié !");
             }
 
-            document.getElementById('searchToggle').addEventListener('change', updateExportToken);
+            const searchToggle = document.getElementById('searchToggle');
+            if (searchToggle) {
+                searchToggle.addEventListener('change', updateExportToken);
+            }
 
             async function fetchMetrics() {
                 try {
@@ -949,13 +959,15 @@ app.get('/', async (req, res) => {
                         else if (r.status === 'empty') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⚠️ 0 flux</b></li>\`;
                         else htmlList += \`<li><span>\${displaySrc}</span> <b class="status-err">❌ Hors Ligne</b></li>\`;
                     });
-                    document.getElementById('sourceReportList').innerHTML = htmlList || '<li><i>Aucune source configurée</i></li>';
+                    const sourceReportList = document.getElementById('sourceReportList');
+                    if (sourceReportList) sourceReportList.innerHTML = htmlList || '<li><i>Aucune source configurée</i></li>';
 
                     let topHtml = '';
                     data.topChannels.forEach(c => {
                         topHtml += \`<li><span>\${c.id.replace(/_/g, ' ').toUpperCase()}</span> <b>\${c.count} vues</b></li>\`;
                     });
-                    document.getElementById('topChannelsList').innerHTML = topHtml || '<li><i>Aucune donnée</i></li>';
+                    const topChannelsList = document.getElementById('topChannelsList');
+                    if (topChannelsList) topChannelsList.innerHTML = topHtml || '<li><i>Aucune donnée</i></li>';
                 } catch(e) {}
             }
 
@@ -967,9 +979,19 @@ app.get('/', async (req, res) => {
                 try { qualities = JSON.parse(savedQualities); } catch(e){}
             }
 
-            // Récupération toggle depuis le config initial
-            let startConfig = parseConfig('${req.params.config || ''}');
-            document.getElementById("searchToggle").checked = startConfig.search || false;
+            // Configuration initiale depuis l'URL
+            let startConfig = {};
+            try {
+                let pathParts = window.location.pathname.split('/');
+                if (pathParts[1] && pathParts[1] !== '') {
+                    startConfig = JSON.parse(atob(pathParts[1]));
+                }
+            } catch(e) {}
+
+            if (startConfig.search) {
+                const searchEl = document.getElementById("searchToggle");
+                if (searchEl) searchEl.checked = true;
+            }
 
             renderSources();
             renderQualities();
@@ -986,10 +1008,8 @@ app.get('/:config/manifest.json', (req, res) => {
     const config = parseConfig(req.params.config);
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
 
-    // Bouton de configuration natif dans Stremio
     let behaviorHints = { configurable: true, configurationRequired: false };
 
-    // Génération dynamique des catalogues avec ou sans option "search"
     let baseCatalogs = [
         { type: 'tv', id: 'tnt', name: '📺 TNT' },
         { type: 'tv', id: 'info', name: '📰 Information' },
@@ -1011,9 +1031,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '8.1.0',
+        version: '8.2.0',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV. Configuration personnalisée, Recherche et Priorités HD/4K.',
+        description: 'Meta-Addon IPTV. Universal Passthrough & Global Search.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1032,7 +1052,6 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
     let skip = 0;
     let searchQuery = null;
     
-    // Détection de la requête de Recherche globale
     if (req.params.extra) {
         const skipMatch = req.params.extra.match(/skip=(\d+)/);
         if (skipMatch) skip = parseInt(skipMatch[1], 10);
@@ -1043,7 +1062,6 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
 
     let filteredChannels = channelsData;
 
-    // Si on cherche un mot, on ignore la catégorie cliquée et on fouille partout
     if (searchQuery) {
         filteredChannels = channelsData.filter(ch => ch.displayName.toLowerCase().includes(searchQuery));
     } else {
@@ -1136,22 +1154,26 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                     name: isBeluchon ? `▶ Source Officielle (HD)` : `▶ Full HD (1080p)`,
                     title: source.originalName || "Source M3U",
                     _score: isBeluchon ? 50000 : 30000,
-                    _originalTitle: source.originalName || "Source M3U"
+                    _originalTitle: source.originalName || "Source M3U",
+                    behaviorHints: {
+                        proxyHeaders: {
+                            request: {
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                                'Referer': source.providerBase
+                            }
+                        }
+                    }
                 }];
             }
 
             try {
-                // UNIVERSAL FIX: Encodage propre qui maintient l'intégrité pour TV Mio
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
 
-                // REQUÊTE PURE SANS GÉO-BLOCAGE NI BIDOUILLES
-                let reqHeaders = { 
-                    'User-Agent': 'Mozilla/5.0',
-                    'Accept': 'application/json'
-                };
-
                 const streamRes = await axios.get(targetUrl, {
-                    headers: reqHeaders, 
+                    headers: { 
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                        'Accept': 'application/json'
+                    }, 
                     timeout: 4500 
                 });
                 
@@ -1238,8 +1260,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         if (up.match(/\bFR\b/) || up.match(/\bVF\b/) || up.includes('FRENCH') || up.includes('TRUEFRENCH')) score += 300; 
                         if (up.includes('BACKUP') || up.includes('SECOURS') || up.includes('ALT') || up.includes('TEST')) score -= 1000;
                         
-                        // SYNDROME DU TRI DESTRUCTEUR : Solution finale
-                        // L'ordre d'origine de l'add-on est prioritaire. Le 1er flux de TV Mio obtient +15000 pts.
                         let originalOrderScore = (50 - idx) * 500; 
                         let providerPriorityScore = (10 - source.sourceIndex) * 10000; 
 
@@ -1247,7 +1267,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         score += providerPriorityScore;
                         score -= penalty;
 
-                        // UNIVERSAL FIX : Clonage parfait de l'objet Stremio
+                        // CLONAGE UNIVERSEL + INJECTION PROXY HEADERS POUR ÉVITER LES BOUCLES DE CHARGEMENT
                         let outStream = { ...s };
 
                         if (outStream.url) {
@@ -1262,6 +1282,17 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             } else if (!rawUrl.startsWith('http') && !rawUrl.includes('://')) {
                                 outStream.url = 'http://' + rawUrl;
                             }
+                        }
+
+                        // Injection robuste des proxyHeaders si manquants pour empêcher les boucles de chargement HLS
+                        if (!outStream.behaviorHints) outStream.behaviorHints = {};
+                        if (!outStream.behaviorHints.proxyHeaders) {
+                            outStream.behaviorHints.proxyHeaders = {
+                                request: {
+                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                                    'Referer': source.providerBase
+                                }
+                            };
                         }
 
                         let fallbackName = source.originalName || "Source Add-on";
