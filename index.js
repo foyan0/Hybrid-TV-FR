@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.1.2 (Clean Restored Original Base)
- * Core Engine: Synchronous Health Check, 45s Cache, Original Strict Routing.
+ * Version: 1.1.2 (Stable & Restored Dashboard)
+ * Core Engine: Synchronous Health Check, 45s Cache, Original UI Restored.
  */
 
 const express = require('express');
@@ -404,7 +404,7 @@ async function fetchAndParseEPG(url, isGz) {
                 }
             });
 
-            const timeoutId = setTimeout(() => { stream.destroy(); reject(new Error("Timeout EPG")); }, 60000);
+            const timeoutId = setTimeout(() => { stream.destroy(); reject(new Error("Timeout")); }, 60000);
             rl.on('close', () => { clearTimeout(timeoutId); resolve(localEpg); });
             rl.on('error', (err) => { clearTimeout(timeoutId); reject(err); });
         } catch (err) { reject(err); }
@@ -685,12 +685,16 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                 const r = await axios.get(source.directUrl, { 
                     responseType: 'stream',
                     headers: { 'User-Agent': 'Mozilla/5.0' }, 
-                    timeout: 4000
+                    timeout: 3500
                 });
                 if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
                 testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
             } catch(e) {
-                testRes.httpStatus = `❌ Erreur: ${e.response ? 'HTTP ' + e.response.status : e.message}`;
+                if(e.response && (e.response.status === 401 || e.response.status === 403)) {
+                    testRes.httpStatus = `❌ Erreur: HTTP ${e.response.status} (Accès Refusé / Token Expiré)`;
+                } else {
+                    testRes.httpStatus = `❌ Erreur: ${e.response ? 'HTTP ' + e.response.status : e.message}`;
+                }
             }
             inspectionResults.push(testRes);
         } else {
@@ -712,7 +716,11 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                                 if(sRes.data && typeof sRes.data.destroy === 'function') sRes.data.destroy();
                                 streamTest.health = `✅ En ligne (HTTP ${sRes.status})`;
                             } catch (err) {
-                                streamTest.health = `❌ Échec: ${err.response ? 'HTTP ' + err.response.status : err.message}`;
+                                if(err.response && (err.response.status === 401 || err.response.status === 403)) {
+                                    streamTest.health = `❌ Échec: HTTP ${err.response.status} (Accès Refusé / Token Expiré)`;
+                                } else {
+                                    streamTest.health = `❌ Échec: ${err.response ? 'HTTP ' + err.response.status : err.message}`;
+                                }
                             }
                         } else {
                             streamTest.health = `⚠️ Pas d'URL directe`;
@@ -740,7 +748,7 @@ app.get('/', async (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>HybridTV Dashboard 1.0.8</title>
+        <title>HybridTV Dashboard</title>
         <style>
             :root { --bg: #141414; --card: #1f1f1f; --card-alt: #111; --primary: #e50914; --text: #fff; --text-muted: #bbb; --border: #333; }
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 40px 20px; margin: 0; }
@@ -795,7 +803,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, triée et stable (v1.0.8).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, rapide et optimisée (v1.1.2).</p>
             </div>
 
             <div class="tabs">
@@ -1099,9 +1107,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.0.8',
+        version: '1.1.2',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.0.8). Fast Scanner, Direct Links & Stable Routing.',
+        description: 'Meta-Addon IPTV (v1.1.2). Synchronous Health Check, 45s Cache & Strict Routing.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1185,6 +1193,9 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
 app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
+    
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+    const clientUserAgent = req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 
     serverStats.channelClicks[req.params.id] = (serverStats.channelClicks[req.params.id] || 0) + 1;
 
@@ -1197,8 +1208,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
     let channelsData = await getChannelsForSources(config.sources);
     
-    // MICRO-CACHE 5 SECONDES 
-    res.setHeader('Cache-Control', 'max-age=5, public'); 
+    // SMART CACHE 45 SECONDES
+    res.setHeader('Cache-Control', 'max-age=45, public'); 
 
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ streams: [] });
@@ -1360,25 +1371,23 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
 
-        // Tri Initial
+        // --- TRI INITIAL PAR SCORE ---
         allStreams.sort((a, b) => b._score - a._score);
         let limitedStreams = allStreams.slice(0, 15);
 
-        // --- SCANNER DE LIENS MORTS ("Stream Destroyer" sur tous les liens) ---
+        // --- SCANNER SYNCHRONE DE LIENS MORTS ---
         if (limitedStreams.length > 0) {
             await Promise.all(limitedStreams.map(async (s) => {
                 if (!s.url) return;
-
                 try {
                     const r = await axios.get(s.url, {
                         responseType: 'stream',
                         timeout: 3500,
                         headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                             ...(s.behaviorHints && s.behaviorHints.proxyHeaders && s.behaviorHints.proxyHeaders.request ? s.behaviorHints.proxyHeaders.request : {})
                         }
                     });
-                    
                     if(r.data && typeof r.data.destroy === 'function') {
                         r.data.destroy();
                     }
@@ -1388,14 +1397,12 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                     if (err.response) {
                         let status = err.response.status;
                         let msg = "Erreur";
-                        if (status === 403 || status === 401) msg = "Accès Refusé (Token expiré / IP bloquée)";
+                        if (status === 403 || status === 401) msg = "Accès Refusé / Token Expiré";
                         else if (status === 404) msg = "Flux Introuvable";
                         else if (status === 512 || status === 502) msg = "Serveur Injoignable";
                         else if (status >= 500) msg = "Serveur Planté";
                         
                         s.title = `❌ HS (${status} - ${msg})\n` + s.title;
-                    } else if (err.code === 'ECONNABORTED' || (err.message && err.message.toLowerCase().includes('timeout'))) {
-                        s.title = `⚠️ Lent ou Bloqué\n` + s.title;
                     } else if (err.code === 'ENOTFOUND') {
                         s.title = `❌ HS (Domaine Mort)\n` + s.title;
                     } else {
@@ -1404,6 +1411,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                 }
             }));
             
+            // Re-tri synchrone final post-scan
             limitedStreams.sort((a, b) => b._score - a._score);
         }
 
@@ -1414,7 +1422,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         });
         
         streamCache.set(cacheKey, finalStreams);
-        setTimeout(() => streamCache.delete(cacheKey), 5000); 
+        setTimeout(() => streamCache.delete(cacheKey), 45000); 
 
         res.json({ streams: finalStreams });
     } catch (err) { res.json({ streams: [] }); }
