@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Core Engine: Universal Stream Mapping, Semantic Routing, Dashboard Telemetry.
+ * Core Engine: Universal Stream Parser, Semantic Routing, Dashboard Telemetry.
  */
 
 const express = require('express');
@@ -163,6 +163,7 @@ function getChannelData(rawName) {
         return { id: 'hyb_aut_' + c.substring(0, 15), name: pretty, categories: ['autres'], index: 200 };
     }
 
+    // Routage TNT, News, Canal+, etc...
     if (c.startsWith('FRANCE24')) return { id: 'hyb_info_06', name: 'France 24', categories: ['info'], index: 6 };
     if (c.startsWith('FRANCEINFO')) return { id: 'hyb_info_07', name: 'France Info', categories: ['info'], index: 7 };
     if (c.includes('METEO')) return { id: 'hyb_info_08', name: 'La Chaîne Météo', categories: ['info'], index: 8 };
@@ -233,6 +234,7 @@ function getChannelData(rawName) {
         if (c.includes('ACTION')) return { id: 'hyb_cine_action', name: 'Action', categories: ['cinema'], index: 30 };
         return { id: 'hyb_cine_plus', name: 'Ciné+', categories: ['cinema', 'canal'], index: 19 };
     }
+    
     if (c.includes('OCS')) {
         let m = n.match(/OCS\s*([A-Z]*)/i); let suffix = (m && m[1]) ? ' ' + m[1] : '';
         return { id: 'hyb_cine_ocs_' + suffix.trim().toLowerCase(), name: 'OCS' + suffix, categories: ['cinema'], index: 20 };
@@ -482,6 +484,7 @@ async function fetchCatalogFromSource(sourceInput) {
                 let requests = [];
                 for (let i = 0; i < batchSize; i++) {
                     let currentSkip = skip + (i * 100);
+                    // Répare les identifiants d'addon complexes contenant des ":"
                     let encodedCatId = encodeURIComponent(catalog.id);
                     let url = currentSkip > 0 ? `${base}/catalog/${catalog.type}/${encodedCatId}/skip=${currentSkip}.json` : `${base}/catalog/${catalog.type}/${encodedCatId}.json`;
                     requests.push(axios.get(url, { timeout: 6000 }).catch(e => null));
@@ -911,7 +914,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '5.5.0',
+        version: '5.6.0',
         name: 'HybridTV',
         description: 'Meta-Addon IPTV. Universal Core & Telemetry.',
         resources: ['catalog', 'meta', 'stream'],
@@ -1031,9 +1034,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
     let channelsData = await getChannelsForSources(config.sources);
     res.setHeader('Cache-Control', 'max-age=60, public'); 
-    
-    const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    const clientIp = rawIp ? rawIp.split(',')[0].trim() : '';
 
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ streams: [] });
@@ -1053,17 +1053,14 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             }
 
             try {
-                // UNIVERSAL FIX 1: Encodage propre de l'ID source (Répare les requêtes vers TV Mio)
+                // UNIVERSAL FIX 1: Encodage Strict du MetaID (Répare TV Mio)
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
 
-                let reqHeaders = { 'User-Agent': 'Mozilla/5.0' };
-                if (clientIp) {
-                    reqHeaders['X-Forwarded-For'] = clientIp;
-                    reqHeaders['Forwarded'] = `for=${clientIp}`;
-                }
-
                 const streamRes = await axios.get(targetUrl, {
-                    headers: reqHeaders, 
+                    headers: { 
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                        'Accept': 'application/json'
+                    }, 
                     timeout: 5000 
                 });
                 
@@ -1143,15 +1140,23 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         score -= idx; 
                         score += (10 - source.sourceIndex) * 50;
 
-                        // UNIVERSAL FIX 2: Clonage total de l'objet (Préserve ytId, behaviorHints, externalUrl)
+                        // UNIVERSAL FIX 2: Clonage Adaptatif Complet (Préserve ytId, externalUrl, behaviorHints)
                         let outStream = { ...s };
 
-                        // UNIVERSAL FIX 3: Répare les URLs relatives renvoyées par certains Addons (ex: /play/stream.m3u8)
-                        if (outStream.url && outStream.url.startsWith('/')) {
-                            try {
-                                let baseObj = new URL(source.providerBase);
-                                outStream.url = baseObj.origin + outStream.url;
-                            } catch(e){}
+                        // UNIVERSAL FIX 3: Répare les URLs relatives ou les chaînes brutales
+                        if (outStream.url) {
+                            let rawUrl = outStream.url.trim();
+                            if (rawUrl.startsWith('//')) {
+                                outStream.url = 'https:' + rawUrl;
+                            } else if (rawUrl.startsWith('/')) {
+                                try {
+                                    let baseObj = new URL(source.providerBase);
+                                    outStream.url = baseObj.origin + rawUrl;
+                                } catch(e){}
+                            } else if (!rawUrl.startsWith('http') && !rawUrl.includes('://')) {
+                                // Forçage du format HTTP si c'est une chaîne non standard
+                                outStream.url = 'http://' + rawUrl;
+                            }
                         }
 
                         let fallbackName = source.originalName || "Source Add-on";
@@ -1173,7 +1178,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
         const finalStreams = limitedStreams.map((s) => {
             let streamObj = { ...s };
-            delete streamObj._score; // Nettoyage de la donnée interne de tri
+            delete streamObj._score; 
             return streamObj;
         });
         
