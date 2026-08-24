@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Core Engine: Automatic Proxy Header Injection for Extensionless Streams, Semantic Routing, Live Debugger.
+ * Core Engine: Active Stream Health Tester, Proxy Injector, Live Debugger.
  */
 
 const express = require('express');
@@ -667,7 +667,7 @@ app.get('/api/metrics', (req, res) => {
     });
 });
 
-// --- API ROUTE POUR LE DEBUG DE FLUX ---
+// --- API ROUTE AMÉLIORÉE POUR TESTER LA SANTÉ DES FLUX ---
 app.get('/api/debug/inspect/:query', async (req, res) => {
     let q = req.params.query.toLowerCase();
     let latestCache = null;
@@ -683,12 +683,41 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
     let inspectionResults = [];
     for (const source of channel.sources) {
         if (source.type === 'm3u') {
-            inspectionResults.push({ source: source.providerBase || 'M3U Local', type: 'm3u', url: source.directUrl });
+            let testRes = { source: source.providerBase || 'M3U Local', type: 'm3u', url: source.directUrl };
+            try {
+                let r = await axios.get(source.directUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 3000 });
+                testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
+            } catch(e) {
+                testRes.httpStatus = `❌ Erreur: ${e.response ? 'HTTP ' + e.response.status : e.message}`;
+            }
+            inspectionResults.push(testRes);
         } else {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
                 let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 4000 });
-                inspectionResults.push({ provider: source.providerBase, metaId: source.metaId, response: r.data });
+                
+                let streamsTested = [];
+                if (r.data && r.data.streams) {
+                    for (let s of r.data.streams) {
+                        let streamTest = { title: s.title || s.name, url: s.url };
+                        if (s.url) {
+                            try {
+                                let sRes = await axios.get(s.url, { 
+                                    headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase }, 
+                                    timeout: 3000,
+                                    maxContentLength: 500
+                                });
+                                streamTest.health = `✅ En ligne (HTTP ${sRes.status})`;
+                            } catch (err) {
+                                streamTest.health = `❌ Échec: ${err.response ? 'HTTP ' + err.response.status : err.message}`;
+                            }
+                        } else {
+                            streamTest.health = `⚠️ Pas d'URL directe`;
+                        }
+                        streamsTested.push(streamTest);
+                    }
+                }
+                inspectionResults.push({ provider: source.providerBase, metaId: source.metaId, streamsTested, rawResponse: r.data });
             } catch(e) {
                 inspectionResults.push({ provider: source.providerBase, error: e.message });
             }
@@ -847,13 +876,13 @@ app.get('/', async (req, res) => {
 
             <div id="debug" class="tab-content">
                 <div class="section">
-                    <h3 class="section-title">🔍 Inspecteur de Flux Brut</h3>
-                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Tapez une chaîne (ex: "ligue", "bein", "tf1") pour voir exactement ce que les add-ons envoient.</p>
+                    <h3 class="section-title">🔍 Inspecteur & Testeur de Flux</h3>
+                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Tapez une chaîne (ex: "ligue", "bein", "tf1") pour tester la santé des liens en direct.</p>
                     <div style="display: flex; gap: 8px; margin-bottom: 15px;">
                         <input type="text" id="debugQuery" placeholder="Nom de la chaîne..." style="flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px;">
-                        <button type="button" onclick="runDebug()" class="btn-small" style="padding: 10px 15px; font-weight: bold;">Inspecter</button>
+                        <button type="button" onclick="runDebug()" class="btn-small" style="padding: 10px 15px; font-weight: bold;">Tester les flux</button>
                     </div>
-                    <pre id="debugOutput" style="background: #111; padding: 12px; border-radius: 6px; font-size: 11px; color: #00ffcc; max-height: 400px; overflow-y: auto; text-align: left; white-space: pre-wrap; word-break: break-all;">En attente de recherche...</pre>
+                    <pre id="debugOutput" style="background: #111; padding: 12px; border-radius: 6px; font-size: 11px; color: #00ffcc; max-height: 400px; overflow-y: auto; text-align: left; white-space: pre-wrap; word-break: break-all;">En attente de test...</pre>
                 </div>
             </div>
         </div>
@@ -873,7 +902,7 @@ app.get('/', async (req, res) => {
             async function runDebug() {
                 let q = document.getElementById('debugQuery').value.trim();
                 if(!q) return alert("Veuillez entrer un nom de chaîne !");
-                document.getElementById('debugOutput').innerText = "Inspection en cours auprès des add-ons...";
+                document.getElementById('debugOutput').innerText = "Test des liens et des serveurs en cours...";
                 try {
                     let res = await fetch('/api/debug/inspect/' + encodeURIComponent(q));
                     let data = await res.json();
@@ -1099,9 +1128,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '8.7.0',
+        version: '8.7.1',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV. Universal Proxy Injector & Stream Inspector.',
+        description: 'Meta-Addon IPTV. Active Stream Health Tester & Inspector.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1338,7 +1367,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             }
                         }
 
-                        // INJECTION UNIVERSELLE DES PROXY HEADERS : On donne à TV Mio le même passeport sécurisé que Vavoo
                         if (!outStream.behaviorHints) outStream.behaviorHints = {};
                         if (!outStream.behaviorHints.notWebReady) outStream.behaviorHints.notWebReady = true;
                         
