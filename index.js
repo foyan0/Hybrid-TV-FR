@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.2 (Bugfix: TV Mio & Stream Truncation Fixed)
- * Core Engine: Safe Non-Destructive Stream Resolver, 45s Cache, Original Routing.
+ * Version: 1.2.3 (Anti-Hang & Strict Timeouts)
+ * Core Engine: Non-Blocking Source Fetcher, 2.5s Hard Timeouts, 45s Cache.
  */
 
 const express = require('express');
@@ -496,7 +496,7 @@ async function fetchCatalogFromSource(sourceInput) {
                     let currentSkip = skip + (i * 100);
                     let encodedCatId = encodeURIComponent(catalog.id);
                     let url = currentSkip > 0 ? `${base}/catalog/${catalog.type}/${encodedCatId}/skip=${currentSkip}.json` : `${base}/catalog/${catalog.type}/${encodedCatId}.json`;
-                    requests.push(axios.get(url, { timeout: 6000 }).catch(e => null));
+                    requests.push(axios.get(url, { timeout: 5000 }).catch(e => null));
                 }
                 
                 let responses = await Promise.all(requests);
@@ -687,7 +687,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                 const r = await axios.get(source.directUrl, { 
                     responseType: 'stream',
                     headers: { 'User-Agent': 'Mozilla/5.0' }, 
-                    timeout: 3500
+                    timeout: 2500
                 });
                 if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
                 testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
@@ -702,7 +702,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
         } else {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
-                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 4000 });
+                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 2500 });
                 
                 let streamsTested = [];
                 if (r.data && r.data.streams) {
@@ -713,7 +713,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                                 const sRes = await axios.get(s.url, { 
                                     responseType: 'stream',
                                     headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase }, 
-                                    timeout: 3500
+                                    timeout: 2500
                                 });
                                 if(sRes.data && typeof sRes.data.destroy === 'function') sRes.data.destroy();
                                 streamTest.health = `✅ En ligne (HTTP ${sRes.status})`;
@@ -739,7 +739,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
     res.json({ channelName: channel.displayName, channelId: channel.id, inspectionResults });
 });
 
-// Dashboard Renderer d'origine (v1.1.2) parfaitement fonctionnel
+// Dashboard Renderer stable v1.2.3 (Support Configurable + Timeouts)
 const renderDashboard = (req, res) => {
     let configData = parseConfig(req.params.config);
     let sourcesList = configData.sources && configData.sources.length > 0 ? configData.sources : ['', ''];
@@ -806,7 +806,7 @@ const renderDashboard = (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, stable et fonctionnelle (v1.2.2).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, anti-blocage (v1.2.3).</p>
             </div>
 
             <div class="tabs">
@@ -1089,9 +1089,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.2.2',
+        version: '1.2.3',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.2). Safe Stream Resolver & Stable Routing.',
+        description: 'Meta-Addon IPTV (v1.2.3). Anti-Hang & Fast Resolver.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1216,7 +1216,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
                 const streamRes = await axios.get(targetUrl, {
                     headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }, 
-                    timeout: 4500 
+                    timeout: 2500 // Timeout strict anti-blocage
                 });
                 
                 if (streamRes.data && streamRes.data.streams) {
@@ -1353,7 +1353,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
 
-        // --- TRI PAR SCORE (Sans test destructeur en amont pour TV Mio) ---
+        // --- TRI PAR SCORE (Sans test bloquant) ---
         allStreams.sort((a, b) => b._score - a._score);
         
         const finalStreams = allStreams.map((s) => {
