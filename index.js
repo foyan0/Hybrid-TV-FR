@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.0 (Professional Configurable Mode)
- * Core Engine: Native Stremio Configure Route, Persistent Token State, 45s Cache.
+ * Version: 1.2.1 (Absolute Stability & Working Streams Restored)
+ * Core Engine: Original v1.1.2 Stream Resolver, 45s Cache, Safe Configure Route.
  */
 
 const express = require('express');
@@ -59,19 +59,16 @@ const BLACKLIST = [
 function parseConfig(encodedConfig) {
     try {
         if (!encodedConfig || encodedConfig === 'manifest.json' || encodedConfig === 'configure') {
-            return { sources: ['', ''], qualities: ['1080p', '720p', '4K', 'SD'] };
+            return { sources: [], qualities: ['1080p', '720p', '4K', 'SD'] };
         }
         const jsonStr = Buffer.from(encodedConfig, 'base64').toString('utf8');
         let parsed = JSON.parse(jsonStr);
         if (!parsed.qualities || !Array.isArray(parsed.qualities)) {
             parsed.qualities = ['1080p', '720p', '4K', 'SD'];
         }
-        if (!parsed.sources || !Array.isArray(parsed.sources)) {
-            parsed.sources = ['', ''];
-        }
         return parsed;
     } catch (e) {
-        return { sources: ['', ''], qualities: ['1080p', '720p', '4K', 'SD'] };
+        return { sources: [], qualities: ['1080p', '720p', '4K', 'SD'] };
     }
 }
 
@@ -742,11 +739,12 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
     res.json({ channelName: channel.displayName, channelId: channel.id, inspectionResults });
 });
 
-// ROUTE RACINE & CONFIGURE UNIFIEE (Supporte le mode configurable Stremio)
+// Dashboard Renderer d'origine (v1.1.2) supportant le mode Configurable
 const renderDashboard = (req, res) => {
-    let initialConfig = parseConfig(req.params.config);
-    let sourcesList = initialConfig.sources;
-    let initialQualities = initialConfig.qualities;
+    let sourcesParam = req.query.sources;
+    let configData = parseConfig(req.params.config);
+    let sourcesList = configData.sources && configData.sources.length > 0 ? configData.sources : ['', ''];
+    let defaultQualities = configData.qualities || ['1080p', '720p', '4K', 'SD'];
 
     const html = `
     <!DOCTYPE html>
@@ -809,7 +807,7 @@ const renderDashboard = (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, stable et configurée (v1.2.0).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, stable et fonctionnelle (v1.2.1).</p>
             </div>
 
             <div class="tabs">
@@ -896,8 +894,8 @@ const renderDashboard = (req, res) => {
         </div>
 
         <script>
-            let sources = ${JSON.stringify(sourcesList)};
-            let qualities = ${JSON.stringify(initialQualities)};
+            let sources = ${JSON.stringify(sourcesList.length > 0 ? sourcesList : ['', ''])};
+            let qualities = ${JSON.stringify(defaultQualities)};
 
             function switchTab(tabId, btn) {
                 document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -1013,7 +1011,7 @@ const renderDashboard = (req, res) => {
                 const token = document.getElementById('exportTokenBox').value;
                 const linkField = document.getElementById("manifestLink");
                 if (linkField) linkField.value = window.location.protocol + "//" + window.location.host + "/" + token + "/manifest.json";
-                alert("Lien généré avec succès !");
+                alert("Lien généré !");
             }
 
             function copyLink() {
@@ -1069,9 +1067,11 @@ const renderDashboard = (req, res) => {
     res.send(html);
 };
 
-// Routes d'accès au dashboard (Racine et Configure Stremio)
-app.get('/', (req, res) => renderDashboard({ params: { config: '' } }, res));
+// Routes de configuration stables
+app.get('/', (req, res) => renderDashboard({ params: { config: '' }, query: req.query }, res));
 app.get('/:config/configure', (req, res) => renderDashboard(req, res));
+
+// --- MANIFEST BUILDER ---
 app.get('/:config/manifest.json', (req, res) => {
     const config = parseConfig(req.params.config);
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
@@ -1091,9 +1091,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.2.0',
+        version: '1.2.1',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.0). Configurable Mode & Strict Routing.',
+        description: 'Meta-Addon IPTV (v1.2.1). Stable & Fast Resolver.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
