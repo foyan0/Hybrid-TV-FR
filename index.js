@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.5 (Catalog & Timeout Fixer)
- * Core Engine: Extended Catalog Timeouts (15s), Robust Error Recovery, Stable Routing.
+ * Version: 1.1.2 (Clean Restored Original Base)
+ * Core Engine: Synchronous Health Check, 45s Cache, Original Strict Routing.
  */
 
 const express = require('express');
@@ -404,7 +404,7 @@ async function fetchAndParseEPG(url, isGz) {
                 }
             });
 
-            const timeoutId = setTimeout(() => { stream.destroy(); reject(new Error("Timeout")); }, 60000);
+            const timeoutId = setTimeout(() => { stream.destroy(); reject(new Error("Timeout EPG")); }, 60000);
             rl.on('close', () => { clearTimeout(timeoutId); resolve(localEpg); });
             rl.on('error', (err) => { clearTimeout(timeoutId); reject(err); });
         } catch (err) { reject(err); }
@@ -477,7 +477,7 @@ async function fetchCatalogFromSource(sourceInput) {
         if (!cleanUrl.endsWith('manifest.json')) cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
         const base = cleanUrl.replace(/\/manifest\.json$/, '');
 
-        const manifestRes = await axios.get(cleanUrl, { timeout: 8000 });
+        const manifestRes = await axios.get(cleanUrl, { timeout: 6000 });
         const catalogs = manifestRes.data.catalogs || [];
         
         const catalogPromises = catalogs.map(async (catalog) => {
@@ -740,7 +740,7 @@ app.get('/', async (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>HybridTV Dashboard 1.2.5</title>
+        <title>HybridTV Dashboard 1.0.8</title>
         <style>
             :root { --bg: #141414; --card: #1f1f1f; --card-alt: #111; --primary: #e50914; --text: #fff; --text-muted: #bbb; --border: #333; }
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 40px 20px; margin: 0; }
@@ -795,7 +795,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, stable et résiliente (v1.2.5).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, triée et stable (v1.0.8).</p>
             </div>
 
             <div class="tabs">
@@ -1099,9 +1099,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.2.5',
+        version: '1.0.8',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.5). Robust Timeouts & Stable Catalogs.',
+        description: 'Meta-Addon IPTV (v1.0.8). Fast Scanner, Direct Links & Stable Routing.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1185,9 +1185,6 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
 app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
-    
-    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-    const clientUserAgent = req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 
     serverStats.channelClicks[req.params.id] = (serverStats.channelClicks[req.params.id] || 0) + 1;
 
@@ -1200,8 +1197,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
     let channelsData = await getChannelsForSources(config.sources);
     
-    // SMART CACHE 45 SECONDES
-    res.setHeader('Cache-Control', 'max-age=45, public'); 
+    // MICRO-CACHE 5 SECONDES 
+    res.setHeader('Cache-Control', 'max-age=5, public'); 
 
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ streams: [] });
@@ -1367,7 +1364,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         allStreams.sort((a, b) => b._score - a._score);
         let limitedStreams = allStreams.slice(0, 15);
 
-        // --- SCANNER DE LIENS MORTS ---
+        // --- SCANNER DE LIENS MORTS ("Stream Destroyer" sur tous les liens) ---
         if (limitedStreams.length > 0) {
             await Promise.all(limitedStreams.map(async (s) => {
                 if (!s.url) return;
@@ -1417,7 +1414,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         });
         
         streamCache.set(cacheKey, finalStreams);
-        setTimeout(() => streamCache.delete(cacheKey), 45000); 
+        setTimeout(() => streamCache.delete(cacheKey), 5000); 
 
         res.json({ streams: finalStreams });
     } catch (err) { res.json({ streams: [] }); }
