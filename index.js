@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.1.4 (Dashboard Repaired & Hot-Update Ready)
- * Core Engine: Synchronous Health Check, 45s Cache, Fixed UI & Hot-Update.
+ * Version: 1.1.2 (Stable & Restored Dashboard)
+ * Core Engine: Synchronous Health Check, 45s Cache, Original UI Restored.
  */
 
 const express = require('express');
@@ -803,7 +803,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée (v1.1.3 - Mise à jour à chaud).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, rapide et optimisée (v1.1.2).</p>
             </div>
 
             <div class="tabs">
@@ -831,13 +831,9 @@ app.get('/', async (req, res) => {
                     <button type="button" onclick="importToken()" class="btn btn-small" style="margin-top: 8px;">📥 Importer</button>
                 </div>
                 
-                <button type="button" onclick="saveAndGenerate()" class="btn">💾 Sauvegarder</button>
+                <button type="button" onclick="generateLink()" class="btn">⚡ Générer l'Add-on</button>
                 <input type="text" id="manifestLink" class="main-link" placeholder="Lien généré ici..." readonly>
-                
-                <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <button type="button" onclick="copyLink()" class="btn btn-secondary" style="flex: 1; margin-top:0;">📋 Copier le lien</button>
-                    <a id="stremioDirectBtn" href="#" class="btn" style="flex: 1; text-decoration: none; display: none; line-height: normal; padding: 12px 0; text-align: center;">🚀 Mettre à jour Stremio</a>
-                </div>
+                <button type="button" onclick="copyLink()" class="btn btn-secondary">📋 Copier le lien d'installation</button>
             </div>
 
             <div id="metrics" class="tab-content">
@@ -1006,33 +1002,20 @@ app.get('/', async (req, res) => {
                 } catch(e) { alert("Erreur : Ce code est corrompu."); }
             }
 
-            function saveAndGenerate() {
+            function generateLink() {
                 saveInputs();
                 const validSources = sources.filter(s => s.length > 0);
                 if (validSources.length === 0) return alert("Veuillez entrer au moins un lien de source !");
-                
                 const token = document.getElementById('exportTokenBox').value;
-                const baseUrl = window.location.protocol + "//" + window.location.host + "/" + token + "/manifest.json";
-                
                 const linkField = document.getElementById("manifestLink");
-                if (linkField) linkField.value = baseUrl;
-
-                const stremioProtocolUrl = baseUrl.replace(/^https?:\/\//, 'stremio://');
-                const directBtn = document.getElementById('stremioDirectBtn');
-                if (directBtn) {
-                    directBtn.href = stremioProtocolUrl;
-                    directBtn.style.display = 'block';
-                }
-
-                alert("Paramètres sauvegardés avec succès ! Clique sur 'Mettre à jour Stremio' pour appliquer les modifications instantanément.");
+                if (linkField) linkField.value = window.location.protocol + "//" + window.location.host + "/" + token + "/manifest.json";
+                alert("Lien généré. Veuillez désinstaller l'ancienne version dans Stremio avant d'ajouter celle-ci !");
             }
 
             function copyLink() {
                 var copyText = document.getElementById("manifestLink");
                 if (!copyText || !copyText.value) return alert("Générez le lien d'abord !");
-                copyText.select(); 
-                document.execCommand("copy"); 
-                alert("Lien copié !");
+                copyText.select(); document.execCommand("copy"); alert("Copié !");
             }
 
             async function fetchMetrics() {
@@ -1124,9 +1107,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.1.3',
+        version: '1.1.2',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.1.3). Hot-Update & Smart Routing.',
+        description: 'Meta-Addon IPTV (v1.1.2). Synchronous Health Check, 45s Cache & Strict Routing.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
