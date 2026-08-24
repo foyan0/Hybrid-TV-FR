@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Core Engine: Extensionless Stream Resolver, Strict Semantic Routing, Live Stream Debugger.
+ * Core Engine: Automatic Proxy Header Injection for Extensionless Streams, Semantic Routing, Live Debugger.
  */
 
 const express = require('express');
@@ -1099,9 +1099,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '8.6.0',
+        version: '8.7.0',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV. Extensionless Stream Resolver & Inspector.',
+        description: 'Meta-Addon IPTV. Universal Proxy Injector & Stream Inspector.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1338,10 +1338,23 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             }
                         }
 
-                        // CORRECTION EXENSIONLESS : Si le lien n'a pas d'extension évidente, on force les behaviorHints pour forcer ExoPlayer en mode live/hls
+                        // INJECTION UNIVERSELLE DES PROXY HEADERS : On donne à TV Mio le même passeport sécurisé que Vavoo
                         if (!outStream.behaviorHints) outStream.behaviorHints = {};
-                        if (!outStream.behaviorHints.notWebReady) {
-                            outStream.behaviorHints.notWebReady = true;
+                        if (!outStream.behaviorHints.notWebReady) outStream.behaviorHints.notWebReady = true;
+                        
+                        if (!outStream.behaviorHints.proxyHeaders) {
+                            let refDomain = "https://vavoo.to/";
+                            try {
+                                let uObj = new URL(source.providerBase);
+                                refDomain = uObj.origin + "/";
+                            } catch(e){}
+
+                            outStream.behaviorHints.proxyHeaders = {
+                                request: {
+                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                                    'Referer': refDomain
+                                }
+                            };
                         }
 
                         let fallbackName = source.originalName || "Source Add-on";
