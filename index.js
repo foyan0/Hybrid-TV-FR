@@ -667,6 +667,36 @@ app.get('/api/metrics', (req, res) => {
     });
 });
 
+// --- API ROUTE POUR LE DEBUG DE FLUX ---
+app.get('/api/debug/inspect/:query', async (req, res) => {
+    let q = req.params.query.toLowerCase();
+    let latestCache = null;
+    let latestTime = 0;
+    for (const [key, val] of Object.entries(channelsCache)) {
+        if (val.timestamp > latestTime) { latestTime = val.timestamp; latestCache = val; }
+    }
+    if (!latestCache || !latestCache.data) return res.json({ error: "Cache vide. Ouvrez d'abord l'add-on dans Stremio." });
+
+    const channel = latestCache.data.find(c => c.id.toLowerCase().includes(q) || c.displayName.toLowerCase().includes(q));
+    if (!channel) return res.json({ error: `Chaîne "${q}" introuvable dans le cache actuel.` });
+
+    let inspectionResults = [];
+    for (const source of channel.sources) {
+        if (source.type === 'm3u') {
+            inspectionResults.push({ source: source.providerBase || 'M3U Local', type: 'm3u', url: source.directUrl });
+        } else {
+            try {
+                let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
+                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 4000 });
+                inspectionResults.push({ provider: source.providerBase, metaId: source.metaId, response: r.data });
+            } catch(e) {
+                inspectionResults.push({ provider: source.providerBase, error: e.message });
+            }
+        }
+    }
+    res.json({ channelName: channel.displayName, channelId: channel.id, inspectionResults });
+});
+
 app.get('/', async (req, res) => {
     let sourcesParam = req.query.sources;
     let sourcesList = sourcesParam ? sourcesParam.split(',') : ['', ''];
@@ -688,8 +718,8 @@ app.get('/', async (req, res) => {
             h1 { margin: 0 0 10px 0; font-size: 28px; }
             .subtitle { font-size: 14px; color: var(--text-muted); margin: 0; }
             
-            .tabs { display: flex; border-bottom: 1px solid var(--border); background: #1a1a1a; }
-            .tab-btn { flex: 1; padding: 15px; background: none; border: none; color: var(--text-muted); font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+            .tabs { display: flex; border-bottom: 1px solid var(--border); background: #1a1a1a; overflow-x: auto; }
+            .tab-btn { flex: 1; padding: 15px; background: none; border: none; color: var(--text-muted); font-size: 15px; font-weight: bold; cursor: pointer; transition: 0.2s; white-space: nowrap; }
             .tab-btn:hover { color: var(--text); background: #222; }
             .tab-btn.active { color: var(--text); border-bottom: 3px solid var(--primary); background: var(--card); }
             
@@ -739,6 +769,7 @@ app.get('/', async (req, res) => {
             <div class="tabs">
                 <button class="tab-btn active" onclick="switchTab('config', this)">⚙️ Configurer</button>
                 <button class="tab-btn" onclick="switchTab('metrics', this)">📊 Métriques</button>
+                <button class="tab-btn" onclick="switchTab('debug', this)">🔍 Debug Flux</button>
             </div>
 
             <div id="config" class="tab-content active">
@@ -813,6 +844,18 @@ app.get('/', async (req, res) => {
                     </ul>
                 </div>
             </div>
+
+            <div id="debug" class="tab-content">
+                <div class="section">
+                    <h3 class="section-title">🔍 Inspecteur de Flux Brut</h3>
+                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Tapez une chaîne (ex: "ligue", "bein", "tf1") pour voir exactement ce que les add-ons envoient.</p>
+                    <div style="display: flex; gap: 8px; margin-bottom: 15px;">
+                        <input type="text" id="debugQuery" placeholder="Nom de la chaîne..." style="flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px;">
+                        <button type="button" onclick="runDebug()" class="btn-small" style="padding: 10px 15px; font-weight: bold;">Inspecter</button>
+                    </div>
+                    <pre id="debugOutput" style="background: #111; padding: 12px; border-radius: 6px; font-size: 11px; color: #00ffcc; max-height: 400px; overflow-y: auto; text-align: left; white-space: pre-wrap; word-break: break-all;">En attente de recherche...</pre>
+                </div>
+            </div>
         </div>
 
         <script>
@@ -825,6 +868,19 @@ app.get('/', async (req, res) => {
                 document.getElementById(tabId).classList.add('active');
                 btn.classList.add('active');
                 if(tabId === 'metrics') fetchMetrics();
+            }
+
+            async function runDebug() {
+                let q = document.getElementById('debugQuery').value.trim();
+                if(!q) return alert("Veuillez entrer un nom de chaîne !");
+                document.getElementById('debugOutput').innerText = "Inspection en cours auprès des add-ons...";
+                try {
+                    let res = await fetch('/api/debug/inspect/' + encodeURIComponent(q));
+                    let data = await res.json();
+                    document.getElementById('debugOutput').innerText = JSON.stringify(data, null, 2);
+                } catch(e) {
+                    document.getElementById('debugOutput').innerText = "Erreur de requête : " + e.message;
+                }
             }
 
             function renderSources() {
@@ -1043,9 +1099,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '8.2.1',
+        version: '8.4.0',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV. Strict Semantic Routing & Regional Isolation.',
+        description: 'Meta-Addon IPTV. Universal Passthrough & Stream Inspector.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
