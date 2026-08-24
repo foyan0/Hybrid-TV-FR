@@ -276,8 +276,6 @@ function getChannelData(rawName) {
     if (c.includes('COMEDIE') || c.includes('COMEDY')) return { id: 'hyb_canal_comedie', name: 'Comédie+', categories: ['canal', 'autres'], index: 10 };
 
     if (c.includes('CANAL') || c.includes('CPLUS')) {
-        if (c.includes('LIGA') || c === 'CANALPLUSL' || c === 'CPLUSSPORT') return null;
-
         if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 100 };
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
         
@@ -738,7 +736,7 @@ async function getChannelsForSources(sourcesList) {
 }
 
 // ============================================================================
-// API ROUTES
+// ROUTES
 // ============================================================================
 
 app.get('/api/stats', (req, res) => {
@@ -963,7 +961,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '4.5.0',
+        version: '4.6.0',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -1091,6 +1089,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
     let channelsData = await getChannelsForSources(config.sources);
     res.setHeader('Cache-Control', 'max-age=60, public'); 
+    const rawIp = req.headers['x-forwarded-for'];
+    const clientIp = rawIp ? rawIp.split(',')[0].trim() : req.socket.remoteAddress;
 
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ streams: [] });
@@ -1105,19 +1105,11 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                     name: isBeluchon ? `▶ Source Officielle (HD)` : `▶ Full HD (1080p)`,
                     title: source.originalName || "Source M3U",
                     _score: isBeluchon ? 4500 : 1500,
-                    _originalTitle: source.originalName || "Source M3U",
-                    _behaviorHints: {
-                        proxyHeaders: {
-                            request: {
-                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-                            }
-                        }
-                    }
+                    _originalTitle: source.originalName || "Source M3U"
                 }];
             }
 
             try {
-                // Optimized timeout limit for remote provider extraction
                 const streamRes = await axios.get(`${source.providerBase}/stream/tv/${source.metaId}.json`, {
                     headers: { 'User-Agent': 'Mozilla/5.0' }, 
                     timeout: 4500 
@@ -1138,7 +1130,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
                         let penalty = 0;
                         
-                        // 1. Protection contre les faux-positifs Canal+
                         if (channel.id.startsWith('hyb_canal_') && !channel.id.includes('live')) {
                             let isBaseCanal = (channel.id === 'hyb_canal_cplus');
                             if (isBaseCanal) {
@@ -1155,12 +1146,10 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             }
                         }
 
-                        // 2. Protection TF1
                         if (channel.id === 'hyb_tnt_1') {
                             if (nStream.includes('SERIE') || nStream.includes('FILM') || nStream.includes('TFX') || nStream.includes('TMC') || nStream.includes('SF')) penalty += 5000;
                         }
 
-                        // 3. Protection Discovery
                         if (channel.id === 'hyb_dec_discovery') {
                             if (nStream.includes('INVESTIGATION') || nStream.includes('ID') || nStream.includes('SCIENCE')) penalty += 5000;
                         }
@@ -1168,12 +1157,10 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             if (!nStream.includes('INVESTIGATION') && !nStream.includes('ID')) penalty += 5000;
                         }
 
-                        // 4. Protection Jeunesse
                         if (channel.id === 'hyb_jeu_disney') {
                             if (nStream.includes('JR') || nStream.includes('JUNIOR') || nStream.includes('XD') || nStream.includes('PLUS1')) penalty += 5000;
                         }
 
-                        // 5. Protection Sports
                         if (channel.id.startsWith('hyb_sport_bein')) {
                             let targetNumMatch = channel.id.match(/_(\d+)$/);
                             let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
@@ -1219,13 +1206,13 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             }
                         }
 
-                        // 6. FILTRE ANTI-TOKEN IP (Évite les blocages 403 des liens géolocalisés sur le serveur)
-                        if (!source.type === 'm3u' && s.url && s.url.match(/(token=|sig=|auth=|hdnts=|mac=|_expires=)/i)) {
+                        // --- SECURITY TOKEN FILTER (VISUAL DEBUGGING) ---
+                        let isTokenized = (!source.type === 'm3u' && s.url && s.url.match(/(token=|sig=|auth=|hdnts=|mac=|_expires=)/i));
+                        
+                        if (isTokenized) {
                             penalty += 8000; 
-                        }
-
-                        // 7. Calcul du score de qualité
-                        if (isBeluchon) {
+                            qual = "🔒 Jeton IP (Risque de blocage)";
+                        } else if (isBeluchon) {
                             qual = "Source Officielle Légale (HD)";
                             score += 3000; 
                         } else {
@@ -1245,24 +1232,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         score -= idx; 
                         score += (10 - source.sourceIndex) * 50;
 
-                        // Configuration des proxyHeaders clients
-                        let behaviorHints = s.behaviorHints || {};
-                        if (!behaviorHints.proxyHeaders) {
-                            behaviorHints.proxyHeaders = {
-                                request: {
-                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                                    'Referer': source.providerBase || 'https://www.google.com'
-                                }
-                            };
-                        }
-
-                        return { 
-                            ...s, 
-                            _qualText: qual, 
-                            _score: score, 
-                            _originalTitle: originalTitle,
-                            _behaviorHints: behaviorHints
-                        };
+                        return { ...s, _qualText: qual, _score: score, _originalTitle: originalTitle };
                     });
                 }
             } catch (err) {}
@@ -1279,7 +1249,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             url: s.url, 
             name: s._originalTitle, 
             title: `▶ ${s._qualText}`,
-            behaviorHints: s._behaviorHints
+            behaviorHints: s.behaviorHints
         }));
         
         streamCache.set(cacheKey, finalStreams);
