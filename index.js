@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.4 (Manual Cache Purger & Non-Blocking Sources)
- * Core Engine: Manual Force-Refresh Endpoint, Safe Stream Resolver, 45s Cache.
+ * Version: 1.0.8 (Clean & Fully Restored Original)
+ * Core Engine: Original routing, zero bloated UI additions, rock solid stability.
  */
 
 const express = require('express');
@@ -58,9 +58,7 @@ const BLACKLIST = [
 
 function parseConfig(encodedConfig) {
     try {
-        if (!encodedConfig || encodedConfig === 'manifest.json' || encodedConfig === 'configure') {
-            return { sources: [], qualities: ['1080p', '720p', '4K', 'SD'] };
-        }
+        if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], qualities: ['1080p', '720p', '4K', 'SD'] };
         const jsonStr = Buffer.from(encodedConfig, 'base64').toString('utf8');
         let parsed = JSON.parse(jsonStr);
         if (!parsed.qualities || !Array.isArray(parsed.qualities)) {
@@ -406,7 +404,7 @@ async function fetchAndParseEPG(url, isGz) {
                 }
             });
 
-            const timeoutId = setTimeout(() => { stream.destroy(); reject(new Error("Timeout")); }, 60000);
+            const timeoutId = setTimeout(() => { stream.destroy(); reject(new Error("Timeout EPG")); }, 60000);
             rl.on('close', () => { clearTimeout(timeoutId); resolve(localEpg); });
             rl.on('error', (err) => { clearTimeout(timeoutId); reject(err); });
         } catch (err) { reject(err); }
@@ -479,7 +477,7 @@ async function fetchCatalogFromSource(sourceInput) {
         if (!cleanUrl.endsWith('manifest.json')) cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
         const base = cleanUrl.replace(/\/manifest\.json$/, '');
 
-        const manifestRes = await axios.get(cleanUrl, { timeout: 5000 });
+        const manifestRes = await axios.get(cleanUrl, { timeout: 6000 });
         const catalogs = manifestRes.data.catalogs || [];
         
         const catalogPromises = catalogs.map(async (catalog) => {
@@ -496,7 +494,7 @@ async function fetchCatalogFromSource(sourceInput) {
                     let currentSkip = skip + (i * 100);
                     let encodedCatId = encodeURIComponent(catalog.id);
                     let url = currentSkip > 0 ? `${base}/catalog/${catalog.type}/${encodedCatId}/skip=${currentSkip}.json` : `${base}/catalog/${catalog.type}/${encodedCatId}.json`;
-                    requests.push(axios.get(url, { timeout: 4000 }).catch(e => null));
+                    requests.push(axios.get(url, { timeout: 6000 }).catch(e => null));
                 }
                 
                 let responses = await Promise.all(requests);
@@ -528,15 +526,9 @@ async function fetchCatalogFromSource(sourceInput) {
     return metas;
 }
 
-// --- SYNC ORCHESTRATOR AVEC PURGE MANUELLE DU CACHE ---
-async function getChannelsForSources(sourcesList, forceRefresh = false) {
+// --- SYNC ORCHESTRATOR ---
+async function getChannelsForSources(sourcesList) {
     const cacheKey = sourcesList.join('|');
-
-    if (forceRefresh) {
-        delete channelsCache[cacheKey];
-        streamCache.clear();
-        console.log("[INFO] Cache purgé manuellement par l'utilisateur.");
-    }
 
     if (!channelsCache[cacheKey]) {
         channelsCache[cacheKey] = { status: 'idle', data: [], sourceReport: {}, timestamp: 0 };
@@ -544,11 +536,11 @@ async function getChannelsForSources(sourcesList, forceRefresh = false) {
 
     let cacheObj = channelsCache[cacheKey];
 
-    if (!forceRefresh && cacheObj.status === 'done' && (Date.now() - cacheObj.timestamp < 45 * 1000)) {
+    if (cacheObj.status === 'done' && (Date.now() - cacheObj.timestamp < 6 * 3600 * 1000)) {
         return cacheObj.data;
     }
 
-    if (cacheObj.status === 'syncing' && !forceRefresh) {
+    if (cacheObj.status === 'syncing') {
         while (channelsCache[cacheKey] && channelsCache[cacheKey].status === 'syncing') {
             await new Promise(r => setTimeout(r, 400));
         }
@@ -673,15 +665,6 @@ app.get('/api/metrics', (req, res) => {
     });
 });
 
-// ROUTE API DE PURGE MANUELLE DEPUIS LE DASHBOARD
-app.get('/:config/api/purge', async (req, res) => {
-    const config = parseConfig(req.params.config);
-    if (config.sources && config.sources.length > 0) {
-        await getChannelsForSources(config.sources, true);
-    }
-    res.json({ status: "success", message: "Cache vidé et sources rechargées avec succès !" });
-});
-
 app.get('/api/debug/inspect/:query', async (req, res) => {
     let q = req.params.query.toLowerCase();
     let latestCache = null;
@@ -702,7 +685,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                 const r = await axios.get(source.directUrl, { 
                     responseType: 'stream',
                     headers: { 'User-Agent': 'Mozilla/5.0' }, 
-                    timeout: 3000
+                    timeout: 3500
                 });
                 if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
                 testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
@@ -717,7 +700,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
         } else {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
-                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 3000 });
+                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 4000 });
                 
                 let streamsTested = [];
                 if (r.data && r.data.streams) {
@@ -728,7 +711,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                                 const sRes = await axios.get(s.url, { 
                                     responseType: 'stream',
                                     headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase }, 
-                                    timeout: 3000
+                                    timeout: 3500
                                 });
                                 if(sRes.data && typeof sRes.data.destroy === 'function') sRes.data.destroy();
                                 streamTest.health = `✅ En ligne (HTTP ${sRes.status})`;
@@ -754,12 +737,10 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
     res.json({ channelName: channel.displayName, channelId: channel.id, inspectionResults });
 });
 
-// Dashboard Renderer avec le bouton magique "Forcer la mise à jour"
-const renderDashboard = (req, res) => {
-    let configData = parseConfig(req.params.config);
-    let sourcesList = configData.sources && configData.sources.length > 0 ? configData.sources : ['', ''];
-    let defaultQualities = configData.qualities || ['1080p', '720p', '4K', 'SD'];
-    let currentConfigToken = req.params.config || '';
+app.get('/', async (req, res) => {
+    let sourcesParam = req.query.sources;
+    let sourcesList = sourcesParam ? sourcesParam.split(',') : ['', ''];
+    let defaultQualities = "['1080p', '720p', '4K', 'SD']";
 
     const html = `
     <!DOCTYPE html>
@@ -767,7 +748,7 @@ const renderDashboard = (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>HybridTV Dashboard</title>
+        <title>HybridTV Dashboard 1.0.8</title>
         <style>
             :root { --bg: #141414; --card: #1f1f1f; --card-alt: #111; --primary: #e50914; --text: #fff; --text-muted: #bbb; --border: #333; }
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 40px 20px; margin: 0; }
@@ -796,8 +777,6 @@ const renderDashboard = (req, res) => {
             .btn:hover { background: #f40612; }
             .btn-secondary { background: #333; margin-top: 10px; }
             .btn-secondary:hover { background: #444; }
-            .btn-accent { background: #0084ff; margin-top: 10px; }
-            .btn-accent:hover { background: #006acc; }
             .btn-small { background: #444; padding: 8px 10px; font-size: 12px; border-radius: 6px; cursor: pointer; color: #fff; border: none; }
             .btn-small:hover { background: #555; }
             .btn-danger { background: #800; padding: 8px 10px; border-radius: 6px; cursor: pointer; color: #fff; border: none; }
@@ -824,7 +803,7 @@ const renderDashboard = (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, avec rechargement forcé (v1.2.4).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, triée et stable (v1.0.8).</p>
             </div>
 
             <div class="tabs">
@@ -855,9 +834,6 @@ const renderDashboard = (req, res) => {
                 <button type="button" onclick="generateLink()" class="btn">⚡ Générer l'Add-on</button>
                 <input type="text" id="manifestLink" class="main-link" placeholder="Lien généré ici..." readonly>
                 <button type="button" onclick="copyLink()" class="btn btn-secondary">📋 Copier le lien d'installation</button>
-
-                <!-- BOUTON MAGIQUE DE PURGE ET RECHARGEMENT DES SOURCES -->
-                <button type="button" onclick="forcePurgeSources()" class="btn btn-accent">🔄 Forcer la mise à jour des sources sur le serveur</button>
             </div>
 
             <div id="metrics" class="tab-content">
@@ -915,8 +891,7 @@ const renderDashboard = (req, res) => {
 
         <script>
             let sources = ${JSON.stringify(sourcesList)};
-            let qualities = ${JSON.stringify(defaultQualities)};
-            let currentConfigToken = "${currentConfigToken}";
+            let qualities = ${defaultQualities};
 
             function switchTab(tabId, btn) {
                 document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -936,22 +911,6 @@ const renderDashboard = (req, res) => {
                     document.getElementById('debugOutput').innerText = JSON.stringify(data, null, 2);
                 } catch(e) {
                     document.getElementById('debugOutput').innerText = "Erreur de requête : " + e.message;
-                }
-            }
-
-            // FONCTION DE PURGE FORCÉE DES SOURCES SUR LE SERVEUR
-            async function forcePurgeSources() {
-                if (!currentConfigToken) {
-                    return alert("Veuillez d'abord générer ou importer un lien d'add-on pour que le serveur sache quelle configuration recharger !");
-                }
-                if (!confirm("Voulez-vous forcer le rechargement complet de toutes les sources sur le serveur Render ?")) return;
-                
-                try {
-                    let res = await fetch('/' + currentConfigToken + '/api/purge');
-                    let data = await res.json();
-                    alert(data.message || "Sources rechargées avec succès !");
-                } catch(e) {
-                    alert("Erreur lors de la purge : " + e.message);
                 }
             }
 
@@ -1009,6 +968,7 @@ const renderDashboard = (req, res) => {
                 const temp = qualities[index];
                 qualities[index] = qualities[newIndex];
                 qualities[newIndex] = temp;
+                localStorage.setItem('hybrid_qualities', JSON.stringify(qualities));
                 renderQualities();
             }
 
@@ -1017,6 +977,7 @@ const renderDashboard = (req, res) => {
             
             function saveInputs() {
                 sources.forEach((_, index) => { const el = document.getElementById('src_' + index); if (el) sources[index] = el.value.trim(); });
+                localStorage.setItem('hybrid_sources', JSON.stringify(sources));
                 updateExportToken();
             }
 
@@ -1035,7 +996,7 @@ const renderDashboard = (req, res) => {
                     const config = JSON.parse(jsonStr);
                     if (config.sources && Array.isArray(config.sources)) {
                         sources = config.sources; if (sources.length === 0) sources = ['', ''];
-                        if (config.qualities) { qualities = config.qualities; }
+                        if (config.qualities) { qualities = config.qualities; localStorage.setItem('hybrid_qualities', JSON.stringify(qualities)); }
                         renderSources(); renderQualities(); alert("Configuration importée avec succès !");
                     } else alert("Code invalide.");
                 } catch(e) { alert("Erreur : Ce code est corrompu."); }
@@ -1046,10 +1007,9 @@ const renderDashboard = (req, res) => {
                 const validSources = sources.filter(s => s.length > 0);
                 if (validSources.length === 0) return alert("Veuillez entrer au moins un lien de source !");
                 const token = document.getElementById('exportTokenBox').value;
-                currentConfigToken = token;
                 const linkField = document.getElementById("manifestLink");
                 if (linkField) linkField.value = window.location.protocol + "//" + window.location.host + "/" + token + "/manifest.json";
-                alert("Lien généré !");
+                alert("Lien généré. Veuillez désinstaller l'ancienne version dans Stremio avant d'ajouter celle-ci !");
             }
 
             function copyLink() {
@@ -1095,6 +1055,24 @@ const renderDashboard = (req, res) => {
                 } catch(e) {}
             }
 
+            let savedSources = localStorage.getItem('hybrid_sources');
+            if (savedSources && !${sourcesParam ? 'true' : 'false'}) sources = JSON.parse(savedSources);
+            
+            let savedQualities = localStorage.getItem('hybrid_qualities');
+            if (savedQualities) {
+                try { qualities = JSON.parse(savedQualities); } catch(e){}
+            }
+
+            let startConfig = {};
+            try {
+                let pathParts = window.location.pathname.split('/');
+                if (pathParts[1] && pathParts[1] !== '') {
+                    if (pathParts[1] !== 'configure') {
+                        startConfig = JSON.parse(atob(pathParts[1]));
+                    }
+                }
+            } catch(e) {}
+
             renderSources();
             renderQualities();
             setInterval(() => { if(document.getElementById('metrics').classList.contains('active')) fetchMetrics(); }, 5000);
@@ -1103,10 +1081,11 @@ const renderDashboard = (req, res) => {
     </html>
     `;
     res.send(html);
-};
+});
 
-app.get('/', (req, res) => renderDashboard({ params: { config: '' } }, res));
-app.get('/:config/configure', (req, res) => renderDashboard(req, res));
+app.get('/:config/configure', (req, res) => {
+    res.redirect('/' + req.params.config);
+});
 
 // --- MANIFEST BUILDER ---
 app.get('/:config/manifest.json', (req, res) => {
@@ -1128,9 +1107,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.2.4',
+        version: '1.0.8',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.4). Manual Purge & Safe Resolver.',
+        description: 'Meta-Addon IPTV (v1.0.8). Fast Scanner, Direct Links & Stable Routing.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1229,8 +1208,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
     let channelsData = await getChannelsForSources(config.sources);
     
-    // SMART CACHE 45 SECONDES
-    res.setHeader('Cache-Control', 'max-age=45, public'); 
+    // MICRO-CACHE 5 SECONDES 
+    res.setHeader('Cache-Control', 'max-age=5, public'); 
 
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ streams: [] });
@@ -1254,7 +1233,12 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
 
                 const streamRes = await axios.get(targetUrl, {
-                    headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }, 
+                    headers: { 
+                        'User-Agent': clientUserAgent,
+                        'X-Forwarded-For': clientIp,
+                        'X-Real-IP': clientIp,
+                        'Accept': 'application/json' 
+                    }, 
                     timeout: 4500 
                 });
                 
@@ -1392,23 +1376,25 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
 
-        // --- TRI PAR SCORE ---
+        // Tri Initial
         allStreams.sort((a, b) => b._score - a._score);
         let limitedStreams = allStreams.slice(0, 15);
 
-        // --- SCANNER SYNCHRONE DE LIENS MORTS ---
+        // --- SCANNER DE LIENS MORTS ---
         if (limitedStreams.length > 0) {
             await Promise.all(limitedStreams.map(async (s) => {
                 if (!s.url) return;
+
                 try {
                     const r = await axios.get(s.url, {
                         responseType: 'stream',
                         timeout: 3500,
                         headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                             ...(s.behaviorHints && s.behaviorHints.proxyHeaders && s.behaviorHints.proxyHeaders.request ? s.behaviorHints.proxyHeaders.request : {})
                         }
                     });
+                    
                     if(r.data && typeof r.data.destroy === 'function') {
                         r.data.destroy();
                     }
@@ -1418,12 +1404,14 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                     if (err.response) {
                         let status = err.response.status;
                         let msg = "Erreur";
-                        if (status === 403 || status === 401) msg = "Accès Refusé / Token Expiré";
+                        if (status === 403 || status === 401) msg = "Accès Refusé (Token expiré / IP bloquée)";
                         else if (status === 404) msg = "Flux Introuvable";
                         else if (status === 512 || status === 502) msg = "Serveur Injoignable";
                         else if (status >= 500) msg = "Serveur Planté";
                         
                         s.title = `❌ HS (${status} - ${msg})\n` + s.title;
+                    } else if (err.code === 'ECONNABORTED' || (err.message && err.message.toLowerCase().includes('timeout'))) {
+                        s.title = `⚠️ Lent ou Bloqué\n` + s.title;
                     } else if (err.code === 'ENOTFOUND') {
                         s.title = `❌ HS (Domaine Mort)\n` + s.title;
                     } else {
@@ -1442,7 +1430,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         });
         
         streamCache.set(cacheKey, finalStreams);
-        setTimeout(() => streamCache.delete(cacheKey), 45000); 
+        setTimeout(() => streamCache.delete(cacheKey), 5000); 
 
         res.json({ streams: finalStreams });
     } catch (err) { res.json({ streams: [] }); }
