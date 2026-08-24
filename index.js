@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.1.0 (Lightning Fast & Strict First-Stream Selection)
- * Core Engine: Instant Stream Resolver, Non-Blocking Health Check, Original Routing.
+ * Version: 1.1.1 (Synchronous Scanner & Perfect Original Ordering)
+ * Core Engine: Fully Synchronous Stream Health Check, Strict Quality Score Sorting.
  */
 
 const express = require('express');
@@ -125,7 +125,7 @@ function extractMatchEvent(rawName) {
     return null;
 }
 
-// --- ORIGINAL SEMANTIC ROUTING ---
+// --- ORIGINAL SEMANTIC ROUTING (STABLE 8.2.0 BASE) ---
 function getChannelData(rawName) {
     if (!rawName) return null;
     let eventData = extractMatchEvent(rawName);
@@ -685,7 +685,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                 const r = await axios.get(source.directUrl, { 
                     responseType: 'stream',
                     headers: { 'User-Agent': 'Mozilla/5.0' }, 
-                    timeout: 3000
+                    timeout: 3500
                 });
                 if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
                 testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
@@ -711,7 +711,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                                 const sRes = await axios.get(s.url, { 
                                     responseType: 'stream',
                                     headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase }, 
-                                    timeout: 3000
+                                    timeout: 3500
                                 });
                                 if(sRes.data && typeof sRes.data.destroy === 'function') sRes.data.destroy();
                                 streamTest.health = `✅ En ligne (HTTP ${sRes.status})`;
@@ -748,7 +748,7 @@ app.get('/', async (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>HybridTV Dashboard</title>
+        <title>HybridTV Dashboard 1.1.1</title>
         <style>
             :root { --bg: #141414; --card: #1f1f1f; --card-alt: #111; --primary: #e50914; --text: #fff; --text-muted: #bbb; --border: #333; }
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 40px 20px; margin: 0; }
@@ -803,7 +803,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, rapide et optimisée (v1.1.0).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.1.1).</p>
             </div>
 
             <div class="tabs">
@@ -1107,9 +1107,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.1.0',
+        version: '1.1.1',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.1.0). Lightning Fast Stream Resolver & Strict Routing.',
+        description: 'Meta-Addon IPTV (v1.1.1). Synchronous Health Check & Strict Score Routing.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1234,7 +1234,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
                 const streamRes = await axios.get(targetUrl, {
                     headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }, 
-                    timeout: 3000 // Timeout resserré à 3s pour ne jamais bloquer l'affichage
+                    timeout: 4500 
                 });
                 
                 if (streamRes.data && streamRes.data.streams) {
@@ -1376,30 +1376,33 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
 
-        // --- TRI INSTANTANÉ ABSOLU (Le meilleur flux gagne TOUJOURS et se place en haut) ---
+        // --- TRI INITIAL PAR SCORE ---
         allStreams.sort((a, b) => b._score - a._score);
         let limitedStreams = allStreams.slice(0, 15);
 
-        // --- SCANNER NON-BLOQUANT EN ARRIÈRE-PLAN (N'interfère plus avec le premier choix) ---
+        // --- SCANNER SYNCHRONE DE LIENS MORTS ---
         if (limitedStreams.length > 0) {
-            // On lance le test en arrière-plan sans bloquer le rendu immédiat de Stremio
-            Promise.all(limitedStreams.map(async (s) => {
+            await Promise.all(limitedStreams.map(async (s) => {
                 if (!s.url) return;
                 try {
                     const r = await axios.get(s.url, {
                         responseType: 'stream',
-                        timeout: 2500,
+                        timeout: 3500,
                         headers: {
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                             ...(s.behaviorHints && s.behaviorHints.proxyHeaders && s.behaviorHints.proxyHeaders.request ? s.behaviorHints.proxyHeaders.request : {})
                         }
                     });
-                    if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
+                    if(r.data && typeof r.data.destroy === 'function') {
+                        r.data.destroy();
+                    }
                 } catch (err) {
+                    s._score -= 100000; 
+                    
                     if (err.response) {
                         let status = err.response.status;
                         let msg = "Erreur";
-                        if (status === 403 || status === 401) msg = "Accès Refusé / Jeton Expiré";
+                        if (status === 403 || status === 401) msg = "Accès Refusé (Token Expiré)";
                         else if (status === 404) msg = "Flux Introuvable";
                         else if (status === 512 || status === 502) msg = "Serveur Injoignable";
                         else if (status >= 500) msg = "Serveur Planté";
@@ -1407,9 +1410,14 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         s.title = `❌ HS (${status} - ${msg})\n` + s.title;
                     } else if (err.code === 'ENOTFOUND') {
                         s.title = `❌ HS (Domaine Mort)\n` + s.title;
+                    } else {
+                        s.title = `❌ HS (${err.message})\n` + s.title;
                     }
                 }
-            })).catch(() => {});
+            }));
+            
+            // Re-tri synchrone final post-scan pour reléguer les HS en bas de liste
+            limitedStreams.sort((a, b) => b._score - a._score);
         }
 
         const finalStreams = limitedStreams.map((s) => {
