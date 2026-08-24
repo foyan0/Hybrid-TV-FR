@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Core Engine: Universal Stream Parser, Semantic Routing, Quality Profiling.
+ * Core Engine: Raw Stream Passthrough, Semantic Routing, Custom Quality Profiling.
  */
 
 const express = require('express');
@@ -49,7 +49,6 @@ app.use((req, res, next) => {
 // --- ASSETS & CONFIG ---
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 const EVENT_POSTER = 'https://cdn-icons-png.flaticon.com/512/861/861512.png';
-const LOADING_POSTER = 'https://cdn-icons-png.flaticon.com/512/3039/3039401.png'; 
 
 const BLACKLIST = [
     'ALACARTE', 'DISNEYPLUS', 'NETFLIX', 'PRIMEVIDEO', 'APPLETV',
@@ -166,7 +165,6 @@ function getChannelData(rawName) {
         return { id: 'hyb_aut_' + c.substring(0, 15), name: pretty, categories: ['autres'], index: 200 };
     }
 
-    // Routage TNT, News, Canal+, etc...
     if (c.startsWith('FRANCE24')) return { id: 'hyb_info_06', name: 'France 24', categories: ['info'], index: 6 };
     if (c.startsWith('FRANCEINFO')) return { id: 'hyb_info_07', name: 'France Info', categories: ['info'], index: 7 };
     if (c.includes('METEO')) return { id: 'hyb_info_08', name: 'La Chaîne Météo', categories: ['info'], index: 8 };
@@ -486,6 +484,7 @@ async function fetchCatalogFromSource(sourceInput) {
                 let requests = [];
                 for (let i = 0; i < batchSize; i++) {
                     let currentSkip = skip + (i * 100);
+                    // Répare l'encodage spécifique pour TV Mio
                     let encodedCatId = encodeURIComponent(catalog.id).replace(/%3A/g, ':');
                     let url = currentSkip > 0 ? `${base}/catalog/${catalog.type}/${encodedCatId}/skip=${currentSkip}.json` : `${base}/catalog/${catalog.type}/${encodedCatId}.json`;
                     requests.push(axios.get(url, { timeout: 6000 }).catch(e => null));
@@ -534,9 +533,12 @@ async function getChannelsForSources(sourcesList) {
         return cacheObj.data;
     }
 
+    // Le Faux Chargement a été supprimé, le système attend réellement la fin du scan
     if (cacheObj.status === 'syncing') {
-        if (cacheObj.data.length > 0) return cacheObj.data; 
-        return [{ id: 'hyb_loading', displayName: 'Synchronisation en cours... (Patientez 1 min et rechargez)', categories: ['tnt','info','sports','cinema','jeunesse','musique','decouverte','canal','autres','events'], poster: LOADING_POSTER, sources: [] }];
+        while (channelsCache[cacheKey] && channelsCache[cacheKey].status === 'syncing') {
+            await new Promise(r => setTimeout(r, 400));
+        }
+        return channelsCache[cacheKey] ? channelsCache[cacheKey].data : [];
     }
 
     cacheObj.status = 'syncing';
@@ -604,8 +606,11 @@ async function getChannelsForSources(sourcesList) {
         }
     })();
 
-    if (cacheObj.data && cacheObj.data.length > 0) return cacheObj.data;
-    return [{ id: 'hyb_loading', displayName: 'Base de données en cours d\'analyse... (Patientez 1 min)', categories: ['tnt','info','sports','cinema','jeunesse','musique','decouverte','canal','autres','events'], poster: LOADING_POSTER, sources: [] }];
+    // L'utilisateur attend que le cache se remplisse
+    while (cacheObj.status === 'syncing') {
+        await new Promise(r => setTimeout(r, 400));
+    }
+    return cacheObj.data;
 }
 
 // ============================================================================
@@ -965,9 +970,9 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '6.1.0',
+        version: '7.0.0',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV. Dynamic Qualities & IP Masquerading.',
+        description: 'Meta-Addon IPTV. Universal Passthrough & Quality Profiling.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -1011,15 +1016,6 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
 });
 
 app.get('/:config/meta/tv/:id.json', async (req, res) => {
-    if (req.params.id === 'hyb_loading') {
-        return res.json({
-            meta: { 
-                id: 'hyb_loading', type: 'tv', name: 'Connexion aux bases de données...', poster: LOADING_POSTER, posterShape: 'square', 
-                description: 'Le serveur analyse l\'intégralité des flux disponibles chez vos fournisseurs. \n\nCette opération garantit que toutes les chaînes seront extraites. Cela prend environ 1 à 2 minutes la première fois. \n\nVeuillez revenir en arrière et patienter avant de recharger la page.' 
-            }
-        });
-    }
-
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ meta: {} });
     
@@ -1069,8 +1065,6 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
 });
 
 app.get('/:config/stream/tv/:id.json', async (req, res) => {
-    if (req.params.id === 'hyb_loading') return res.json({ streams: [] });
-
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
     
@@ -1086,9 +1080,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     let channelsData = await getChannelsForSources(config.sources);
     res.setHeader('Cache-Control', 'max-age=60, public'); 
     
-    const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    const clientIp = rawIp ? rawIp.split(',')[0].trim() : '';
-
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ streams: [] });
     
@@ -1107,23 +1098,12 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             }
 
             try {
-                let safeId = encodeURIComponent(source.metaId).replace(/%3A/g, ':');
-                let targetUrl = `${source.providerBase}/stream/tv/${safeId}.json`;
-
-                // MASQUAGE IP DYNAMIQUE (Pour forcer TV Mio et autres serveurs Premium à valider l'IP de l'utilisateur)
-                let reqHeaders = { 
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                    'Accept': 'application/json'
-                };
-                if (clientIp) {
-                    reqHeaders['X-Forwarded-For'] = clientIp;
-                    reqHeaders['CF-Connecting-IP'] = clientIp;
-                    reqHeaders['True-Client-IP'] = clientIp;
-                }
+                // UNIVERSAL FIX: On récupère la donnée de manière brute (sans encodage ni header fantaisiste)
+                let targetUrl = `${source.providerBase}/stream/tv/${source.metaId}.json`;
 
                 const streamRes = await axios.get(targetUrl, {
-                    headers: reqHeaders, 
-                    timeout: 4000 // Réduit pour accélérer l'affichage
+                    headers: { 'User-Agent': 'Mozilla/5.0' }, 
+                    timeout: 4500 // 4.5s max pour ne pas faire poireauter Stremio
                 });
                 
                 if (streamRes.data && streamRes.data.streams) {
@@ -1213,27 +1193,23 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         score -= idx; 
                         score += (10 - source.sourceIndex) * 50;
 
+                        // UNIVERSAL FIX: Clonage 100% transparent. On ne détruit plus la donnée de Stremio.
                         let outStream = { ...s };
 
-                        if (outStream.url) {
-                            let rawUrl = outStream.url.trim();
-                            if (rawUrl.startsWith('//')) {
-                                outStream.url = 'https:' + rawUrl;
-                            } else if (rawUrl.startsWith('/')) {
-                                try {
-                                    let baseObj = new URL(source.providerBase);
-                                    outStream.url = baseObj.origin + rawUrl;
-                                } catch(e){}
-                            } else if (!rawUrl.startsWith('http') && !rawUrl.includes('://')) {
-                                outStream.url = 'http://' + rawUrl;
-                            }
+                        // Si le lecteur a besoin d'une URL, on vérifie si elle est relative (ex: /play/...)
+                        if (outStream.url && outStream.url.startsWith('/')) {
+                            try {
+                                let baseObj = new URL(source.providerBase);
+                                outStream.url = baseObj.origin + outStream.url;
+                            } catch(e){}
                         }
 
-                        let fallbackName = source.originalName || "Source Add-on";
-                        outStream.name = s.name ? s.name : fallbackName;
-                        
-                        let combinedTitle = s.title || s.description || "";
-                        outStream.title = combinedTitle ? `${combinedTitle}\n▶ ${qualStr}` : `▶ ${qualStr}`;
+                        // Ajout du nom esthétique uniquement s'il n'existe pas déjà pour ne pas écraser les données
+                        if (!outStream.name) {
+                            outStream.name = originalTitle;
+                        }
+
+                        outStream.title = s.title ? `${s.title}\n▶ ${qualStr}` : `▶ ${qualStr}`;
                         outStream._score = score;
                         return outStream;
                     });
