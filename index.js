@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Core Engine: Strict Semantic Routing, Custom Quality Profiling, Global Search & Config.
+ * Core Engine: Raw Stream Passthrough, Strict Semantic Routing, Custom Quality Profiling.
  */
 
 const express = require('express');
@@ -187,7 +187,11 @@ function getChannelData(rawName) {
     if (c.includes('COMEDIE') || c.includes('COMEDY')) return { id: 'hyb_canal_comedie', name: 'Comédie+', categories: ['canal', 'autres'], index: 10 };
 
     if (c.includes('CANAL') || c.includes('CPLUS')) {
-        if (c.includes('LIGA') || c === 'CANALPLUSL' || c === 'CPLUSSPORT') return null;
+        // ISOLATION DES CANAL+ RÉGIONAUX / ALTERNATIFS (Évite qu'ils ne se mélangent au Canal+ principal)
+        if (c.includes('LCENTRE') || c.includes('CENTRE') || c === 'CANALL' || c.includes('REGIONAL') || c.includes('LOCAL') || c.includes('OUTREMER')) {
+            let pretty = rawName.replace(/\[.*?\]|\(.*?\)/g, '').replace(/\b(?:FHD|HD|SD|4K|1080P|720P)\b/gi, '').trim();
+            return { id: 'hyb_aut_' + c.substring(0, 15), name: pretty, categories: ['autres'], index: 200 };
+        }
 
         if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 100 };
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
@@ -1041,9 +1045,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '8.2.0',
+        version: '8.2.1',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV. Universal Passthrough & Global Search.',
+        description: 'Meta-Addon IPTV. Strict Semantic Routing & Regional Isolation.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
