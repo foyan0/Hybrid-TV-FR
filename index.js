@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.1.3 (Hot-Update Dashboard)
- * Core Engine: Synchronous Health Check, 45s Smart Cache, Stremio Protocol Direct-Update.
+ * Version: 1.1.4 (Dashboard Repaired & Hot-Update Ready)
+ * Core Engine: Synchronous Health Check, 45s Cache, Fixed UI & Hot-Update.
  */
 
 const express = require('express');
@@ -831,7 +831,7 @@ app.get('/', async (req, res) => {
                     <button type="button" onclick="importToken()" class="btn btn-small" style="margin-top: 8px;">📥 Importer</button>
                 </div>
                 
-                <button type="button" onclick="saveAndGenerate()" class="btn">💾 Sauvegarder & Générer le lien</button>
+                <button type="button" onclick="saveAndGenerate()" class="btn">💾 Sauvegarder</button>
                 <input type="text" id="manifestLink" class="main-link" placeholder="Lien généré ici..." readonly>
                 
                 <div style="display: flex; gap: 10px; margin-top: 10px;">
@@ -1024,7 +1024,7 @@ app.get('/', async (req, res) => {
                     directBtn.style.display = 'block';
                 }
 
-                alert("Paramètres sauvegardés ! Clique sur 'Mettre à jour Stremio' pour appliquer les changements instantanément.");
+                alert("Paramètres sauvegardés avec succès ! Clique sur 'Mettre à jour Stremio' pour appliquer les modifications instantanément.");
             }
 
             function copyLink() {
