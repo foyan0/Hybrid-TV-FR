@@ -59,6 +59,7 @@ function parseConfig(encodedConfig) {
         const jsonStr = Buffer.from(encodedConfig, 'base64').toString('utf8');
         let parsed = JSON.parse(jsonStr);
         parsed.logos = false; 
+        parsed.epg = true; // EPG est désormais toujours activé par défaut
         return parsed;
     } catch (e) {
         return { sources: [], epg: true, logos: false };
@@ -176,16 +177,20 @@ function getChannelData(rawName) {
     if (c.includes('COMEDIE') || c.includes('COMEDY')) return { id: 'hyb_canal_comedie', name: 'Comédie+', categories: ['canal', 'autres'], index: 10 };
 
     if (c.includes('CANAL') || c.includes('CPLUS')) {
+        if (c.includes('LIGA') || c === 'CANALPLUSL' || c === 'CPLUSSPORT') return null;
+
         if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 100 };
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
         if (c.includes('LIVE')) {
             let m = c.match(/LIVE(\d+)/); let num = m ? m[1] : '1';
             return { id: 'hyb_canal_live_' + num, name: 'Canal+ Live ' + num, categories: ['canal'], index: 200 + parseInt(num, 10) };
         }
+
         if (c.includes('SPORT360') || c.includes('360')) return { id: 'hyb_canal_sport360', name: 'Canal+ Sport 360', categories: ['canal', 'sports'], index: 90 };
         if (c.includes('FOOT')) return { id: 'hyb_canal_foot', name: 'Canal+ Foot', categories: ['canal', 'sports'], index: 91 };
         if (c.includes('FORMULA1') || c.includes('F1')) return { id: 'hyb_canal_f1', name: 'Canal+ Formula 1', categories: ['canal', 'sports'], index: 93 };
         if (c.includes('SPORT')) return { id: 'hyb_canal_sport', name: 'Canal+ Sport', categories: ['canal', 'sports'], index: 94 };
+        
         if (c.includes('CINEMA') || c.includes('CNEMA')) return { id: 'hyb_canal_cinema', name: 'Canal+ Cinéma', categories: ['canal', 'cinema'], index: 2 };
         if (c.includes('GRANDECRAN') || c.includes('ECRAN')) return { id: 'hyb_canal_grandecran', name: 'Canal+ Grand Écran', categories: ['canal', 'cinema'], index: 3 };
         if (c.includes('SERIES') || c.includes('SERIE')) return { id: 'hyb_canal_series', name: 'Canal+ Séries', categories: ['canal', 'cinema'], index: 4 };
@@ -193,6 +198,7 @@ function getChannelData(rawName) {
         if (c.includes('DOC')) return { id: 'hyb_canal_docs', name: 'Canal+ Docs', categories: ['canal', 'decouverte'], index: 6 };
         if (c.includes('DECALE')) return { id: 'hyb_canal_decale', name: 'Canal+ Décalé', categories: ['canal'], index: 14 };
         if (c.includes('FAMILY')) return { id: 'hyb_canal_family', name: 'Canal+ Family', categories: ['canal'], index: 15 };
+        
         return { id: 'hyb_canal_cplus', name: 'Canal+', categories: ['canal'], index: 1 };
     }
 
@@ -236,6 +242,7 @@ function getChannelData(rawName) {
         return { id: 'hyb_tnt_20', name: 'TF1 Séries Films', categories: ['tnt', 'cinema'], index: 20 };
     }
     if (c.startsWith('TF1')) return { id: 'hyb_tnt_1', name: 'TF1', categories: ['tnt'], index: 1 };
+    
     if (c.startsWith('FRANCE2') || c === 'FR2') return { id: 'hyb_tnt_2', name: 'France 2', categories: ['tnt'], index: 2 };
     if (c.startsWith('FRANCE3') || c === 'FR3') return { id: 'hyb_tnt_3', name: 'France 3', categories: ['tnt'], index: 3 };
     if (c.startsWith('FRANCE4') || c === 'FR4') return { id: 'hyb_tnt_4', name: 'France 4', categories: ['tnt'], index: 4 };
@@ -334,7 +341,7 @@ function formatTime(timestamp) {
     return new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }).format(new Date(timestamp)).replace(':', 'h');
 }
 
-// --- EPG ---
+// --- EPG SYNC ---
 async function fetchAndParseEPG(url, isGz) {
     return new Promise(async (resolve, reject) => {
         try {
@@ -349,6 +356,7 @@ async function fetchAndParseEPG(url, isGz) {
 
             rl.on('line', (line) => {
                 if (line.includes('<desc') || line.includes('<icon')) return;
+
                 if (line.includes('<channel ')) { inChannel = true; chanBlock = line; }
                 else if (inChannel) { chanBlock += '\n' + line; }
                 
@@ -442,7 +450,13 @@ async function fetchCatalogFromSource(sourceInput) {
                     if (currentName) {
                         let streamUrl = line;
                         let metaId = Buffer.from(streamUrl).toString('base64');
-                        metas.push({ id: metaId, name: currentName, poster: currentLogo, _isDirectStream: true, _directUrl: streamUrl });
+                        metas.push({
+                            id: metaId,
+                            name: currentName,
+                            poster: currentLogo,
+                            _isDirectStream: true,
+                            _directUrl: streamUrl
+                        });
                     }
                     currentLogo = DEFAULT_POSTER;
                     currentName = '';
@@ -464,7 +478,7 @@ async function fetchCatalogFromSource(sourceInput) {
             let catMetas = []; 
             let hasMore = true; 
             let skip = 0;
-            const maxSkip = 50000; 
+            const maxSkip = 15000; 
             const batchSize = 3;   
             let seenIds = new Set(); 
 
@@ -594,7 +608,7 @@ async function getChannelsForSources(sourcesList) {
 }
 
 // ============================================================================
-// APP ROUTES
+// APP ROUTES & DASHBOARD
 // ============================================================================
 
 app.get('/api/metrics', (req, res) => {
@@ -685,7 +699,7 @@ app.get('/', async (req, res) => {
             .btn-danger:hover { background: #a00; }
             
             .main-link { width: 100%; padding: 15px; margin-top: 15px; background: #111; color: #fff; border: 1px dashed #666; border-radius: 6px; text-align: center; font-size: 14px; box-sizing: border-box; }
-            textarea.export-box { width: 100%; height: 60px; padding: 10px; background: #222; border: 1px solid #444; color: #aaa; border-radius: 6px; font-size: 12px; box-sizing: border-box; resize: none; }
+            input[type="text"].export-box { width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #aaa; border-radius: 6px; font-size: 12px; box-sizing: border-box; }
             
             .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
             .metric-card { background: #222; padding: 15px; border-radius: 8px; border: 1px solid var(--border); text-align: center; }
@@ -705,7 +719,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, triée et sécurisée.</p>
+                <p class="subtitle">L'expérience IPTV centralisée, triée et universelle.</p>
             </div>
 
             <div class="tabs">
@@ -720,14 +734,9 @@ app.get('/', async (req, res) => {
                     <button type="button" onclick="addSourceField()" class="btn btn-small" style="margin-top: 10px;">+ Ajouter une source</button>
                 </div>
 
-                <div class="section" style="display: flex; align-items: center; gap: 10px;">
-                    <input type="checkbox" id="epgToggle" checked style="width: 18px; height: 18px; cursor: pointer;">
-                    <b>Activer le Guide TV (EPG Francophone)</b>
-                </div>
-
                 <div class="section">
                     <h3 class="section-title">Code de Sauvegarde</h3>
-                    <textarea id="exportTokenBox" class="export-box" placeholder="Code de configuration..."></textarea>
+                    <input type="text" id="exportTokenBox" class="export-box" placeholder="Code de configuration..." readonly>
                     <button type="button" onclick="importToken()" class="btn btn-small" style="margin-top: 8px;">📥 Importer</button>
                 </div>
                 
@@ -825,16 +834,17 @@ app.get('/', async (req, res) => {
             }
             function updateExportToken() {
                 const validSources = sources.filter(s => s.length > 0);
-                const isEpg = document.getElementById("epgToggle").checked;
-                document.getElementById('exportTokenBox').value = btoa(JSON.stringify({ sources: validSources, epg: isEpg }));
+                const configObj = { sources: validSources, epg: true }; // EPG forced True
+                document.getElementById('exportTokenBox').value = btoa(JSON.stringify(configObj));
             }
             function importToken() {
+                let inputCode = prompt("Collez le code de sauvegarde ici :");
+                if (!inputCode) return;
                 try {
-                    const jsonStr = atob(document.getElementById('exportTokenBox').value.trim());
+                    const jsonStr = atob(inputCode.trim());
                     const config = JSON.parse(jsonStr);
                     if (config.sources && Array.isArray(config.sources)) {
                         sources = config.sources; if (sources.length === 0) sources = ['', ''];
-                        if (config.epg !== undefined) document.getElementById("epgToggle").checked = config.epg;
                         renderSources(); alert("Configuration importée avec succès !");
                     } else alert("Code invalide.");
                 } catch(e) { alert("Erreur : Ce code est corrompu."); }
@@ -901,14 +911,12 @@ app.get('/', async (req, res) => {
 
 app.get('/:config/manifest.json', (req, res) => {
     const config = parseConfig(req.params.config);
-    const confName = config.epg ? 'epg-on' : 'epg-off';
-    
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
-        id: 'org.hybridtv.meta.' + confName, 
-        version: '5.0.0',
-        name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
-        description: 'Meta-Addon IPTV. Routing sémantique & Télémetrie.',
+        id: 'org.hybridtv.meta', 
+        version: '5.1.0',
+        name: 'HybridTV',
+        description: 'Meta-Addon IPTV. Universal Proxy routing & Telemetry.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -1028,9 +1036,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     let channelsData = await getChannelsForSources(config.sources);
     res.setHeader('Cache-Control', 'max-age=60, public'); 
     
-    const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    const clientIp = rawIp ? rawIp.split(',')[0].trim() : '';
-
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ streams: [] });
     
@@ -1044,19 +1049,14 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                     name: isBeluchon ? `▶ Source Officielle (HD)` : `▶ Full HD (1080p)`,
                     title: source.originalName || "Source M3U",
                     _score: isBeluchon ? 4500 : 1500,
-                    _originalTitle: source.originalName || "Source M3U",
-                    _behaviorHints: { proxyHeaders: { request: { 'User-Agent': 'Mozilla/5.0' } } }
+                    _originalTitle: source.originalName || "Source M3U"
                 }];
             }
 
             try {
-                // X-FORWARDED-FOR injection exclusively for Addons to fix IP-bound tokens (like TV Mio)
+                // Requête pure, sans headers factices pour éviter de briser les providers
                 const streamRes = await axios.get(`${source.providerBase}/stream/tv/${source.metaId}.json`, {
-                    headers: { 
-                        'User-Agent': 'Mozilla/5.0',
-                        'X-Forwarded-For': clientIp,
-                        'Forwarded': `for=${clientIp}`
-                    }, 
+                    headers: { 'User-Agent': 'Mozilla/5.0' }, 
                     timeout: 4500 
                 });
                 
@@ -1120,13 +1120,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             if (streamNumMatch) { if (streamNumMatch[1] !== targetNum) penalty += 5000; } else { penalty += 5000; }
                         }
 
-                        // SECURITY TOKEN FILTER (VISUAL DEBUGGING)
-                        let isTokenized = (!source.type === 'm3u' && s.url && s.url.match(/(token=|sig=|auth=|hdnts=|mac=|_expires=)/i));
-                        
-                        if (isTokenized) {
-                            penalty += 8000; 
-                            qual = "🔒 Jeton IP (Risque de blocage)";
-                        } else if (isBeluchon) {
+                        // Quality scoring heuristics
+                        if (isBeluchon) {
                             qual = "Source Officielle Légale (HD)";
                             score += 3000; 
                         } else {
@@ -1143,18 +1138,12 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         score -= idx; 
                         score += (10 - source.sourceIndex) * 50;
 
-                        // Configuration of client proxyHeaders 
-                        let behaviorHints = s.behaviorHints || {};
-                        if (!behaviorHints.proxyHeaders) {
-                            behaviorHints.proxyHeaders = {
-                                request: {
-                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                                    'Referer': source.providerBase || 'https://www.google.com'
-                                }
-                            };
-                        }
-
-                        return { ...s, _qualText: qual, _score: score, _originalTitle: originalTitle, _behaviorHints: behaviorHints };
+                        // Renvoyer l'objet intact pour ne pas corrompre les flux YouTube ou DRM distants
+                        let out = { ...s };
+                        out.name = originalTitle;
+                        out.title = `▶ ${qual}`;
+                        out._score = score;
+                        return out;
                     });
                 }
             } catch (err) {}
@@ -1167,12 +1156,11 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         allStreams.sort((a, b) => b._score - a._score);
         const limitedStreams = allStreams.slice(0, 15);
 
-        const finalStreams = limitedStreams.map((s) => ({
-            url: s.url, 
-            name: s._originalTitle, 
-            title: `▶ ${s._qualText}`,
-            behaviorHints: s._behaviorHints
-        }));
+        const finalStreams = limitedStreams.map((s) => {
+            let streamObj = { ...s };
+            delete streamObj._score;
+            return streamObj;
+        });
         
         streamCache.set(cacheKey, finalStreams);
         setTimeout(() => streamCache.delete(cacheKey), 60000); 
