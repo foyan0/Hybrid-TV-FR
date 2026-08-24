@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.3 (Anti-Hang & Strict Timeouts)
- * Core Engine: Non-Blocking Source Fetcher, 2.5s Hard Timeouts, 45s Cache.
+ * Version: 1.2.4 (Manual Cache Purger & Non-Blocking Sources)
+ * Core Engine: Manual Force-Refresh Endpoint, Safe Stream Resolver, 45s Cache.
  */
 
 const express = require('express');
@@ -479,7 +479,7 @@ async function fetchCatalogFromSource(sourceInput) {
         if (!cleanUrl.endsWith('manifest.json')) cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
         const base = cleanUrl.replace(/\/manifest\.json$/, '');
 
-        const manifestRes = await axios.get(cleanUrl, { timeout: 6000 });
+        const manifestRes = await axios.get(cleanUrl, { timeout: 5000 });
         const catalogs = manifestRes.data.catalogs || [];
         
         const catalogPromises = catalogs.map(async (catalog) => {
@@ -496,7 +496,7 @@ async function fetchCatalogFromSource(sourceInput) {
                     let currentSkip = skip + (i * 100);
                     let encodedCatId = encodeURIComponent(catalog.id);
                     let url = currentSkip > 0 ? `${base}/catalog/${catalog.type}/${encodedCatId}/skip=${currentSkip}.json` : `${base}/catalog/${catalog.type}/${encodedCatId}.json`;
-                    requests.push(axios.get(url, { timeout: 5000 }).catch(e => null));
+                    requests.push(axios.get(url, { timeout: 4000 }).catch(e => null));
                 }
                 
                 let responses = await Promise.all(requests);
@@ -528,9 +528,15 @@ async function fetchCatalogFromSource(sourceInput) {
     return metas;
 }
 
-// --- SYNC ORCHESTRATOR ---
-async function getChannelsForSources(sourcesList) {
+// --- SYNC ORCHESTRATOR AVEC PURGE MANUELLE DU CACHE ---
+async function getChannelsForSources(sourcesList, forceRefresh = false) {
     const cacheKey = sourcesList.join('|');
+
+    if (forceRefresh) {
+        delete channelsCache[cacheKey];
+        streamCache.clear();
+        console.log("[INFO] Cache purgé manuellement par l'utilisateur.");
+    }
 
     if (!channelsCache[cacheKey]) {
         channelsCache[cacheKey] = { status: 'idle', data: [], sourceReport: {}, timestamp: 0 };
@@ -538,11 +544,11 @@ async function getChannelsForSources(sourcesList) {
 
     let cacheObj = channelsCache[cacheKey];
 
-    if (cacheObj.status === 'done' && (Date.now() - cacheObj.timestamp < 6 * 3600 * 1000)) {
+    if (!forceRefresh && cacheObj.status === 'done' && (Date.now() - cacheObj.timestamp < 45 * 1000)) {
         return cacheObj.data;
     }
 
-    if (cacheObj.status === 'syncing') {
+    if (cacheObj.status === 'syncing' && !forceRefresh) {
         while (channelsCache[cacheKey] && channelsCache[cacheKey].status === 'syncing') {
             await new Promise(r => setTimeout(r, 400));
         }
@@ -667,6 +673,15 @@ app.get('/api/metrics', (req, res) => {
     });
 });
 
+// ROUTE API DE PURGE MANUELLE DEPUIS LE DASHBOARD
+app.get('/:config/api/purge', async (req, res) => {
+    const config = parseConfig(req.params.config);
+    if (config.sources && config.sources.length > 0) {
+        await getChannelsForSources(config.sources, true);
+    }
+    res.json({ status: "success", message: "Cache vidé et sources rechargées avec succès !" });
+});
+
 app.get('/api/debug/inspect/:query', async (req, res) => {
     let q = req.params.query.toLowerCase();
     let latestCache = null;
@@ -687,7 +702,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                 const r = await axios.get(source.directUrl, { 
                     responseType: 'stream',
                     headers: { 'User-Agent': 'Mozilla/5.0' }, 
-                    timeout: 2500
+                    timeout: 3000
                 });
                 if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
                 testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
@@ -702,7 +717,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
         } else {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
-                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 2500 });
+                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 3000 });
                 
                 let streamsTested = [];
                 if (r.data && r.data.streams) {
@@ -713,7 +728,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                                 const sRes = await axios.get(s.url, { 
                                     responseType: 'stream',
                                     headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase }, 
-                                    timeout: 2500
+                                    timeout: 3000
                                 });
                                 if(sRes.data && typeof sRes.data.destroy === 'function') sRes.data.destroy();
                                 streamTest.health = `✅ En ligne (HTTP ${sRes.status})`;
@@ -739,11 +754,12 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
     res.json({ channelName: channel.displayName, channelId: channel.id, inspectionResults });
 });
 
-// Dashboard Renderer stable v1.2.3 (Support Configurable + Timeouts)
+// Dashboard Renderer avec le bouton magique "Forcer la mise à jour"
 const renderDashboard = (req, res) => {
     let configData = parseConfig(req.params.config);
     let sourcesList = configData.sources && configData.sources.length > 0 ? configData.sources : ['', ''];
     let defaultQualities = configData.qualities || ['1080p', '720p', '4K', 'SD'];
+    let currentConfigToken = req.params.config || '';
 
     const html = `
     <!DOCTYPE html>
@@ -780,6 +796,8 @@ const renderDashboard = (req, res) => {
             .btn:hover { background: #f40612; }
             .btn-secondary { background: #333; margin-top: 10px; }
             .btn-secondary:hover { background: #444; }
+            .btn-accent { background: #0084ff; margin-top: 10px; }
+            .btn-accent:hover { background: #006acc; }
             .btn-small { background: #444; padding: 8px 10px; font-size: 12px; border-radius: 6px; cursor: pointer; color: #fff; border: none; }
             .btn-small:hover { background: #555; }
             .btn-danger { background: #800; padding: 8px 10px; border-radius: 6px; cursor: pointer; color: #fff; border: none; }
@@ -806,7 +824,7 @@ const renderDashboard = (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, anti-blocage (v1.2.3).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, avec rechargement forcé (v1.2.4).</p>
             </div>
 
             <div class="tabs">
@@ -837,6 +855,9 @@ const renderDashboard = (req, res) => {
                 <button type="button" onclick="generateLink()" class="btn">⚡ Générer l'Add-on</button>
                 <input type="text" id="manifestLink" class="main-link" placeholder="Lien généré ici..." readonly>
                 <button type="button" onclick="copyLink()" class="btn btn-secondary">📋 Copier le lien d'installation</button>
+
+                <!-- BOUTON MAGIQUE DE PURGE ET RECHARGEMENT DES SOURCES -->
+                <button type="button" onclick="forcePurgeSources()" class="btn btn-accent">🔄 Forcer la mise à jour des sources sur le serveur</button>
             </div>
 
             <div id="metrics" class="tab-content">
@@ -895,6 +916,7 @@ const renderDashboard = (req, res) => {
         <script>
             let sources = ${JSON.stringify(sourcesList)};
             let qualities = ${JSON.stringify(defaultQualities)};
+            let currentConfigToken = "${currentConfigToken}";
 
             function switchTab(tabId, btn) {
                 document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -914,6 +936,22 @@ const renderDashboard = (req, res) => {
                     document.getElementById('debugOutput').innerText = JSON.stringify(data, null, 2);
                 } catch(e) {
                     document.getElementById('debugOutput').innerText = "Erreur de requête : " + e.message;
+                }
+            }
+
+            // FONCTION DE PURGE FORCÉE DES SOURCES SUR LE SERVEUR
+            async function forcePurgeSources() {
+                if (!currentConfigToken) {
+                    return alert("Veuillez d'abord générer ou importer un lien d'add-on pour que le serveur sache quelle configuration recharger !");
+                }
+                if (!confirm("Voulez-vous forcer le rechargement complet de toutes les sources sur le serveur Render ?")) return;
+                
+                try {
+                    let res = await fetch('/' + currentConfigToken + '/api/purge');
+                    let data = await res.json();
+                    alert(data.message || "Sources rechargées avec succès !");
+                } catch(e) {
+                    alert("Erreur lors de la purge : " + e.message);
                 }
             }
 
@@ -1008,6 +1046,7 @@ const renderDashboard = (req, res) => {
                 const validSources = sources.filter(s => s.length > 0);
                 if (validSources.length === 0) return alert("Veuillez entrer au moins un lien de source !");
                 const token = document.getElementById('exportTokenBox').value;
+                currentConfigToken = token;
                 const linkField = document.getElementById("manifestLink");
                 if (linkField) linkField.value = window.location.protocol + "//" + window.location.host + "/" + token + "/manifest.json";
                 alert("Lien généré !");
@@ -1089,9 +1128,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.2.3',
+        version: '1.2.4',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.3). Anti-Hang & Fast Resolver.',
+        description: 'Meta-Addon IPTV (v1.2.4). Manual Purge & Safe Resolver.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1216,7 +1255,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
                 const streamRes = await axios.get(targetUrl, {
                     headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }, 
-                    timeout: 2500 // Timeout strict anti-blocage
+                    timeout: 4500 
                 });
                 
                 if (streamRes.data && streamRes.data.streams) {
@@ -1353,10 +1392,50 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
 
-        // --- TRI PAR SCORE (Sans test bloquant) ---
+        // --- TRI PAR SCORE ---
         allStreams.sort((a, b) => b._score - a._score);
-        
-        const finalStreams = allStreams.map((s) => {
+        let limitedStreams = allStreams.slice(0, 15);
+
+        // --- SCANNER SYNCHRONE DE LIENS MORTS ---
+        if (limitedStreams.length > 0) {
+            await Promise.all(limitedStreams.map(async (s) => {
+                if (!s.url) return;
+                try {
+                    const r = await axios.get(s.url, {
+                        responseType: 'stream',
+                        timeout: 3500,
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                            ...(s.behaviorHints && s.behaviorHints.proxyHeaders && s.behaviorHints.proxyHeaders.request ? s.behaviorHints.proxyHeaders.request : {})
+                        }
+                    });
+                    if(r.data && typeof r.data.destroy === 'function') {
+                        r.data.destroy();
+                    }
+                } catch (err) {
+                    s._score -= 100000; 
+                    
+                    if (err.response) {
+                        let status = err.response.status;
+                        let msg = "Erreur";
+                        if (status === 403 || status === 401) msg = "Accès Refusé / Token Expiré";
+                        else if (status === 404) msg = "Flux Introuvable";
+                        else if (status === 512 || status === 502) msg = "Serveur Injoignable";
+                        else if (status >= 500) msg = "Serveur Planté";
+                        
+                        s.title = `❌ HS (${status} - ${msg})\n` + s.title;
+                    } else if (err.code === 'ENOTFOUND') {
+                        s.title = `❌ HS (Domaine Mort)\n` + s.title;
+                    } else {
+                        s.title = `❌ HS (${err.message})\n` + s.title;
+                    }
+                }
+            }));
+            
+            limitedStreams.sort((a, b) => b._score - a._score);
+        }
+
+        const finalStreams = limitedStreams.map((s) => {
             let streamObj = { ...s };
             delete streamObj._score; 
             return streamObj;
