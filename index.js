@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Core Engine: Live Dead-Link Down-Sorter, HTTP Translator, Strict Semantic Routing.
+ * Core Engine: Tolerant Live Dead-Link Down-Sorter (5s), HTTP Translator, Strict Semantic Routing.
  */
 
 const express = require('express');
@@ -188,7 +188,10 @@ function getChannelData(rawName) {
     if (c.includes('COMEDIE') || c.includes('COMEDY')) return { id: 'hyb_canal_comedie', name: 'Comédie+', categories: ['canal', 'autres'], index: 10 };
 
     if (c.includes('CANAL') || c.includes('CPLUS')) {
-        if (c.includes('ELLES')) return { id: 'hyb_canal_elles', name: 'Canal+ Elles', categories: ['canal', 'cinema'], index: 6 };
+        if (c.includes('ELLES')) {
+            return { id: 'hyb_canal_elles', name: 'Canal+ Elles', categories: ['canal', 'cinema'], index: 6 };
+        }
+
         if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 100 };
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
         
@@ -897,10 +900,11 @@ app.get('/', async (req, res) => {
                 if (!container) return;
                 container.innerHTML = '';
                 qualities.forEach((q, index) => {
+                    let badge = q === '4K' ? ' <span style="font-size:10px;color:#ff9800;">(Instable)</span>' : '';
                     container.innerHTML += \`
                         <div style="display: flex; align-items: center; background: #222; border: 1px solid #444; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px;">
                             <span style="font-size: 14px; font-weight: bold; color: #e50914; min-width: 25px;">\${index + 1}.</span>
-                            <span style="flex: 1; font-size: 13px;">\${q}</span>
+                            <span style="flex: 1; font-size: 13px;">\${q}\${badge}</span>
                             \${index > 0 ? '<button type="button" onclick="moveQuality(' + index + ', -1)" class="btn-small" style="padding: 4px 8px; margin-right: 5px;">▲</button>' : '<div style="width: 28px; margin-right: 5px;"></div>'}
                             \${index < qualities.length - 1 ? '<button type="button" onclick="moveQuality(' + index + ', 1)" class="btn-small" style="padding: 4px 8px;">▼</button>' : '<div style="width: 28px;"></div>'}
                         </div>
@@ -1098,9 +1102,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '9.1.0',
+        version: '9.2.0',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV. Live Link Sorting & HTTP Diagnostics.',
+        description: 'Meta-Addon IPTV. Tolerant Live Scanner & Diagnostics.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1373,17 +1377,18 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
 
-        // Premier tri initial
+        // Tri Initial
         allStreams.sort((a, b) => b._score - a._score);
         let limitedStreams = allStreams.slice(0, 15);
 
-        // --- SYSTÈME DE DÉTECTION DE LIENS MORTS EN DIRECT ---
+        // --- DÉTECTEUR DE LIENS MORTS AVEC TIMEOUT TOLÉRANT (5s) ---
         if (config.checkLinks && limitedStreams.length > 0) {
             await Promise.all(limitedStreams.map(async (s) => {
                 if (!s.url) return;
                 try {
+                    // Timeout étendu à 5 secondes pour laisser le temps aux serveurs de réagir
                     await axios.get(s.url, {
-                        timeout: 2500,
+                        timeout: 5000,
                         headers: {
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                             'Range': 'bytes=0-100', 
@@ -1391,15 +1396,14 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         }
                     });
                 } catch (err) {
-                    // PÉNALITÉ FATALE : Pousse le flux tout en bas de la liste
                     s._score -= 100000; 
                     
                     if (err.response) {
                         let status = err.response.status;
                         let msg = "Erreur";
-                        if (status === 403) msg = "Accès Refusé / Géo-bloqué";
+                        if (status === 403) msg = "Accès Refusé / Jeton Expiré";
                         else if (status === 404) msg = "Flux Introuvable";
-                        else if (status === 512) msg = "Serveur Injoignable";
+                        else if (status === 512) msg = "Hôte Injoignable";
                         else if (status >= 500) msg = "Serveur Planté";
                         
                         s.title = `❌ HS (${status} - ${msg})\n` + s.title;
@@ -1411,7 +1415,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                 }
             }));
             
-            // Re-tri pour appliquer la pénalité des liens morts et les descendre
+            // Re-tri pour appliquer la pénalité
             limitedStreams.sort((a, b) => b._score - a._score);
         }
 
