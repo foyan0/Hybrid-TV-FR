@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Core Engine: French Geo-Spoofing, Semantic Routing, Quality Profiling.
+ * Core Engine: Universal Stream Passthrough, Semantic Routing, Quality Profiling & Global Search.
  */
 
 const express = require('express');
@@ -61,7 +61,7 @@ function parseConfig(encodedConfig) {
         const jsonStr = Buffer.from(encodedConfig, 'base64').toString('utf8');
         let parsed = JSON.parse(jsonStr);
         parsed.logos = false; 
-        parsed.epg = true; // Guide TV activé par défaut
+        parsed.epg = true; 
         if (!parsed.qualities || !Array.isArray(parsed.qualities)) {
             parsed.qualities = ['1080p', '720p', '4K', 'SD'];
         }
@@ -271,47 +271,6 @@ function getChannelData(rawName) {
     if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
     if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
 
-    if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 150 };
-    if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
-    if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 3 };
-    if (c.includes('DISNEYJR') || c.includes('DISNEYJUNIOR') || (c.includes('DISNEY') && c.includes('JR'))) return { id: 'hyb_jeu_disneyjr', name: 'Disney Junior', categories: ['jeunesse'], index: 5 };
-    if (c.includes('DISNEY') && c.includes('PLUS1')) return { id: 'hyb_jeu_disney_plus1', name: 'Disney Channel +1', categories: ['jeunesse'], index: 50 };
-    if (c.includes('DISNEY')) return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 2 };
-    if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 5 };
-    if (c.includes('BOING')) return { id: 'hyb_jeu_boing', name: 'Boing', categories: ['jeunesse'], index: 6 };
-    if (c.includes('NICKELODEON') || c.includes('NICK')) return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 7 };
-    if (c.includes('TIJI')) return { id: 'hyb_jeu_tiji', name: 'Tiji', categories: ['jeunesse'], index: 9 };
-    if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 10 };
-    if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 11 };
-    if (c.includes('PIWI')) return { id: 'hyb_jeu_piwi', name: 'Piwi+', categories: ['jeunesse'], index: 100 };
-
-    if (c.includes('RFMTV') || c.includes('RFM')) return { id: 'hyb_mus_rfm', name: 'RFM TV', categories: ['musique'], index: 34 }; 
-    if (c.includes('MTV')) return { id: 'hyb_mus_mtv', name: 'MTV', categories: ['musique'], index: 10 };
-    if (c.includes('MCM')) return { id: 'hyb_mus_mcm', name: 'MCM', categories: ['musique'], index: 20 };
-    if (c.includes('TRACE')) {
-        let m = n.match(/TRACE\s*([A-Z]*)/i); let suffix = (m && m[1]) ? ' ' + m[1] : '';
-        return { id: 'hyb_mus_trace' + suffix.trim(), name: 'Trace' + suffix, categories: ['musique'], index: 30 };
-    }
-    if (c.includes('NRJHITS') || (c.includes('NRJ') && c.includes('HIT'))) return { id: 'hyb_mus_nrjhits', name: 'NRJ Hits', categories: ['musique'], index: 31 };
-    if (c.includes('MELODY')) return { id: 'hyb_mus_melody', name: 'Melody', categories: ['musique'], index: 32 };
-    if (c.includes('MEZZO')) return { id: 'hyb_mus_mezzo', name: 'Mezzo', categories: ['musique'], index: 33 };
-    if (c.includes('CLUBBING')) return { id: 'hyb_mus_clubbing', name: 'Clubbing TV', categories: ['musique'], index: 35 };
-
-    if (c.includes('INVESTIGATION') || c.includes('IDDISCOVERY')) return { id: 'hyb_dec_investigation', name: 'Investigation Discovery', categories: ['decouverte'], index: 21 };
-    if (c.includes('DISCOVERY')) {
-        let m = n.match(/DISCOVERY\s*([A-Z]*)/i); 
-        let suffix = (m && m[1]) ? m[1].trim() : '';
-        if (suffix === 'CHANNEL' || suffix === 'FR' || suffix === 'FRANCE') suffix = ''; 
-        return { id: 'hyb_dec_discovery' + (suffix ? '_' + suffix : ''), name: 'Discovery' + (suffix ? ' ' + suffix : ''), categories: ['decouverte'], index: 20 };
-    }
-    if (c.includes('CRIMEDISTRICT') || c.includes('CRIMED')) return { id: 'hyb_dec_crime', name: 'Crime District', categories: ['decouverte'], index: 1 };
-    if (c.includes('NATGEO') || c.includes('NATIONALGEO')) return { id: 'hyb_dec_natgeo', name: 'National Geographic', categories: ['decouverte'], index: 1 };
-    if (c.includes('PLANET')) return { id: 'hyb_dec_planete', name: 'Planète+', categories: ['decouverte'], index: 210 };
-    if (c.includes('USHUAIA')) return { id: 'hyb_dec_ushuaia', name: 'Ushuaïa TV', categories: ['decouverte'], index: 30 };
-    if (c.includes('HISTOIRE')) return { id: 'hyb_dec_histoire', name: 'Histoire TV', categories: ['decouverte'], index: 32 };
-    if (c.includes('CHASSE') || c.includes('PECHE')) return { id: 'hyb_dec_chasse', name: 'Chasse et Pêche', categories: ['decouverte'], index: 34 };
-    if (c.includes('ANIMAUX')) return { id: 'hyb_dec_animaux', name: 'Animaux', categories: ['decouverte'], index: 35 };
-
     let cat = 'autres';
     let idx = 300;
     if (c.includes('SPORT') || c.includes('FOOT') || c.includes('GOLF') || c.includes('TENNIS') || c.includes('RUGBY') || c.includes('AUTO') || c.includes('MOTO')) cat = 'sports';
@@ -484,7 +443,8 @@ async function fetchCatalogFromSource(sourceInput) {
                 let requests = [];
                 for (let i = 0; i < batchSize; i++) {
                     let currentSkip = skip + (i * 100);
-                    let encodedCatId = encodeURIComponent(catalog.id).replace(/%3A/g, ':');
+                    // Répare l'encodage et préserve les conventions Stremio
+                    let encodedCatId = encodeURIComponent(catalog.id);
                     let url = currentSkip > 0 ? `${base}/catalog/${catalog.type}/${encodedCatId}/skip=${currentSkip}.json` : `${base}/catalog/${catalog.type}/${encodedCatId}.json`;
                     requests.push(axios.get(url, { timeout: 6000 }).catch(e => null));
                 }
@@ -611,7 +571,7 @@ async function getChannelsForSources(sourcesList) {
 }
 
 // ============================================================================
-// APP ROUTES
+// APP ROUTES & DASHBOARD
 // ============================================================================
 
 app.get('/api/metrics', (req, res) => {
@@ -962,27 +922,29 @@ app.get('/', async (req, res) => {
     res.send(html);
 });
 
+// --- L'OPTION RECHERCHE GLOBALE (Nouveau dans la V8) ---
 app.get('/:config/manifest.json', (req, res) => {
     const config = parseConfig(req.params.config);
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '7.2.0',
+        version: '8.0.0',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV. Universal Passthrough & Targeted Geoblock Bypass.',
+        description: 'Meta-Addon IPTV. Universal Link Passthrough & Global Search.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
+        // Ajout de "search" dans les extras de chaque catalogue
         catalogs: [
-            { type: 'tv', id: 'tnt', name: '📺 TNT' },
-            { type: 'tv', id: 'info', name: '📰 Information' },
-            { type: 'tv', id: 'jeunesse', name: '👶 Jeunesse' },
-            { type: 'tv', id: 'decouverte', name: '🔬 Découverte & Docu' },
-            { type: 'tv', id: 'cinema', name: '🍿 Cinéma & Séries' },
-            { type: 'tv', id: 'musique', name: '🎵 Musique' },
-            { type: 'tv', id: 'canal', name: '🎟️ Bouquet Canal' },
-            { type: 'tv', id: 'sports', name: '⚽ Sports' },
-            { type: 'tv', id: 'events', name: '🔴 Événements & Lives' },
-            { type: 'tv', id: 'autres', name: '📂 Autres' }
+            { type: 'tv', id: 'tnt', name: '📺 TNT', extra: [{name: 'search', isRequired: false}, {name: 'skip', isRequired: false}] },
+            { type: 'tv', id: 'info', name: '📰 Information', extra: [{name: 'search', isRequired: false}, {name: 'skip', isRequired: false}] },
+            { type: 'tv', id: 'jeunesse', name: '👶 Jeunesse', extra: [{name: 'search', isRequired: false}, {name: 'skip', isRequired: false}] },
+            { type: 'tv', id: 'decouverte', name: '🔬 Découverte & Docu', extra: [{name: 'search', isRequired: false}, {name: 'skip', isRequired: false}] },
+            { type: 'tv', id: 'cinema', name: '🍿 Cinéma & Séries', extra: [{name: 'search', isRequired: false}, {name: 'skip', isRequired: false}] },
+            { type: 'tv', id: 'musique', name: '🎵 Musique', extra: [{name: 'search', isRequired: false}, {name: 'skip', isRequired: false}] },
+            { type: 'tv', id: 'canal', name: '🎟️ Bouquet Canal', extra: [{name: 'search', isRequired: false}, {name: 'skip', isRequired: false}] },
+            { type: 'tv', id: 'sports', name: '⚽ Sports', extra: [{name: 'search', isRequired: false}, {name: 'skip', isRequired: false}] },
+            { type: 'tv', id: 'events', name: '🔴 Événements & Lives', extra: [{name: 'search', isRequired: false}, {name: 'skip', isRequired: false}] },
+            { type: 'tv', id: 'autres', name: '📂 Autres', extra: [{name: 'search', isRequired: false}, {name: 'skip', isRequired: false}] }
         ]
     });
 });
@@ -996,15 +958,28 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
     res.setHeader('Cache-Control', 'max-age=14400, public'); 
     const requestedCatalog = req.params.id; 
     let skip = 0;
+    let searchQuery = null;
+    
+    // Détection de la requête de Recherche globale
     if (req.params.extra) {
-        const match = req.params.extra.match(/skip=(\d+)/);
-        if (match) skip = parseInt(match[1], 10);
+        const skipMatch = req.params.extra.match(/skip=(\d+)/);
+        if (skipMatch) skip = parseInt(skipMatch[1], 10);
+        
+        const searchMatch = req.params.extra.match(/search=([^&]+)/);
+        if (searchMatch) searchQuery = decodeURIComponent(searchMatch[1]).toLowerCase();
     }
 
-    const validCatalogs = ['tnt', 'info', 'jeunesse', 'decouverte', 'cinema', 'musique', 'canal', 'sports', 'events', 'autres'];
-    if (!validCatalogs.includes(requestedCatalog)) return res.json({ metas: [] });
+    let filteredChannels = channelsData;
+
+    // Si on cherche un mot, on désactive le tri par catégorie et on cherche partout
+    if (searchQuery) {
+        filteredChannels = channelsData.filter(ch => ch.displayName.toLowerCase().includes(searchQuery));
+    } else {
+        const validCatalogs = ['tnt', 'info', 'jeunesse', 'decouverte', 'cinema', 'musique', 'canal', 'sports', 'events', 'autres'];
+        if (!validCatalogs.includes(requestedCatalog)) return res.json({ metas: [] });
+        filteredChannels = channelsData.filter(ch => ch.categories.includes(requestedCatalog));
+    }
     
-    const filteredChannels = channelsData.filter(ch => ch.categories.includes(requestedCatalog));
     const paginatedMetas = filteredChannels.slice(skip, skip + 100).map(ch => ({
         id: ch.id, type: 'tv', name: ch.displayName, poster: ch.poster, posterShape: 'square'
     }));
@@ -1076,9 +1051,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     let channelsData = await getChannelsForSources(config.sources);
     res.setHeader('Cache-Control', 'max-age=60, public'); 
     
-    const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    const clientIp = rawIp ? rawIp.split(',')[0].trim() : '';
-
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ streams: [] });
     
@@ -1097,28 +1069,18 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             }
 
             try {
-                let safeId = encodeURIComponent(source.metaId).replace(/%3A/g, ':');
-                let targetUrl = `${source.providerBase}/stream/tv/${safeId}.json`;
+                // UNIVERSAL FIX : Strict Stremio SDK Encoding sans aucune bidouille d'URL
+                let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
 
+                // REQUÊTE PURE : Suppression des fausses adresses IP qui causaient le blocage géolocalisé
                 let reqHeaders = { 
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                    'Accept': 'application/json',
-                    'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7'
+                    'Accept': 'application/json'
                 };
-                
-                // GÉO-DÉBLOCAGE CIBLÉ : Uniquement pour TV Mio
-                if (source.providerBase.toLowerCase().includes('tvmio')) {
-                    // Si Render masque l'IP du client, on injecte une IP française valide (Orange/Free)
-                    let fakeFrenchIp = clientIp || '80.12.34.56'; 
-                    reqHeaders['X-Forwarded-For'] = fakeFrenchIp;
-                    reqHeaders['CF-Connecting-IP'] = fakeFrenchIp;
-                    reqHeaders['True-Client-IP'] = fakeFrenchIp;
-                    reqHeaders['X-Real-IP'] = fakeFrenchIp;
-                }
 
                 const streamRes = await axios.get(targetUrl, {
                     headers: reqHeaders, 
-                    timeout: 4000 // Limite de 4 secondes pour que Vavoo ne soit pas ralenti par les autres
+                    timeout: 4500 
                 });
                 
                 if (streamRes.data && streamRes.data.streams) {
@@ -1208,7 +1170,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         score -= idx; 
                         score += (10 - source.sourceIndex) * 50;
 
-                        // CLONAGE UNIVERSEL
+                        // UNIVERSAL FIX 2: Clonage Adaptatif Complet
                         let outStream = { ...s };
 
                         if (outStream.url) {
