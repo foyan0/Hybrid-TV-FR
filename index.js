@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.0.8 (Clean & Fully Restored Original)
- * Core Engine: Original routing, zero bloated UI additions, rock solid stability.
+ * Version: 1.2.5 (Catalog & Timeout Fixer)
+ * Core Engine: Extended Catalog Timeouts (15s), Robust Error Recovery, Stable Routing.
  */
 
 const express = require('express');
@@ -404,7 +404,7 @@ async function fetchAndParseEPG(url, isGz) {
                 }
             });
 
-            const timeoutId = setTimeout(() => { stream.destroy(); reject(new Error("Timeout EPG")); }, 60000);
+            const timeoutId = setTimeout(() => { stream.destroy(); reject(new Error("Timeout")); }, 60000);
             rl.on('close', () => { clearTimeout(timeoutId); resolve(localEpg); });
             rl.on('error', (err) => { clearTimeout(timeoutId); reject(err); });
         } catch (err) { reject(err); }
@@ -477,7 +477,7 @@ async function fetchCatalogFromSource(sourceInput) {
         if (!cleanUrl.endsWith('manifest.json')) cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
         const base = cleanUrl.replace(/\/manifest\.json$/, '');
 
-        const manifestRes = await axios.get(cleanUrl, { timeout: 6000 });
+        const manifestRes = await axios.get(cleanUrl, { timeout: 8000 });
         const catalogs = manifestRes.data.catalogs || [];
         
         const catalogPromises = catalogs.map(async (catalog) => {
@@ -685,16 +685,12 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                 const r = await axios.get(source.directUrl, { 
                     responseType: 'stream',
                     headers: { 'User-Agent': 'Mozilla/5.0' }, 
-                    timeout: 3500
+                    timeout: 4000
                 });
                 if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
                 testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
             } catch(e) {
-                if(e.response && (e.response.status === 401 || e.response.status === 403)) {
-                    testRes.httpStatus = `❌ Erreur: HTTP ${e.response.status} (Accès Refusé / Token Expiré)`;
-                } else {
-                    testRes.httpStatus = `❌ Erreur: ${e.response ? 'HTTP ' + e.response.status : e.message}`;
-                }
+                testRes.httpStatus = `❌ Erreur: ${e.response ? 'HTTP ' + e.response.status : e.message}`;
             }
             inspectionResults.push(testRes);
         } else {
@@ -716,11 +712,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                                 if(sRes.data && typeof sRes.data.destroy === 'function') sRes.data.destroy();
                                 streamTest.health = `✅ En ligne (HTTP ${sRes.status})`;
                             } catch (err) {
-                                if(err.response && (err.response.status === 401 || err.response.status === 403)) {
-                                    streamTest.health = `❌ Échec: HTTP ${err.response.status} (Accès Refusé / Token Expiré)`;
-                                } else {
-                                    streamTest.health = `❌ Échec: ${err.response ? 'HTTP ' + err.response.status : err.message}`;
-                                }
+                                streamTest.health = `❌ Échec: ${err.response ? 'HTTP ' + err.response.status : err.message}`;
                             }
                         } else {
                             streamTest.health = `⚠️ Pas d'URL directe`;
@@ -748,7 +740,7 @@ app.get('/', async (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>HybridTV Dashboard 1.0.8</title>
+        <title>HybridTV Dashboard 1.2.5</title>
         <style>
             :root { --bg: #141414; --card: #1f1f1f; --card-alt: #111; --primary: #e50914; --text: #fff; --text-muted: #bbb; --border: #333; }
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 40px 20px; margin: 0; }
@@ -803,7 +795,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, triée et stable (v1.0.8).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, stable et résiliente (v1.2.5).</p>
             </div>
 
             <div class="tabs">
@@ -1107,9 +1099,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.0.8',
+        version: '1.2.5',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.0.8). Fast Scanner, Direct Links & Stable Routing.',
+        description: 'Meta-Addon IPTV (v1.2.5). Robust Timeouts & Stable Catalogs.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1208,8 +1200,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
     let channelsData = await getChannelsForSources(config.sources);
     
-    // MICRO-CACHE 5 SECONDES 
-    res.setHeader('Cache-Control', 'max-age=5, public'); 
+    // SMART CACHE 45 SECONDES
+    res.setHeader('Cache-Control', 'max-age=45, public'); 
 
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ streams: [] });
@@ -1233,12 +1225,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
 
                 const streamRes = await axios.get(targetUrl, {
-                    headers: { 
-                        'User-Agent': clientUserAgent,
-                        'X-Forwarded-For': clientIp,
-                        'X-Real-IP': clientIp,
-                        'Accept': 'application/json' 
-                    }, 
+                    headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }, 
                     timeout: 4500 
                 });
                 
@@ -1430,7 +1417,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         });
         
         streamCache.set(cacheKey, finalStreams);
-        setTimeout(() => streamCache.delete(cacheKey), 5000); 
+        setTimeout(() => streamCache.delete(cacheKey), 45000); 
 
         res.json({ streams: finalStreams });
     } catch (err) { res.json({ streams: [] }); }
