@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.1.2 (Stable & Restored Dashboard)
- * Core Engine: Synchronous Health Check, 45s Cache, Original UI Restored.
+ * Version: 1.1.2 (Optimized 45s Cache)
+ * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing.
  */
 
 const express = require('express');
@@ -803,7 +803,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, rapide et optimisée (v1.1.2).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.1.2).</p>
             </div>
 
             <div class="tabs">
@@ -1208,7 +1208,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
     let channelsData = await getChannelsForSources(config.sources);
     
-    // SMART CACHE 45 SECONDES
+    // SMART CACHE AUGMENTÉ À 45 SECONDES
     res.setHeader('Cache-Control', 'max-age=45, public'); 
 
     const channel = channelsData.find(c => c.id === req.params.id);
@@ -1305,6 +1305,11 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         if (priorityIndex === -1) priorityIndex = 3; 
                         
                         let qScore = (4 - priorityIndex) * 1000; 
+
+                        if (detectedQual === '4K') qualStr = "4K (UHD)";
+                        else if (detectedQual === '1080p') qualStr = "Full HD (1080p)";
+                        else if (detectedQual === '720p') qualStr = "HD (720p)";
+                        else qualStr = "SD";
 
                         if (isBeluchon) {
                             qualStr = "Source Officielle Légale (HD)";
@@ -1421,6 +1426,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             return streamObj;
         });
         
+        // Stockage dans le cache pour 45 secondes
         streamCache.set(cacheKey, finalStreams);
         setTimeout(() => streamCache.delete(cacheKey), 45000); 
 
