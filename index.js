@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Core Engine: Robust Proxy Headers (Header Spoofing), Non-Destructive Sorting, Fixed Dashboard.
+ * Core Engine: Raw Stream Association (No Penalty), Global Search, Dynamic Config Routing.
  */
 
 const express = require('express');
@@ -979,12 +979,13 @@ app.get('/', async (req, res) => {
                 try { qualities = JSON.parse(savedQualities); } catch(e){}
             }
 
-            // Configuration initiale depuis l'URL
             let startConfig = {};
             try {
                 let pathParts = window.location.pathname.split('/');
                 if (pathParts[1] && pathParts[1] !== '') {
-                    startConfig = JSON.parse(atob(pathParts[1]));
+                    if (pathParts[1] !== 'configure') {
+                        startConfig = JSON.parse(atob(pathParts[1]));
+                    }
                 }
             } catch(e) {}
 
@@ -1003,12 +1004,15 @@ app.get('/', async (req, res) => {
     res.send(html);
 });
 
+// Route spéciale Stremio pour le bouton "Configurer"
+app.get('/:config/configure', (req, res) => {
+    res.redirect('/' + req.params.config);
+});
+
 // --- MANIFEST BUILDER ---
 app.get('/:config/manifest.json', (req, res) => {
     const config = parseConfig(req.params.config);
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
-
-    let behaviorHints = { configurable: true, configurationRequired: false };
 
     let baseCatalogs = [
         { type: 'tv', id: 'tnt', name: '📺 TNT' },
@@ -1031,13 +1035,13 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '8.2.0',
+        version: '8.1.0',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV. Universal Passthrough & Global Search.',
+        description: 'Meta-Addon IPTV. Absolute Passthrough, Custom Quality & Search.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
-        behaviorHints: behaviorHints
+        behaviorHints: { configurable: true, configurationRequired: false }
     });
 });
 
@@ -1155,25 +1159,18 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                     title: source.originalName || "Source M3U",
                     _score: isBeluchon ? 50000 : 30000,
                     _originalTitle: source.originalName || "Source M3U",
-                    behaviorHints: {
-                        proxyHeaders: {
-                            request: {
-                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                                'Referer': source.providerBase
-                            }
-                        }
-                    }
+                    behaviorHints: { proxyHeaders: { request: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase } } }
                 }];
             }
 
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
 
+                // REQUÊTE PURE 
+                let reqHeaders = { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' };
+
                 const streamRes = await axios.get(targetUrl, {
-                    headers: { 
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                        'Accept': 'application/json'
-                    }, 
+                    headers: reqHeaders, 
                     timeout: 4500 
                 });
                 
@@ -1187,55 +1184,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         originalTitle = originalTitle.replace(/http\S+/g, '').trim() || `Source Add-on ${idx + 1}`;
 
                         let up = originalTitle.toUpperCase();
-                        let nStream = up.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').replace(/\+/g, 'PLUS').replace(/[^A-Z0-9]/g, '');
 
-                        let penalty = 0;
-                        
-                        if (channel.id.startsWith('hyb_canal_') && !channel.id.includes('live')) {
-                            let isBaseCanal = (channel.id === 'hyb_canal_cplus');
-                            if (isBaseCanal) {
-                                if (nStream.match(/(SPORT|FOOT|CINE|CNEMA|DECALE|KIDS|DOC|BOX|GRAND|SERIE|PREMIER|FRISSON|EMOTION|FAMIZ|CLUB|CLASSIC|COMEDIE|F1|MOTO|360|FAMILY|LIGUE1|DAZN|BEIN|MULTI)/)) penalty += 50000;
-                            } else {
-                                let target = channel.id.replace('hyb_canal_', '').toUpperCase();
-                                if (target.includes('SPORT') || target.includes('FOOT')) {
-                                    if (nStream.includes('CINE') || nStream.includes('DOC') || nStream.includes('KIDS') || nStream.includes('SERIE') || nStream.includes('BOX')) penalty += 50000;
-                                } else if (target.includes('CINE') || target.includes('SERIE') || target.includes('BOX') || target.includes('GRAND')) {
-                                    if (nStream.includes('SPORT') || nStream.includes('FOOT') || nStream.includes('F1') || nStream.includes('MOTO') || nStream.includes('LIGUE1')) penalty += 50000;
-                                }
-                            }
-                        }
-
-                        if (channel.id === 'hyb_tnt_1' && (nStream.includes('SERIE') || nStream.includes('FILM') || nStream.includes('TFX') || nStream.includes('TMC') || nStream.includes('SF'))) penalty += 50000;
-                        if (channel.id === 'hyb_dec_discovery' && (nStream.includes('INVESTIGATION') || nStream.includes('ID') || nStream.includes('SCIENCE'))) penalty += 50000;
-                        if (channel.id === 'hyb_dec_investigation' && (!nStream.includes('INVESTIGATION') && !nStream.includes('ID'))) penalty += 50000;
-                        if (channel.id === 'hyb_jeu_disney' && (nStream.includes('JR') || nStream.includes('JUNIOR') || nStream.includes('XD') || nStream.includes('PLUS1'))) penalty += 50000;
-
-                        if (channel.id.startsWith('hyb_sport_bein')) {
-                            let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1'; let isTargetMax = channel.id.includes('max');
-                            let streamNumMatch = nStream.match(/BEIN(?:SPORT|MAX)?S?(\d+)/i);
-                            if (streamNumMatch) { if (streamNumMatch[1] !== targetNum) penalty += 50000; } else if (targetNum !== '1') { penalty += 50000; }
-                            if (isTargetMax !== nStream.includes('MAX')) penalty += 50000;
-                        }
-
-                        if (channel.id.startsWith('hyb_sport_ligue1plus')) {
-                            let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
-                            let streamNumMatch = nStream.match(/(?:LIGUE1|L1)(?:PLUS)?(\d+)/i);
-                            if (streamNumMatch) { if (streamNumMatch[1] !== targetNum) penalty += 50000; } else if (targetNum !== '1') { penalty += 50000; }
-                        }
-
-                        if (channel.id.startsWith('hyb_sport_dazn') && !channel.id.includes('live') && !channel.id.includes('rise')) {
-                            let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
-                            let streamNumMatch = nStream.match(/DAZN(\d+)/i);
-                            if (streamNumMatch && streamNumMatch[1] !== targetNum) penalty += 50000;
-                        }
-
-                        if (channel.id.startsWith('hyb_canal_live')) {
-                            let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
-                            let streamNumMatch = nStream.match(/LIVE(\d+)/i);
-                            if (streamNumMatch) { if (streamNumMatch[1] !== targetNum) penalty += 50000; } else { penalty += 50000; }
-                        }
-
-                        // QUALITY SCORING
+                        // LÂCHER-PRISE TOTAL SUR LES PÉNALITÉS (L'algorithme fait confiance à TV Mio)
                         let detectedQual = 'SD';
                         if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) detectedQual = '4K';
                         else if (up.includes('FHD') || up.includes('1080')) detectedQual = '1080p';
@@ -1260,14 +1210,10 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         if (up.match(/\bFR\b/) || up.match(/\bVF\b/) || up.includes('FRENCH') || up.includes('TRUEFRENCH')) score += 300; 
                         if (up.includes('BACKUP') || up.includes('SECOURS') || up.includes('ALT') || up.includes('TEST')) score -= 1000;
                         
-                        let originalOrderScore = (50 - idx) * 500; 
-                        let providerPriorityScore = (10 - source.sourceIndex) * 10000; 
-
-                        score += originalOrderScore;
+                        // Le fournisseur sait ce qui marche. Le 1er flux d'un add-on a 100 000 points.
+                        let providerPriorityScore = (100 - idx) * 10000; 
                         score += providerPriorityScore;
-                        score -= penalty;
 
-                        // CLONAGE UNIVERSEL + INJECTION PROXY HEADERS POUR ÉVITER LES BOUCLES DE CHARGEMENT
                         let outStream = { ...s };
 
                         if (outStream.url) {
@@ -1284,7 +1230,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             }
                         }
 
-                        // Injection robuste des proxyHeaders si manquants pour empêcher les boucles de chargement HLS
+                        // INJECTION DES PROXY HEADERS SYSTEMATIQUES
                         if (!outStream.behaviorHints) outStream.behaviorHints = {};
                         if (!outStream.behaviorHints.proxyHeaders) {
                             outStream.behaviorHints.proxyHeaders = {
@@ -1311,6 +1257,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
 
+        // Tri Final
         allStreams.sort((a, b) => b._score - a._score);
         const limitedStreams = allStreams.slice(0, 15);
 
