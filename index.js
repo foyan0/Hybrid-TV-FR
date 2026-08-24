@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Core Engine: Live Dead-Link Scanner, Strict Semantic Routing, Dynamic Config.
+ * Core Engine: Live Dead-Link Down-Sorter, HTTP Translator, Strict Semantic Routing.
  */
 
 const express = require('express');
@@ -49,6 +49,7 @@ app.use((req, res, next) => {
 // --- ASSETS & CONFIG ---
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 const EVENT_POSTER = 'https://cdn-icons-png.flaticon.com/512/861/861512.png';
+const LOADING_POSTER = 'https://cdn-icons-png.flaticon.com/512/3039/3039401.png'; 
 
 const BLACKLIST = [
     'ALACARTE', 'DISNEYPLUS', 'NETFLIX', 'PRIMEVIDEO', 'APPLETV',
@@ -63,7 +64,7 @@ function parseConfig(encodedConfig) {
         parsed.logos = false; 
         parsed.epg = true; 
         if (typeof parsed.search === 'undefined') parsed.search = false;
-        if (typeof parsed.checkLinks === 'undefined') parsed.checkLinks = false; // Nouvelle option
+        if (typeof parsed.checkLinks === 'undefined') parsed.checkLinks = false;
         if (!parsed.qualities || !Array.isArray(parsed.qualities)) {
             parsed.qualities = ['1080p', '720p', '4K', 'SD'];
         }
@@ -187,10 +188,7 @@ function getChannelData(rawName) {
     if (c.includes('COMEDIE') || c.includes('COMEDY')) return { id: 'hyb_canal_comedie', name: 'Comédie+', categories: ['canal', 'autres'], index: 10 };
 
     if (c.includes('CANAL') || c.includes('CPLUS')) {
-        if (c.includes('ELLES')) {
-            return { id: 'hyb_canal_elles', name: 'Canal+ Elles', categories: ['canal', 'cinema'], index: 6 };
-        }
-
+        if (c.includes('ELLES')) return { id: 'hyb_canal_elles', name: 'Canal+ Elles', categories: ['canal', 'cinema'], index: 6 };
         if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 100 };
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
         
@@ -774,8 +772,9 @@ app.get('/', async (req, res) => {
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px;">
                         <input type="checkbox" id="checkLinksToggle" style="width: 18px; height: 18px; cursor: pointer;">
-                        <b style="font-size: 14px; color: #ff9800;">Marquer les liens morts dans Stremio (❌ HS) - Peut ralentir l'affichage</b>
+                        <b style="font-size: 14px; color: #ff9800;">Trier et Marquer les liens morts dans Stremio (❌ HS)</b>
                     </div>
+                    <p style="font-size: 11px; margin-top: 5px; color: #aaa;">L'option de tri des liens morts peut ralentir très légèrement l'affichage des flux le temps que le serveur teste les liens en direct.</p>
                 </div>
 
                 <div class="section">
@@ -898,11 +897,10 @@ app.get('/', async (req, res) => {
                 if (!container) return;
                 container.innerHTML = '';
                 qualities.forEach((q, index) => {
-                    let badge = q === '4K' ? ' <span style="font-size:10px;color:#ff9800;">(Instable)</span>' : '';
                     container.innerHTML += \`
                         <div style="display: flex; align-items: center; background: #222; border: 1px solid #444; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px;">
                             <span style="font-size: 14px; font-weight: bold; color: #e50914; min-width: 25px;">\${index + 1}.</span>
-                            <span style="flex: 1; font-size: 13px;">\${q}\${badge}</span>
+                            <span style="flex: 1; font-size: 13px;">\${q}</span>
                             \${index > 0 ? '<button type="button" onclick="moveQuality(' + index + ', -1)" class="btn-small" style="padding: 4px 8px; margin-right: 5px;">▲</button>' : '<div style="width: 28px; margin-right: 5px;"></div>'}
                             \${index < qualities.length - 1 ? '<button type="button" onclick="moveQuality(' + index + ', 1)" class="btn-small" style="padding: 4px 8px;">▼</button>' : '<div style="width: 28px;"></div>'}
                         </div>
@@ -1100,9 +1098,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '9.0.0',
+        version: '9.1.0',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV. Live Dead-Link Scanner & Strict Routing.',
+        description: 'Meta-Addon IPTV. Live Link Sorting & HTTP Diagnostics.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1208,9 +1206,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     serverStats.cacheMisses++;
 
     let channelsData = await getChannelsForSources(config.sources);
-    
-    // Le cache public est très court car on fait une analyse en direct
-    res.setHeader('Cache-Control', 'max-age=15, public'); 
+    res.setHeader('Cache-Control', 'max-age=60, public'); 
 
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ streams: [] });
@@ -1341,6 +1337,26 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             }
                         }
 
+                        if (!outStream.behaviorHints) outStream.behaviorHints = {};
+                        if (!outStream.behaviorHints.notWebReady) outStream.behaviorHints.notWebReady = true;
+
+                        let refDomain = "https://vavoo.to/";
+                        try {
+                            let uObj = new URL(source.providerBase);
+                            refDomain = uObj.origin + "/";
+                        } catch(e){}
+
+                        if (outStream.behaviorHints.headers && !outStream.behaviorHints.proxyHeaders) {
+                            outStream.behaviorHints.proxyHeaders = { request: outStream.behaviorHints.headers };
+                        } else if (!outStream.behaviorHints.proxyHeaders) {
+                            outStream.behaviorHints.proxyHeaders = {
+                                request: {
+                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                                    'Referer': refDomain
+                                }
+                            };
+                        }
+
                         let fallbackName = source.originalName || "Source Add-on";
                         outStream.name = s.name ? s.name : fallbackName;
                         
@@ -1357,38 +1373,46 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
 
+        // Premier tri initial
         allStreams.sort((a, b) => b._score - a._score);
         let limitedStreams = allStreams.slice(0, 15);
 
-        // --- NOUVEAU : SYSTÈME DE DÉTECTION DE LIENS MORTS EN DIRECT ---
+        // --- SYSTÈME DE DÉTECTION DE LIENS MORTS EN DIRECT ---
         if (config.checkLinks && limitedStreams.length > 0) {
             await Promise.all(limitedStreams.map(async (s) => {
                 if (!s.url) return;
                 try {
-                    // Ping ultra-rapide (2 secondes max) pour vérifier la santé du serveur
                     await axios.get(s.url, {
                         timeout: 2500,
                         headers: {
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                            'Range': 'bytes=0-100', // Ne télécharge qu'une fraction du flux pour ne pas consommer de data
-                            ...(s.behaviorHints && s.behaviorHints.headers ? s.behaviorHints.headers : {})
+                            'Range': 'bytes=0-100', 
+                            ...(s.behaviorHints && s.behaviorHints.proxyHeaders && s.behaviorHints.proxyHeaders.request ? s.behaviorHints.proxyHeaders.request : {})
                         }
                     });
-                    // Si on arrive ici, le serveur a répondu (200 ou 206)
-                    // On ne modifie pas le titre, on le laisse propre.
                 } catch (err) {
+                    // PÉNALITÉ FATALE : Pousse le flux tout en bas de la liste
+                    s._score -= 100000; 
+                    
                     if (err.response) {
-                        // Le serveur a répondu avec une erreur (ex: 403 Forbidden, 512 Bad Gateway)
-                        s.title = `❌ HS (${err.response.status})\n` + s.title;
+                        let status = err.response.status;
+                        let msg = "Erreur";
+                        if (status === 403) msg = "Accès Refusé / Géo-bloqué";
+                        else if (status === 404) msg = "Flux Introuvable";
+                        else if (status === 512) msg = "Serveur Injoignable";
+                        else if (status >= 500) msg = "Serveur Planté";
+                        
+                        s.title = `❌ HS (${status} - ${msg})\n` + s.title;
                     } else if (err.code === 'ENOTFOUND') {
-                        // Le domaine n'existe plus
-                        s.title = `❌ HS (Serveur Mort)\n` + s.title;
+                        s.title = `❌ HS (Domaine Mort)\n` + s.title;
                     } else {
-                        // Timeout dépassé
-                        s.title = `⚠️ Lent ou HS\n` + s.title;
+                        s.title = `⚠️ Lent ou Bloqué\n` + s.title;
                     }
                 }
             }));
+            
+            // Re-tri pour appliquer la pénalité des liens morts et les descendre
+            limitedStreams.sort((a, b) => b._score - a._score);
         }
 
         const finalStreams = limitedStreams.map((s) => {
