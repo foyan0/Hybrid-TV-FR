@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.1.1 (Synchronous Scanner & Perfect Original Ordering)
- * Core Engine: Fully Synchronous Stream Health Check, Strict Quality Score Sorting.
+ * Version: 1.1.2 (Optimized 45s Cache)
+ * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing.
  */
 
 const express = require('express');
@@ -125,7 +125,7 @@ function extractMatchEvent(rawName) {
     return null;
 }
 
-// --- ORIGINAL SEMANTIC ROUTING (STABLE 8.2.0 BASE) ---
+// --- ORIGINAL SEMANTIC ROUTING ---
 function getChannelData(rawName) {
     if (!rawName) return null;
     let eventData = extractMatchEvent(rawName);
@@ -748,7 +748,7 @@ app.get('/', async (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>HybridTV Dashboard 1.1.1</title>
+        <title>HybridTV Dashboard</title>
         <style>
             :root { --bg: #141414; --card: #1f1f1f; --card-alt: #111; --primary: #e50914; --text: #fff; --text-muted: #bbb; --border: #333; }
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 40px 20px; margin: 0; }
@@ -803,7 +803,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.1.1).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.1.2).</p>
             </div>
 
             <div class="tabs">
@@ -1107,9 +1107,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.1.1',
+        version: '1.1.2',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.1.1). Synchronous Health Check & Strict Score Routing.',
+        description: 'Meta-Addon IPTV (v1.1.2). Synchronous Health Check, 45s Cache & Strict Routing.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1208,8 +1208,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
     let channelsData = await getChannelsForSources(config.sources);
     
-    // MICRO-CACHE 5 SECONDES 
-    res.setHeader('Cache-Control', 'max-age=5, public'); 
+    // SMART CACHE AUGMENTÉ À 45 SECONDES
+    res.setHeader('Cache-Control', 'max-age=45, public'); 
 
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ streams: [] });
@@ -1402,7 +1402,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                     if (err.response) {
                         let status = err.response.status;
                         let msg = "Erreur";
-                        if (status === 403 || status === 401) msg = "Accès Refusé (Token Expiré)";
+                        if (status === 403 || status === 401) msg = "Accès Refusé / Token Expiré";
                         else if (status === 404) msg = "Flux Introuvable";
                         else if (status === 512 || status === 502) msg = "Serveur Injoignable";
                         else if (status >= 500) msg = "Serveur Planté";
@@ -1416,7 +1416,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                 }
             }));
             
-            // Re-tri synchrone final post-scan pour reléguer les HS en bas de liste
+            // Re-tri synchrone final post-scan
             limitedStreams.sort((a, b) => b._score - a._score);
         }
 
@@ -1426,8 +1426,9 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             return streamObj;
         });
         
+        // Stockage dans le cache pour 45 secondes
         streamCache.set(cacheKey, finalStreams);
-        setTimeout(() => streamCache.delete(cacheKey), 5000); 
+        setTimeout(() => streamCache.delete(cacheKey), 45000); 
 
         res.json({ streams: finalStreams });
     } catch (err) { res.json({ streams: [] }); }
