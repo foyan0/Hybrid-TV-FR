@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Core Engine: Active Stream Health Tester, Proxy Injector, Live Debugger.
+ * Core Engine: Extended Health Tester (8s Timeout), Stream Passthrough, Live Debugger.
  */
 
 const express = require('express');
@@ -667,7 +667,7 @@ app.get('/api/metrics', (req, res) => {
     });
 });
 
-// --- API ROUTE AMÉLIORÉE POUR TESTER LA SANTÉ DES FLUX ---
+// --- API ROUTE AVEC TIMEOUT ÉTENDU À 8000MS POUR LE DEBUG ---
 app.get('/api/debug/inspect/:query', async (req, res) => {
     let q = req.params.query.toLowerCase();
     let latestCache = null;
@@ -685,7 +685,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
         if (source.type === 'm3u') {
             let testRes = { source: source.providerBase || 'M3U Local', type: 'm3u', url: source.directUrl };
             try {
-                let r = await axios.get(source.directUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 3000 });
+                let r = await axios.get(source.directUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 8000 });
                 testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
             } catch(e) {
                 testRes.httpStatus = `❌ Erreur: ${e.response ? 'HTTP ' + e.response.status : e.message}`;
@@ -694,7 +694,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
         } else {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
-                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 4000 });
+                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 8000 });
                 
                 let streamsTested = [];
                 if (r.data && r.data.streams) {
@@ -704,7 +704,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                             try {
                                 let sRes = await axios.get(s.url, { 
                                     headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase }, 
-                                    timeout: 3000,
+                                    timeout: 8000,
                                     maxContentLength: 500
                                 });
                                 streamTest.health = `✅ En ligne (HTTP ${sRes.status})`;
@@ -876,7 +876,7 @@ app.get('/', async (req, res) => {
 
             <div id="debug" class="tab-content">
                 <div class="section">
-                    <h3 class="section-title">🔍 Inspecteur & Testeur de Flux</h3>
+                    <h3 class="section-title">🔍 Inspecteur & Testeur de Flux (8s)</h3>
                     <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Tapez une chaîne (ex: "ligue", "bein", "tf1") pour tester la santé des liens en direct.</p>
                     <div style="display: flex; gap: 8px; margin-bottom: 15px;">
                         <input type="text" id="debugQuery" placeholder="Nom de la chaîne..." style="flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px;">
@@ -902,7 +902,7 @@ app.get('/', async (req, res) => {
             async function runDebug() {
                 let q = document.getElementById('debugQuery').value.trim();
                 if(!q) return alert("Veuillez entrer un nom de chaîne !");
-                document.getElementById('debugOutput').innerText = "Test des liens et des serveurs en cours...";
+                document.getElementById('debugOutput').innerText = "Test des liens et des serveurs en cours (8s max)...";
                 try {
                     let res = await fetch('/api/debug/inspect/' + encodeURIComponent(q));
                     let data = await res.json();
@@ -1128,9 +1128,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '8.7.1',
+        version: '8.7.2',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV. Active Stream Health Tester & Inspector.',
+        description: 'Meta-Addon IPTV. Universal Health Tester & Inspector.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1404,7 +1404,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         allStreams.sort((a, b) => b._score - a._score);
         const limitedStreams = allStreams.slice(0, 15);
 
-        const finalStreams = limitedStreams.map((s) => {
+        finalStreams = limitedStreams.map((s) => {
             let streamObj = { ...s };
             delete streamObj._score; 
             return streamObj;
