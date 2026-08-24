@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon for Stremio
- * Core architecture: Catalog synchronization, EPG parsing, semantic routing.
+ * Core architecture: Catalog synchronization, EPG parsing, semantic routing, client proxy headers.
  */
 
 const express = require('express');
@@ -29,9 +29,8 @@ const BLACKLIST = [
     'TEST', 'MIRROR', 'BACKUPCHANNEL', 'BOXOFFICE1', 'BOXOFFICE2', 'CANALPLAY', 'AFRIQUE', 'DEUTSCH', 'GERMAN'
 ];
 
-// Static VIP Logos Dictionary
 const LOGOS = {
-    // TNT
+    // TNT & General
     'hyb_tnt_1': 'https://upload.wikimedia.org/wikipedia/commons/c/cc/TF1_2013_logo.svg',
     'hyb_tnt_2': 'https://upload.wikimedia.org/wikipedia/commons/9/91/France_2_logo_2018.svg',
     'hyb_tnt_3': 'https://upload.wikimedia.org/wikipedia/commons/d/d1/France_3_logo_2018.svg',
@@ -145,7 +144,7 @@ function parseConfig(encodedConfig) {
         if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], epg: true, logos: false };
         const jsonStr = Buffer.from(encodedConfig, 'base64').toString('utf8');
         let parsed = JSON.parse(jsonStr);
-        parsed.logos = false; // Enforcement of static native logos logic
+        parsed.logos = false; 
         return parsed;
     } catch (e) {
         return { sources: [], epg: true, logos: false };
@@ -153,8 +152,7 @@ function parseConfig(encodedConfig) {
 }
 
 // ============================================================================
-// LIVE EVENT PARSER
-// Extracts temporary sporting events and routes them away from linear channels.
+// EVENT EXTRACTION MODULE
 // ============================================================================
 function extractMatchEvent(rawName) {
     if (!rawName) return null;
@@ -170,7 +168,7 @@ function extractMatchEvent(rawName) {
                  .replace(/\d{1,2}[hH:]\d{2}/g, '')
                  .replace(/\b(?:FHD|HD|SD|4K|1080P|720P|MATCH\s*TIME|MATCHTIME)\b/gi, '')
                  .replace(/[^A-Z0-9\s-]/g, '').trim();
-        if (cleanName.length < 3) cleanName = "Événement Sportif";
+        if (cleanName.length < 3) cleanName = "Événement Sportif (Match Time)";
         return { id: 'hyb_ev_' + toSyncId(cleanName), name: '🔴 ' + cleanName, categories: ['events'], index: 5, customPoster: EVENT_POSTER };
     }
 
@@ -212,8 +210,7 @@ function extractMatchEvent(rawName) {
 }
 
 // ============================================================================
-// SEMANTIC CHANNEL ROUTER
-// Assigns channel ID, category, and sorting index based on parsed string data.
+// SEMANTIC ROUTING MODULE
 // ============================================================================
 function getChannelData(rawName) {
     if (!rawName) return null;
@@ -283,6 +280,7 @@ function getChannelData(rawName) {
 
         if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 100 };
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
+        
         if (c.includes('LIVE')) {
             let m = c.match(/LIVE(\d+)/); let num = m ? m[1] : '1';
             return { id: 'hyb_canal_live_' + num, name: 'Canal+ Live ' + num, categories: ['canal'], index: 200 + parseInt(num, 10) };
@@ -332,6 +330,7 @@ function getChannelData(rawName) {
         if (c.includes('ACTION')) return { id: 'hyb_cine_action', name: 'Action', categories: ['cinema'], index: 30 };
         return { id: 'hyb_cine_plus', name: 'Ciné+', categories: ['cinema', 'canal'], index: 19 };
     }
+    
     if (c.includes('OCS')) {
         let m = n.match(/OCS\s*([A-Z]*)/i); let suffix = (m && m[1]) ? ' ' + m[1] : '';
         return { id: 'hyb_cine_ocs_' + suffix.trim().toLowerCase(), name: 'OCS' + suffix, categories: ['cinema'], index: 20 };
@@ -344,6 +343,7 @@ function getChannelData(rawName) {
         return { id: 'hyb_tnt_20', name: 'TF1 Séries Films', categories: ['tnt', 'cinema'], index: 20 };
     }
     if (c.startsWith('TF1')) return { id: 'hyb_tnt_1', name: 'TF1', categories: ['tnt'], index: 1 };
+    
     if (c.startsWith('FRANCE2') || c === 'FR2') return { id: 'hyb_tnt_2', name: 'France 2', categories: ['tnt'], index: 2 };
     if (c.startsWith('FRANCE3') || c === 'FR3') return { id: 'hyb_tnt_3', name: 'France 3', categories: ['tnt'], index: 3 };
     if (c.startsWith('FRANCE4') || c === 'FR4') return { id: 'hyb_tnt_4', name: 'France 4', categories: ['tnt'], index: 4 };
@@ -443,7 +443,7 @@ function formatTime(timestamp) {
 }
 
 /**
- * EPG Synchronization Module
+ * EPG Synchronization
  */
 async function fetchAndParseEPG(url, isGz) {
     return new Promise(async (resolve, reject) => {
@@ -530,7 +530,7 @@ async function updateEPG() {
 }
 
 /**
- * Metadata Extraction Module
+ * Metadata Extraction 
  */
 async function fetchCatalogFromSource(sourceInput) {
     let metas = [];
@@ -567,9 +567,7 @@ async function fetchCatalogFromSource(sourceInput) {
                     currentName = '';
                 }
             }
-        } catch (e) {
-            // M3U parsing fault tolerance
-        }
+        } catch (e) {}
         return metas;
     }
 
@@ -740,7 +738,7 @@ async function getChannelsForSources(sourcesList) {
 }
 
 // ============================================================================
-// ROUTES SETUP
+// API ROUTES
 // ============================================================================
 
 app.get('/api/stats', (req, res) => {
@@ -965,7 +963,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta.' + confName, 
-        version: '4.4.3',
+        version: '4.5.0',
         name: config.epg ? 'HybridTV' : 'HybridTV (Sans Programme TV)',
         description: 'L\'expérience IPTV ultime. Édition Meta-Addon dynamique.',
         resources: ['catalog', 'meta', 'stream'],
@@ -1086,16 +1084,13 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
     
-    // CACHE SETTING: 2 minutes maximum to preserve token validity
     const cacheKey = req.params.id + '|' + config.sources.join(',');
     if (streamCache.has(cacheKey)) {
         return res.json({ streams: streamCache.get(cacheKey) });
     }
 
     let channelsData = await getChannelsForSources(config.sources);
-    res.setHeader('Cache-Control', 'max-age=120, public'); 
-    const rawIp = req.headers['x-forwarded-for'];
-    const clientIp = rawIp ? rawIp.split(',')[0].trim() : req.socket.remoteAddress;
+    res.setHeader('Cache-Control', 'max-age=60, public'); 
 
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ streams: [] });
@@ -1110,18 +1105,22 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                     name: isBeluchon ? `▶ Source Officielle (HD)` : `▶ Full HD (1080p)`,
                     title: source.originalName || "Source M3U",
                     _score: isBeluchon ? 4500 : 1500,
-                    _originalTitle: source.originalName || "Source M3U"
+                    _originalTitle: source.originalName || "Source M3U",
+                    _behaviorHints: {
+                        proxyHeaders: {
+                            request: {
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+                            }
+                        }
+                    }
                 }];
             }
 
             try {
-                // Aggressive timeout (5s) to bypass hanging providers and display results faster
+                // Optimized timeout limit for remote provider extraction
                 const streamRes = await axios.get(`${source.providerBase}/stream/tv/${source.metaId}.json`, {
-                    headers: { 
-                        'X-Forwarded-For': clientIp,
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                    }, 
-                    timeout: 5000 
+                    headers: { 'User-Agent': 'Mozilla/5.0' }, 
+                    timeout: 4500 
                 });
                 
                 if (streamRes.data && streamRes.data.streams) {
@@ -1139,7 +1138,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
                         let penalty = 0;
                         
-                        // Overlap handling logic
+                        // 1. Protection contre les faux-positifs Canal+
                         if (channel.id.startsWith('hyb_canal_') && !channel.id.includes('live')) {
                             let isBaseCanal = (channel.id === 'hyb_canal_cplus');
                             if (isBaseCanal) {
@@ -1156,10 +1155,12 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             }
                         }
 
+                        // 2. Protection TF1
                         if (channel.id === 'hyb_tnt_1') {
                             if (nStream.includes('SERIE') || nStream.includes('FILM') || nStream.includes('TFX') || nStream.includes('TMC') || nStream.includes('SF')) penalty += 5000;
                         }
 
+                        // 3. Protection Discovery
                         if (channel.id === 'hyb_dec_discovery') {
                             if (nStream.includes('INVESTIGATION') || nStream.includes('ID') || nStream.includes('SCIENCE')) penalty += 5000;
                         }
@@ -1167,11 +1168,12 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             if (!nStream.includes('INVESTIGATION') && !nStream.includes('ID')) penalty += 5000;
                         }
 
+                        // 4. Protection Jeunesse
                         if (channel.id === 'hyb_jeu_disney') {
                             if (nStream.includes('JR') || nStream.includes('JUNIOR') || nStream.includes('XD') || nStream.includes('PLUS1')) penalty += 5000;
                         }
 
-                        // Sports multiplex strict evaluation
+                        // 5. Protection Sports
                         if (channel.id.startsWith('hyb_sport_bein')) {
                             let targetNumMatch = channel.id.match(/_(\d+)$/);
                             let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
@@ -1217,7 +1219,12 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             }
                         }
 
-                        // Quality scoring heuristics
+                        // 6. FILTRE ANTI-TOKEN IP (Évite les blocages 403 des liens géolocalisés sur le serveur)
+                        if (!source.type === 'm3u' && s.url && s.url.match(/(token=|sig=|auth=|hdnts=|mac=|_expires=)/i)) {
+                            penalty += 8000; 
+                        }
+
+                        // 7. Calcul du score de qualité
                         if (isBeluchon) {
                             qual = "Source Officielle Légale (HD)";
                             score += 3000; 
@@ -1238,7 +1245,24 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         score -= idx; 
                         score += (10 - source.sourceIndex) * 50;
 
-                        return { ...s, _qualText: qual, _score: score, _originalTitle: originalTitle };
+                        // Configuration des proxyHeaders clients
+                        let behaviorHints = s.behaviorHints || {};
+                        if (!behaviorHints.proxyHeaders) {
+                            behaviorHints.proxyHeaders = {
+                                request: {
+                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                                    'Referer': source.providerBase || 'https://www.google.com'
+                                }
+                            };
+                        }
+
+                        return { 
+                            ...s, 
+                            _qualText: qual, 
+                            _score: score, 
+                            _originalTitle: originalTitle,
+                            _behaviorHints: behaviorHints
+                        };
                     });
                 }
             } catch (err) {}
@@ -1251,16 +1275,15 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         allStreams.sort((a, b) => b._score - a._score);
         const limitedStreams = allStreams.slice(0, 15);
 
-        // Display formatting
         const finalStreams = limitedStreams.map((s) => ({
             url: s.url, 
             name: s._originalTitle, 
-            title: `▶ ${s._qualText}`
+            title: `▶ ${s._qualText}`,
+            behaviorHints: s._behaviorHints
         }));
         
-        // Cache setting: 120 seconds
         streamCache.set(cacheKey, finalStreams);
-        setTimeout(() => streamCache.delete(cacheKey), 120000);
+        setTimeout(() => streamCache.delete(cacheKey), 60000); 
 
         res.json({ streams: finalStreams });
     } catch (err) { res.json({ streams: [] }); }
