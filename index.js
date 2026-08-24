@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.0.7 (Stable & Original Routing)
- * Core Engine: HLS Proxy with Fail-Fast (No infinite loading), Stable EPG.
+ * Version: 1.0.9 (Stable)
+ * Core Engine: Explicit Error Labels, 3.5s Stream-Destroyer, Strict Original Routing.
  */
 
 const express = require('express');
@@ -70,60 +70,6 @@ function parseConfig(encodedConfig) {
     }
 }
 
-// --- NEW HLS PROXY ENGINE (ANTI-INFINITE LOADING) ---
-app.get('/proxy/:b64url', async (req, res) => {
-    try {
-        let targetUrl = Buffer.from(req.params.b64url, 'base64').toString('utf8');
-        let hostUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
-        
-        if (targetUrl.includes('.m3u8')) {
-            // Fail-fast timeout de 4s pour la playlist
-            const response = await axios.get(targetUrl, {
-                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-                timeout: 4000 
-            });
-            
-            let lines = response.data.split('\n');
-            let proxiedM3u8 = lines.map(line => {
-                let trim = line.trim();
-                if (trim && !trim.startsWith('#')) {
-                    let fullUrl = trim.startsWith('http') ? trim : new URL(trim, targetUrl).href;
-                    return `${hostUrl}/proxy/${Buffer.from(fullUrl).toString('base64')}`;
-                }
-                if (trim.includes('URI=')) {
-                    return trim.replace(/URI=["']([^"']+)["']/g, (match, p1) => {
-                        let fullUrl = p1.startsWith('http') ? p1 : new URL(p1, targetUrl).href;
-                        return `URI="${hostUrl}/proxy/${Buffer.from(fullUrl).toString('base64')}"`;
-                    });
-                }
-                return line;
-            }).join('\n');
-
-            res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-            res.send(proxiedM3u8);
-        } else {
-            // Téléchargement du chunk vidéo (.ts)
-            const response = await axios({
-                method: 'get',
-                url: targetUrl,
-                responseType: 'stream',
-                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-                timeout: 6000 // Si le morceau met plus de 6s à arriver, on coupe pour éviter le chargement infini
-            });
-            if (response.headers['content-type']) {
-                res.setHeader('Content-Type', response.headers['content-type']);
-            }
-            response.data.pipe(res);
-        }
-    } catch (err) {
-        // En cas de blocage (Firewall SFR/Bouygues), on envoie une erreur 404 pour que Stremio arrête de chercher immédiatement.
-        console.error(`[PROXY FAIL] IP Blocked or Timeout: ${err.message}`);
-        if (!res.headersSent) {
-            res.status(404).send("Stream Failed - Firewall Block");
-        }
-    }
-});
-
 // --- ORIGINAL LIVE EVENTS PARSER ---
 function extractMatchEvent(rawName) {
     if (!rawName) return null;
@@ -179,7 +125,7 @@ function extractMatchEvent(rawName) {
     return null;
 }
 
-// --- ORIGINAL SEMANTIC ROUTING (RESTORED EXACTLY) ---
+// --- ORIGINAL SEMANTIC ROUTING (STABLE 8.2.0 BASE) ---
 function getChannelData(rawName) {
     if (!rawName) return null;
     let eventData = extractMatchEvent(rawName);
@@ -238,7 +184,7 @@ function getChannelData(rawName) {
     if (c.includes('COMEDIE') || c.includes('COMEDY')) return { id: 'hyb_canal_comedie', name: 'Comédie+', categories: ['canal', 'autres'], index: 10 };
 
     if (c.includes('CANAL') || c.includes('CPLUS')) {
-        // EXIL DÉFINITIF DE CANAL+ ELLES À LA FIN DE L'INDEX
+        // EXIL DE CANAL+ ELLES À LA FIN DE L'INDEX
         if (c.includes('ELLES') || c.includes('LCENTRE') || c.includes('CENTRE') || c === 'CANALL' || c.includes('REGIONAL') || c.includes('LOCAL') || c.includes('OUTREMER')) {
             return { id: 'hyb_aut_canal_elles', name: 'Canal+ Elles', categories: ['autres'], index: 1000 };
         }
@@ -459,7 +405,7 @@ async function fetchAndParseEPG(url, isGz) {
                 }
             });
 
-            const timeoutId = setTimeout(() => { stream.destroy(); reject(new Error("Timeout")); }, 60000);
+            const timeoutId = setTimeout(() => { stream.destroy(); reject(new Error("Timeout EPG")); }, 60000);
             rl.on('close', () => { clearTimeout(timeoutId); resolve(localEpg); });
             rl.on('error', (err) => { clearTimeout(timeoutId); reject(err); });
         } catch (err) { reject(err); }
@@ -740,12 +686,16 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                 const r = await axios.get(source.directUrl, { 
                     responseType: 'stream',
                     headers: { 'User-Agent': 'Mozilla/5.0' }, 
-                    timeout: 4000
+                    timeout: 3500
                 });
                 if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
                 testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
             } catch(e) {
-                testRes.httpStatus = `❌ Erreur: ${e.response ? 'HTTP ' + e.response.status : e.message}`;
+                if(e.response && (e.response.status === 401 || e.response.status === 403)) {
+                    testRes.httpStatus = `❌ Erreur: HTTP ${e.response.status} (Accès Refusé / Token Expiré)`;
+                } else {
+                    testRes.httpStatus = `❌ Erreur: ${e.response ? 'HTTP ' + e.response.status : e.message}`;
+                }
             }
             inspectionResults.push(testRes);
         } else {
@@ -767,7 +717,11 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                                 if(sRes.data && typeof sRes.data.destroy === 'function') sRes.data.destroy();
                                 streamTest.health = `✅ En ligne (HTTP ${sRes.status})`;
                             } catch (err) {
-                                streamTest.health = `❌ Échec: ${err.response ? 'HTTP ' + err.response.status : err.message}`;
+                                if(err.response && (err.response.status === 401 || err.response.status === 403)) {
+                                    streamTest.health = `❌ Échec: HTTP ${err.response.status} (Accès Refusé / Token Expiré)`;
+                                } else {
+                                    streamTest.health = `❌ Échec: ${err.response ? 'HTTP ' + err.response.status : err.message}`;
+                                }
                             }
                         } else {
                             streamTest.health = `⚠️ Pas d'URL directe`;
@@ -795,7 +749,7 @@ app.get('/', async (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>HybridTV Dashboard</title>
+        <title>HybridTV Dashboard 1.0.9</title>
         <style>
             :root { --bg: #141414; --card: #1f1f1f; --card-alt: #111; --primary: #e50914; --text: #fff; --text-muted: #bbb; --border: #333; }
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 40px 20px; margin: 0; }
@@ -850,7 +804,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, Proxy Fail-Fast (v1.0.7).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, claire et épurée (v1.0.9).</p>
             </div>
 
             <div class="tabs">
@@ -1154,9 +1108,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.0.7',
+        version: '1.0.9',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.0.7). Proxy Fail-Fast & Original Routing.',
+        description: 'Meta-Addon IPTV (v1.0.9). Explicit Labels, Fast Scanner & Original Routing.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1240,9 +1194,6 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
 app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
-    
-    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-    const clientUserAgent = req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 
     serverStats.channelClicks[req.params.id] = (serverStats.channelClicks[req.params.id] || 0) + 1;
 
@@ -1255,6 +1206,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
     let channelsData = await getChannelsForSources(config.sources);
     
+    // MICRO-CACHE 5 SECONDES 
     res.setHeader('Cache-Control', 'max-age=5, public'); 
 
     const channel = channelsData.find(c => c.id === req.params.id);
@@ -1410,18 +1362,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         outStream.name = s.name ? s.name : fallbackName;
                         
                         let combinedTitle = s.title || s.description || "";
-                        
-                        // --- INJECTION DU PROXY FAIL-FAST ---
-                        const isTokenized = outStream.url.match(/(token=|sid=|jwt=|auth=|key=)/i);
-                        const isTvMio = source.providerBase && source.providerBase.includes('tvmio');
-                        
-                        if (isTokenized || isTvMio) {
-                            let b64 = Buffer.from(outStream.url).toString('base64');
-                            let hostUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
-                            outStream.url = `${hostUrl}/proxy/${b64}`;
-                            combinedTitle = `🔄 Proxy Relais\n` + combinedTitle;
-                        }
-
                         outStream.title = combinedTitle ? `${combinedTitle}\n▶ ${qualStr}` : `▶ ${qualStr}`;
                         outStream._score = score;
                         return outStream;
@@ -1438,23 +1378,22 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         allStreams.sort((a, b) => b._score - a._score);
         let limitedStreams = allStreams.slice(0, 15);
 
-        // --- SCANNER DE LIENS MORTS ("Stream Destroyer") ---
+        // --- SCANNER DE LIENS MORTS ("Stream Destroyer" sur tous les liens) ---
         if (limitedStreams.length > 0) {
             await Promise.all(limitedStreams.map(async (s) => {
                 if (!s.url) return;
-                
-                if (s.title.includes('Proxy Relais')) return;
 
                 try {
                     const r = await axios.get(s.url, {
                         responseType: 'stream',
-                        timeout: 3500,
+                        timeout: 3500, // Timeout court de 3.5s
                         headers: {
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                             ...(s.behaviorHints && s.behaviorHints.proxyHeaders && s.behaviorHints.proxyHeaders.request ? s.behaviorHints.proxyHeaders.request : {})
                         }
                     });
                     
+                    // On ferme immédiatement la connexion une fois le code HTTP 200 reçu
                     if(r.data && typeof r.data.destroy === 'function') {
                         r.data.destroy();
                     }
@@ -1464,7 +1403,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                     if (err.response) {
                         let status = err.response.status;
                         let msg = "Erreur";
-                        if (status === 403 || status === 401) msg = "Accès Refusé";
+                        if (status === 403 || status === 401) msg = "Accès Refusé (Token expiré / IP bloquée)";
                         else if (status === 404) msg = "Flux Introuvable";
                         else if (status === 512 || status === 502) msg = "Serveur Injoignable";
                         else if (status >= 500) msg = "Serveur Planté";
@@ -1480,6 +1419,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                 }
             }));
             
+            // Re-tri pour appliquer la pénalité des liens HS
             limitedStreams.sort((a, b) => b._score - a._score);
         }
 
