@@ -166,6 +166,7 @@ function getChannelData(rawName) {
         return { id: 'hyb_aut_' + c.substring(0, 15), name: pretty, categories: ['autres'], index: 200 };
     }
 
+    // Routage TNT, News, Canal+, etc...
     if (c.startsWith('FRANCE24')) return { id: 'hyb_info_06', name: 'France 24', categories: ['info'], index: 6 };
     if (c.startsWith('FRANCEINFO')) return { id: 'hyb_info_07', name: 'France Info', categories: ['info'], index: 7 };
     if (c.includes('METEO')) return { id: 'hyb_info_08', name: 'La Chaîne Météo', categories: ['info'], index: 8 };
@@ -485,7 +486,6 @@ async function fetchCatalogFromSource(sourceInput) {
                 let requests = [];
                 for (let i = 0; i < batchSize; i++) {
                     let currentSkip = skip + (i * 100);
-                    // Préservation du format des add-ons spéciaux sans %3A
                     let encodedCatId = encodeURIComponent(catalog.id).replace(/%3A/g, ':');
                     let url = currentSkip > 0 ? `${base}/catalog/${catalog.type}/${encodedCatId}/skip=${currentSkip}.json` : `${base}/catalog/${catalog.type}/${encodedCatId}.json`;
                     requests.push(axios.get(url, { timeout: 6000 }).catch(e => null));
@@ -609,7 +609,7 @@ async function getChannelsForSources(sourcesList) {
 }
 
 // ============================================================================
-// APP ROUTES & DASHBOARD
+// APP ROUTES
 // ============================================================================
 
 app.get('/api/metrics', (req, res) => {
@@ -965,9 +965,9 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '6.0.0',
+        version: '6.1.0',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV. Universal Adaptative Core & Custom Quality.',
+        description: 'Meta-Addon IPTV. Dynamic Qualities & IP Masquerading.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -1086,6 +1086,9 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     let channelsData = await getChannelsForSources(config.sources);
     res.setHeader('Cache-Control', 'max-age=60, public'); 
     
+    const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const clientIp = rawIp ? rawIp.split(',')[0].trim() : '';
+
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ streams: [] });
     
@@ -1104,13 +1107,23 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             }
 
             try {
-                // UNIVERSAL FIX 1: Encodage propre qui remet les ":" essentiels à TV Mio
                 let safeId = encodeURIComponent(source.metaId).replace(/%3A/g, ':');
                 let targetUrl = `${source.providerBase}/stream/tv/${safeId}.json`;
 
+                // MASQUAGE IP DYNAMIQUE (Pour forcer TV Mio et autres serveurs Premium à valider l'IP de l'utilisateur)
+                let reqHeaders = { 
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                    'Accept': 'application/json'
+                };
+                if (clientIp) {
+                    reqHeaders['X-Forwarded-For'] = clientIp;
+                    reqHeaders['CF-Connecting-IP'] = clientIp;
+                    reqHeaders['True-Client-IP'] = clientIp;
+                }
+
                 const streamRes = await axios.get(targetUrl, {
-                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' }, 
-                    timeout: 5000 
+                    headers: reqHeaders, 
+                    timeout: 4000 // Réduit pour accélérer l'affichage
                 });
                 
                 if (streamRes.data && streamRes.data.streams) {
@@ -1171,7 +1184,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             if (streamNumMatch) { if (streamNumMatch[1] !== targetNum) penalty += 5000; } else { penalty += 5000; }
                         }
 
-                        // NEW QUALITY SCORING (Basé sur la configuration Utilisateur)
+                        // QUALITY SCORING
                         let detectedQual = 'SD';
                         if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) detectedQual = '4K';
                         else if (up.includes('FHD') || up.includes('1080')) detectedQual = '1080p';
@@ -1180,7 +1193,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         let priorityIndex = config.qualities.indexOf(detectedQual);
                         if (priorityIndex === -1) priorityIndex = 3; 
                         
-                        // Le 1er choix donne +4000pts, le 2eme +3000pts, etc.
                         let qScore = (4 - priorityIndex) * 1000; 
 
                         let qualStr = "SD";
@@ -1201,10 +1213,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         score -= idx; 
                         score += (10 - source.sourceIndex) * 50;
 
-                        // UNIVERSAL FIX 2: Clonage Adaptatif Complet (Préserve ytId, externalUrl, behaviorHints)
                         let outStream = { ...s };
 
-                        // UNIVERSAL FIX 3: Réparation des URLs relatives (ex: /play/stream.m3u8)
                         if (outStream.url) {
                             let rawUrl = outStream.url.trim();
                             if (rawUrl.startsWith('//')) {
