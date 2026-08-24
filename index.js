@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.1 (Absolute Stability & Working Streams Restored)
- * Core Engine: Original v1.1.2 Stream Resolver, 45s Cache, Safe Configure Route.
+ * Version: 1.2.2 (Bugfix: TV Mio & Stream Truncation Fixed)
+ * Core Engine: Safe Non-Destructive Stream Resolver, 45s Cache, Original Routing.
  */
 
 const express = require('express');
@@ -739,9 +739,8 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
     res.json({ channelName: channel.displayName, channelId: channel.id, inspectionResults });
 });
 
-// Dashboard Renderer d'origine (v1.1.2) supportant le mode Configurable
+// Dashboard Renderer d'origine (v1.1.2) parfaitement fonctionnel
 const renderDashboard = (req, res) => {
-    let sourcesParam = req.query.sources;
     let configData = parseConfig(req.params.config);
     let sourcesList = configData.sources && configData.sources.length > 0 ? configData.sources : ['', ''];
     let defaultQualities = configData.qualities || ['1080p', '720p', '4K', 'SD'];
@@ -807,7 +806,7 @@ const renderDashboard = (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, stable et fonctionnelle (v1.2.1).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, stable et fonctionnelle (v1.2.2).</p>
             </div>
 
             <div class="tabs">
@@ -894,7 +893,7 @@ const renderDashboard = (req, res) => {
         </div>
 
         <script>
-            let sources = ${JSON.stringify(sourcesList.length > 0 ? sourcesList : ['', ''])};
+            let sources = ${JSON.stringify(sourcesList)};
             let qualities = ${JSON.stringify(defaultQualities)};
 
             function switchTab(tabId, btn) {
@@ -1067,8 +1066,7 @@ const renderDashboard = (req, res) => {
     res.send(html);
 };
 
-// Routes de configuration stables
-app.get('/', (req, res) => renderDashboard({ params: { config: '' }, query: req.query }, res));
+app.get('/', (req, res) => renderDashboard({ params: { config: '' } }, res));
 app.get('/:config/configure', (req, res) => renderDashboard(req, res));
 
 // --- MANIFEST BUILDER ---
@@ -1091,9 +1089,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.2.1',
+        version: '1.2.2',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.1). Stable & Fast Resolver.',
+        description: 'Meta-Addon IPTV (v1.2.2). Safe Stream Resolver & Stable Routing.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1355,51 +1353,10 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
 
-        // --- TRI INITIAL PAR SCORE ---
+        // --- TRI PAR SCORE (Sans test destructeur en amont pour TV Mio) ---
         allStreams.sort((a, b) => b._score - a._score);
-        let limitedStreams = allStreams.slice(0, 15);
-
-        // --- SCANNER SYNCHRONE DE LIENS MORTS ---
-        if (limitedStreams.length > 0) {
-            await Promise.all(limitedStreams.map(async (s) => {
-                if (!s.url) return;
-                try {
-                    const r = await axios.get(s.url, {
-                        responseType: 'stream',
-                        timeout: 3500,
-                        headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                            ...(s.behaviorHints && s.behaviorHints.proxyHeaders && s.behaviorHints.proxyHeaders.request ? s.behaviorHints.proxyHeaders.request : {})
-                        }
-                    });
-                    if(r.data && typeof r.data.destroy === 'function') {
-                        r.data.destroy();
-                    }
-                } catch (err) {
-                    s._score -= 100000; 
-                    
-                    if (err.response) {
-                        let status = err.response.status;
-                        let msg = "Erreur";
-                        if (status === 403 || status === 401) msg = "Accès Refusé / Token Expiré";
-                        else if (status === 404) msg = "Flux Introuvable";
-                        else if (status === 512 || status === 502) msg = "Serveur Injoignable";
-                        else if (status >= 500) msg = "Serveur Planté";
-                        
-                        s.title = `❌ HS (${status} - ${msg})\n` + s.title;
-                    } else if (err.code === 'ENOTFOUND') {
-                        s.title = `❌ HS (Domaine Mort)\n` + s.title;
-                    } else {
-                        s.title = `❌ HS (${err.message})\n` + s.title;
-                    }
-                }
-            }));
-            
-            // Re-tri synchrone final post-scan
-            limitedStreams.sort((a, b) => b._score - a._score);
-        }
-
-        const finalStreams = limitedStreams.map((s) => {
+        
+        const finalStreams = allStreams.map((s) => {
             let streamObj = { ...s };
             delete streamObj._score; 
             return streamObj;
