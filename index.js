@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Core Engine: Universal Stream Parser, Semantic Routing, Dashboard Telemetry.
+ * Core Engine: Universal Stream Parser, Semantic Routing, Quality Profiling.
  */
 
 const express = require('express');
@@ -58,14 +58,17 @@ const BLACKLIST = [
 
 function parseConfig(encodedConfig) {
     try {
-        if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], epg: true, logos: false };
+        if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], epg: true, logos: false, qualities: ['1080p', '720p', '4K', 'SD'] };
         const jsonStr = Buffer.from(encodedConfig, 'base64').toString('utf8');
         let parsed = JSON.parse(jsonStr);
         parsed.logos = false; 
         parsed.epg = true; // Guide TV activé par défaut
+        if (!parsed.qualities || !Array.isArray(parsed.qualities)) {
+            parsed.qualities = ['1080p', '720p', '4K', 'SD'];
+        }
         return parsed;
     } catch (e) {
-        return { sources: [], epg: true, logos: false };
+        return { sources: [], epg: true, logos: false, qualities: ['1080p', '720p', '4K', 'SD'] };
     }
 }
 
@@ -163,7 +166,6 @@ function getChannelData(rawName) {
         return { id: 'hyb_aut_' + c.substring(0, 15), name: pretty, categories: ['autres'], index: 200 };
     }
 
-    // Routage TNT, News, Canal+, etc...
     if (c.startsWith('FRANCE24')) return { id: 'hyb_info_06', name: 'France 24', categories: ['info'], index: 6 };
     if (c.startsWith('FRANCEINFO')) return { id: 'hyb_info_07', name: 'France Info', categories: ['info'], index: 7 };
     if (c.includes('METEO')) return { id: 'hyb_info_08', name: 'La Chaîne Météo', categories: ['info'], index: 8 };
@@ -234,7 +236,6 @@ function getChannelData(rawName) {
         if (c.includes('ACTION')) return { id: 'hyb_cine_action', name: 'Action', categories: ['cinema'], index: 30 };
         return { id: 'hyb_cine_plus', name: 'Ciné+', categories: ['cinema', 'canal'], index: 19 };
     }
-    
     if (c.includes('OCS')) {
         let m = n.match(/OCS\s*([A-Z]*)/i); let suffix = (m && m[1]) ? ' ' + m[1] : '';
         return { id: 'hyb_cine_ocs_' + suffix.trim().toLowerCase(), name: 'OCS' + suffix, categories: ['cinema'], index: 20 };
@@ -484,8 +485,8 @@ async function fetchCatalogFromSource(sourceInput) {
                 let requests = [];
                 for (let i = 0; i < batchSize; i++) {
                     let currentSkip = skip + (i * 100);
-                    // Répare les identifiants d'addon complexes contenant des ":"
-                    let encodedCatId = encodeURIComponent(catalog.id);
+                    // Préservation du format des add-ons spéciaux sans %3A
+                    let encodedCatId = encodeURIComponent(catalog.id).replace(/%3A/g, ':');
                     let url = currentSkip > 0 ? `${base}/catalog/${catalog.type}/${encodedCatId}/skip=${currentSkip}.json` : `${base}/catalog/${catalog.type}/${encodedCatId}.json`;
                     requests.push(axios.get(url, { timeout: 6000 }).catch(e => null));
                 }
@@ -608,7 +609,7 @@ async function getChannelsForSources(sourcesList) {
 }
 
 // ============================================================================
-// APP ROUTES
+// APP ROUTES & DASHBOARD
 // ============================================================================
 
 app.get('/api/metrics', (req, res) => {
@@ -657,6 +658,7 @@ app.get('/api/metrics', (req, res) => {
 app.get('/', async (req, res) => {
     let sourcesParam = req.query.sources;
     let sourcesList = sourcesParam ? sourcesParam.split(',') : ['', ''];
+    let defaultQualities = "['1080p', '720p', '4K', 'SD']";
 
     const html = `
     <!DOCTYPE html>
@@ -735,6 +737,13 @@ app.get('/', async (req, res) => {
                 </div>
 
                 <div class="section">
+                    <h3 class="section-title">Priorité de Qualité</h3>
+                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Ajustez l'ordre. Le format placé en haut sera lancé en priorité.</p>
+                    <div id="qualityList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                    <p style="font-size: 11px; color: #ff9800; margin-top: 10px;">⚠️ Note : Les flux 4K exigent une connexion robuste et sont parfois instables ou longs à charger.</p>
+                </div>
+
+                <div class="section">
                     <h3 class="section-title">Code de Sauvegarde</h3>
                     <input type="text" id="exportTokenBox" class="export-box" placeholder="Code de configuration..." readonly>
                     <button type="button" onclick="importToken()" class="btn btn-small" style="margin-top: 8px;">📥 Importer</button>
@@ -788,6 +797,7 @@ app.get('/', async (req, res) => {
 
         <script>
             let sources = ${JSON.stringify(sourcesList)};
+            let qualities = ${defaultQualities};
 
             function switchTab(tabId, btn) {
                 document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -807,11 +817,28 @@ app.get('/', async (req, res) => {
                     div.innerHTML = \`
                         <span class="source-num">#\${index + 1}</span>
                         <input type="text" id="src_\${index}" value="\${src}" placeholder="URL manifest.json ou .m3u">
-                        \${index > 0 ? '<button type="button" onclick="moveSource(' + index + ', -1)" class="btn-small">▲</button>' : ''}
-                        \${index < sources.length - 1 ? '<button type="button" onclick="moveSource(' + index + ', 1)" class="btn-small">▼</button>' : ''}
+                        \${index > 0 ? '<button type="button" onclick="moveSource(' + index + ', -1)" class="btn-small">▲</button>' : '<div style="width: 28px;"></div>'}
+                        \${index < sources.length - 1 ? '<button type="button" onclick="moveSource(' + index + ', 1)" class="btn-small">▼</button>' : '<div style="width: 28px;"></div>'}
                         \${sources.length > 1 ? '<button type="button" onclick="removeSource(' + index + ')" class="btn-danger">✕</button>' : ''}
                     \`;
                     container.appendChild(div);
+                });
+                updateExportToken();
+            }
+
+            function renderQualities() {
+                const container = document.getElementById('qualityList');
+                container.innerHTML = '';
+                qualities.forEach((q, index) => {
+                    let badge = q === '4K' ? ' <span style="font-size:10px;color:#ff9800;">(Long à charger)</span>' : '';
+                    container.innerHTML += \`
+                        <div style="display: flex; align-items: center; background: #222; border: 1px solid #444; border-radius: 6px; padding: 8px 12px;">
+                            <span style="font-size: 14px; font-weight: bold; color: #e50914; min-width: 25px;">\${index + 1}.</span>
+                            <span style="flex: 1; font-size: 13px;">\${q}\${badge}</span>
+                            \${index > 0 ? '<button type="button" onclick="moveQuality(' + index + ', -1)" class="btn-small" style="padding: 4px 8px; margin-right: 5px;">▲</button>' : '<div style="width: 28px; margin-right: 5px;"></div>'}
+                            \${index < qualities.length - 1 ? '<button type="button" onclick="moveQuality(' + index + ', 1)" class="btn-small" style="padding: 4px 8px;">▼</button>' : '<div style="width: 28px;"></div>'}
+                        </div>
+                    \`;
                 });
                 updateExportToken();
             }
@@ -825,18 +852,32 @@ app.get('/', async (req, res) => {
                 sources[newIndex] = temp;
                 renderSources();
             }
+
+            function moveQuality(index, direction) {
+                const newIndex = index + direction;
+                if (newIndex < 0 || newIndex >= qualities.length) return;
+                const temp = qualities[index];
+                qualities[index] = qualities[newIndex];
+                qualities[newIndex] = temp;
+                localStorage.setItem('hybrid_qualities', JSON.stringify(qualities));
+                renderQualities();
+            }
+
             function addSourceField() { if (sources.length < 5) { saveInputs(); sources.push(''); renderSources(); } }
             function removeSource(index) { saveInputs(); sources.splice(index, 1); renderSources(); }
+            
             function saveInputs() {
                 sources.forEach((_, index) => { const el = document.getElementById('src_' + index); if (el) sources[index] = el.value.trim(); });
                 localStorage.setItem('hybrid_sources', JSON.stringify(sources));
                 updateExportToken();
             }
+
             function updateExportToken() {
                 const validSources = sources.filter(s => s.length > 0);
-                const configObj = { sources: validSources, epg: true }; 
+                const configObj = { sources: validSources, epg: true, qualities: qualities }; 
                 document.getElementById('exportTokenBox').value = btoa(JSON.stringify(configObj));
             }
+
             function importToken() {
                 let inputCode = prompt("Collez le code de sauvegarde ici :");
                 if (!inputCode) return;
@@ -845,10 +886,12 @@ app.get('/', async (req, res) => {
                     const config = JSON.parse(jsonStr);
                     if (config.sources && Array.isArray(config.sources)) {
                         sources = config.sources; if (sources.length === 0) sources = ['', ''];
-                        renderSources(); alert("Configuration importée avec succès !");
+                        if (config.qualities) { qualities = config.qualities; localStorage.setItem('hybrid_qualities', JSON.stringify(qualities)); }
+                        renderSources(); renderQualities(); alert("Configuration importée avec succès !");
                     } else alert("Code invalide.");
                 } catch(e) { alert("Erreur : Ce code est corrompu."); }
             }
+
             function generateLink() {
                 saveInputs();
                 const validSources = sources.filter(s => s.length > 0);
@@ -857,6 +900,7 @@ app.get('/', async (req, res) => {
                 document.getElementById("manifestLink").value = window.location.protocol + "//" + window.location.host + "/" + token + "/manifest.json";
                 alert("Lien généré. Veuillez désinstaller l'ancienne version dans Stremio avant d'ajouter celle-ci !");
             }
+
             function copyLink() {
                 var copyText = document.getElementById("manifestLink");
                 if (!copyText.value) return alert("Générez le lien d'abord !");
@@ -900,7 +944,14 @@ app.get('/', async (req, res) => {
 
             let savedSources = localStorage.getItem('hybrid_sources');
             if (savedSources && !${sourcesParam ? 'true' : 'false'}) sources = JSON.parse(savedSources);
+            
+            let savedQualities = localStorage.getItem('hybrid_qualities');
+            if (savedQualities) {
+                try { qualities = JSON.parse(savedQualities); } catch(e){}
+            }
+
             renderSources();
+            renderQualities();
             setInterval(() => { if(document.getElementById('metrics').classList.contains('active')) fetchMetrics(); }, 5000);
         </script>
     </body>
@@ -914,9 +965,9 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '5.6.0',
+        version: '6.0.0',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV. Universal Core & Telemetry.',
+        description: 'Meta-Addon IPTV. Universal Adaptative Core & Custom Quality.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -1034,7 +1085,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
     let channelsData = await getChannelsForSources(config.sources);
     res.setHeader('Cache-Control', 'max-age=60, public'); 
-
+    
     const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ streams: [] });
     
@@ -1047,26 +1098,23 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                     url: source.directUrl,
                     name: isBeluchon ? `▶ Source Officielle (HD)` : `▶ Full HD (1080p)`,
                     title: source.originalName || "Source M3U",
-                    _score: isBeluchon ? 4500 : 1500,
+                    _score: isBeluchon ? 5000 : 3000,
                     _originalTitle: source.originalName || "Source M3U"
                 }];
             }
 
             try {
-                // UNIVERSAL FIX 1: Encodage Strict du MetaID (Répare TV Mio)
-                let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
+                // UNIVERSAL FIX 1: Encodage propre qui remet les ":" essentiels à TV Mio
+                let safeId = encodeURIComponent(source.metaId).replace(/%3A/g, ':');
+                let targetUrl = `${source.providerBase}/stream/tv/${safeId}.json`;
 
                 const streamRes = await axios.get(targetUrl, {
-                    headers: { 
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                        'Accept': 'application/json'
-                    }, 
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' }, 
                     timeout: 5000 
                 });
                 
                 if (streamRes.data && streamRes.data.streams) {
                     return streamRes.data.streams.map((s, idx) => {
-                        let qual = "SD";
                         let score = 0;
                         
                         let rawName = s.name || '';
@@ -1123,16 +1171,29 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             if (streamNumMatch) { if (streamNumMatch[1] !== targetNum) penalty += 5000; } else { penalty += 5000; }
                         }
 
+                        // NEW QUALITY SCORING (Basé sur la configuration Utilisateur)
+                        let detectedQual = 'SD';
+                        if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) detectedQual = '4K';
+                        else if (up.includes('FHD') || up.includes('1080')) detectedQual = '1080p';
+                        else if (up.includes('HD') || up.includes('720')) detectedQual = '720p';
+
+                        let priorityIndex = config.qualities.indexOf(detectedQual);
+                        if (priorityIndex === -1) priorityIndex = 3; 
+                        
+                        // Le 1er choix donne +4000pts, le 2eme +3000pts, etc.
+                        let qScore = (4 - priorityIndex) * 1000; 
+
+                        let qualStr = "SD";
+                        if (detectedQual === '4K') qualStr = "4K (UHD)";
+                        else if (detectedQual === '1080p') qualStr = "Full HD (1080p)";
+                        else if (detectedQual === '720p') qualStr = "HD (720p)";
+
                         if (isBeluchon) {
-                            qual = "Source Officielle Légale (HD)";
-                            score += 3000; 
-                        } else {
-                            if (up.includes('FHD') || up.includes('1080')) { qual = "Full HD (1080p)"; score += 1500; } 
-                            else if (up.includes('HD') || up.includes('720')) { qual = "HD (720p)"; score += 1000; } 
-                            else if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) { qual = "4K (UHD)"; score += 500; } 
-                            else { score += 0; } 
+                            qualStr = "Source Officielle Légale (HD)";
+                            qScore = 5000; 
                         }
 
+                        score += qScore;
                         if (up.match(/\bFR\b/) || up.match(/\bVF\b/) || up.includes('FRENCH') || up.includes('TRUEFRENCH')) score += 300; 
                         if (up.includes('BACKUP') || up.includes('SECOURS') || up.includes('ALT') || up.includes('TEST')) score -= 1000;
                         
@@ -1143,7 +1204,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         // UNIVERSAL FIX 2: Clonage Adaptatif Complet (Préserve ytId, externalUrl, behaviorHints)
                         let outStream = { ...s };
 
-                        // UNIVERSAL FIX 3: Répare les URLs relatives ou les chaînes brutales
+                        // UNIVERSAL FIX 3: Réparation des URLs relatives (ex: /play/stream.m3u8)
                         if (outStream.url) {
                             let rawUrl = outStream.url.trim();
                             if (rawUrl.startsWith('//')) {
@@ -1154,14 +1215,15 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                                     outStream.url = baseObj.origin + rawUrl;
                                 } catch(e){}
                             } else if (!rawUrl.startsWith('http') && !rawUrl.includes('://')) {
-                                // Forçage du format HTTP si c'est une chaîne non standard
                                 outStream.url = 'http://' + rawUrl;
                             }
                         }
 
                         let fallbackName = source.originalName || "Source Add-on";
                         outStream.name = s.name ? s.name : fallbackName;
-                        outStream.title = s.title ? `${s.title}\n▶ ${qual}` : `▶ ${qual}`;
+                        
+                        let combinedTitle = s.title || s.description || "";
+                        outStream.title = combinedTitle ? `${combinedTitle}\n▶ ${qualStr}` : `▶ ${qualStr}`;
                         outStream._score = score;
                         return outStream;
                     });
