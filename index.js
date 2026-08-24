@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Core Engine: Strict Semantic Routing, Custom Quality Profiling, Global Search & Config.
+ * Core Engine: Raw Stream Passthrough, Strict Semantic Routing, Quality Profiling & Live Stream Debugger.
  */
 
 const express = require('express');
@@ -187,7 +187,6 @@ function getChannelData(rawName) {
     if (c.includes('COMEDIE') || c.includes('COMEDY')) return { id: 'hyb_canal_comedie', name: 'Comédie+', categories: ['canal', 'autres'], index: 10 };
 
     if (c.includes('CANAL') || c.includes('CPLUS')) {
-        // ROUTAGE PRÉCIS DE CANAL+ ELLES (Évite les confusions)
         if (c.includes('ELLES')) {
             return { id: 'hyb_canal_elles', name: 'Canal+ Elles', categories: ['canal', 'cinema'], index: 6 };
         }
