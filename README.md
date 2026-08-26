@@ -19,7 +19,7 @@ Dashboard d'Administration : Interface web intégrée pour configurer ses liens,
 
 La méthode recommandée pour déployer HybridTV est d'utiliser Docker.
 
-### 1. Déploiement initial
+###1. Déploiement initial
 Clonez le dépôt et lancez le conteneur :
 ```bash
 git clone [https://github.com/foyan0/Hybrid-TV-FR.git](https://github.com/foyan0/Hybrid-TV-FR.git)
@@ -27,6 +27,16 @@ cd Hybrid-TV-FR
 docker build -t hybridtv .
 docker run -d -p 7000:7000 --name hybridtv-container hybridtv
 ```
+###2. Mise à jour automatisée
+Vous pouvez créer un script update.sh pour automatiser les mises à jour en cas de modification du code :
+
+Bash
+#!/bin/bash
+git pull origin main
+docker build -t hybridtv .
+docker stop hybridtv-container || true
+docker rm hybridtv-container || true
+docker run -d -p 7000:7000 --name hybridtv-container hybridtv
 ---
 
 ##⚠️ Avertissement Légal (Disclaimer)
