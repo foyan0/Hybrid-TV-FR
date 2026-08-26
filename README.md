@@ -1,4 +1,4 @@
-### 📺 HybridTV - Meta-Addon (Self-Hosted)
+# 📺 HybridTV - Meta-Addon (Self-Hosted)
 
 HybridTV est un pont technique (parser et proxy de métadonnées) léger et ultra-rapide permettant d'agréger, de trier et d'optimiser vos propres sources (M3U ou Add-ons) pour des lecteurs compatibles. 
 
