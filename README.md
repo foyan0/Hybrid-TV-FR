@@ -13,6 +13,8 @@ Health Check Synchrone : Vérifie l'état des flux vidéo en temps réel. Les li
 Isolation Multi-Utilisateurs : Aucun identifiant ou token n'est codé en dur. Chaque utilisateur configure ses propres sources via le Dashboard et génère un lien d'installation unique (Hash Base64).
 Dashboard d'Administration : Interface web intégrée pour configurer ses liens, surveiller les métriques du serveur (Uptime, Cache Hits, Requêtes) et inspecter les flux en direct.
 
+---
+
 Installation & Déploiement (Docker)
 
 La méthode recommandée pour déployer HybridTV est d'utiliser Docker.
