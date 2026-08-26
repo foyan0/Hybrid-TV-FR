@@ -1,4 +1,4 @@
-📺 HybridTV - Meta-Addon (Self-Hosted)
+### 📺 HybridTV - Meta-Addon (Self-Hosted)
 
 HybridTV est un pont technique (parser et proxy de métadonnées) léger et ultra-rapide permettant d'agréger, de trier et d'optimiser vos propres sources (M3U ou Add-ons) pour des lecteurs compatibles. 
 
@@ -6,7 +6,7 @@ Conçu pour être auto-hébergé via Docker, il agit comme un intermédiaire int
 
 ---
 
-Fonctionnalités Principales
+## Fonctionnalités Principales
 
 Smart Cache (45s) : Réduit drastiquement les requêtes vers vos sources d'origine. Si plusieurs requêtes ciblent la même chaîne dans un court laps de temps, le serveur sert la réponse en mémoire instantanément.
 Health Check Synchrone : Vérifie l'état des flux vidéo en temps réel. Les liens morts ou inaccessibles (Erreur 403, 404, Serveur Injoignable) sont identifiés et rétrogradés.
@@ -15,7 +15,7 @@ Dashboard d'Administration : Interface web intégrée pour configurer ses liens,
 
 ---
 
-Installation & Déploiement (Docker)
+## Installation & Déploiement (Docker)
 
 La méthode recommandée pour déployer HybridTV est d'utiliser Docker.
 
