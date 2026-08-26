@@ -30,6 +30,7 @@ docker run -d -p 7000:7000 --name hybridtv-container hybridtv
 ---
 
 ##⚠️ Avertissement Légal (Disclaimer)
+
 Ce projet (HybridTV) est fourni à des fins purement techniques et éducatives. Il s'agit d'un outil d'agrégation et de tri de flux conçu pour être auto-hébergé (self-hosted) par l'utilisateur final.
 
 Aucun contenu fourni : Le code source de ce projet ne contient, ne fournit, n'héberge et ne distribue aucun flux vidéo, playlist M3U, abonnement IPTV ou contenu multimédia.
