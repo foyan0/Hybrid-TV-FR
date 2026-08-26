@@ -26,7 +26,7 @@ git clone [https://github.com/foyan0/Hybrid-TV-FR.git](https://github.com/foyan0
 cd Hybrid-TV-FR
 docker build -t hybridtv .
 docker run -d -p 7000:7000 --name hybridtv-container hybridtv
-
+```
 ---
 
 ##⚠️ Avertissement Légal (Disclaimer)
