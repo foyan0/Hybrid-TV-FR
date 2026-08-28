@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.1 (Integrated CORS Proxy, Multi-Language & Dashboard UI Fix)
+ * Version: 1.2.2 (Original Catalog Order Restored, Sports Fixed, CORS Proxy, Multi-Lang)
  * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing, HLS Proxy Relay.
  */
 
@@ -150,30 +150,46 @@ function getChannelData(rawName) {
 
     n = n.replace(/\+/g, 'PLUS');
 
-    let isLigue1 = n.includes('LIGUE 1') || n.includes('LIGUE1') || n.match(/\bL1\b/) || n.includes('LEAGUE 1') || n.includes('LEAGUE1');
-    if (isLigue1) {
-        let isDazn = n.includes('DAZN') || n.includes('DAZONE');
-        if (isDazn && n.includes('LIVE')) {
-            let m = n.match(/LIVE[^\d]*([1-9]|1[0-8])/i);
-            let num = m ? m[1] : '1';
-            return { id: 'hyb_sport_ligue1plus_' + num, name: num === '1' ? 'Ligue 1+' : 'Ligue 1+ ' + num, categories: ['sports'], index: 1 + parseInt(num, 10) };
-        }
-        if (!isDazn && !n.includes('BEIN') && !n.includes('RMC')) {
-            let m = n.match(/(?:LIGUE\s*1|LEAGUE\s*1|L1|LIGUE1|LEAGUE1)(?:.*?PLUS)?[^\d]*([1-9]|1[0-8])/i);
-            let num = m ? m[1] : '1';
-            return { id: 'hyb_sport_ligue1plus_' + num, name: num === '1' ? 'Ligue 1+' : 'Ligue 1+ ' + num, categories: ['sports'], index: 1 + parseInt(num, 10) };
-        }
-    }
-    
+    // === SECTION SPORTS (Ligue 1, DAZN, BeIN, etc.) ===
     if (n.includes('DAZN') || n.includes('DAZONE')) {
-        if (n.includes('RISE')) return { id: 'hyb_sport_dazn_rise', name: 'DAZN Rise', categories: ['sports'], index: 150 };
+        if (n.includes('RISE')) return { id: 'hyb_sport_dazn_rise', name: 'DAZN Rise', categories: ['sports'], index: 19 };
         let m = n.match(/(?:DAZN|DAZONE)[^\d]*([1-9]|1[0-8])/i); let num = m ? m[1] : '1';
         return { id: 'hyb_sport_dazn_'+num, name: 'DAZN '+num, categories: ['sports'], index: 10 + parseInt(num, 10) };
+    }
+
+    let isLigue1 = n.includes('LIGUE 1') || n.includes('LIGUE1') || n.match(/\bL1\b/) || n.includes('LEAGUE 1') || n.includes('LEAGUE1');
+    if (isLigue1) {
+        let m = n.match(/(?:LIGUE\s*1|LEAGUE\s*1|L1|LIGUE1|LEAGUE1)(?:.*?PLUS|.*?LIVE)?[^\d]*([1-9]|1[0-8])/i);
+        let num = m ? m[1] : '1';
+        return { id: 'hyb_sport_ligue1plus_' + num, name: num === '1' ? 'Ligue 1+' : 'Ligue 1+ ' + num, categories: ['sports'], index: 20 + parseInt(num, 10) };
     }
 
     let c = n.replace(/[^A-Z0-9]/g, '');
     if (!c || c.length < 2) return null;
     if (BLACKLIST.some(b => c.includes(b))) return null;
+
+    if (c.includes('BEINSPORT') || c.includes('BEIN')) {
+        let isMax = c.includes('MAX'); let m = c.match(/BEIN(?:SPORT|MAX)?S?(\d+)/); let num = (m && m[1]) ? m[1] : '1';
+        return { id: 'hyb_sport_bein_' + (isMax?'max':'') + num, name: isMax ? 'beIN SPORTS MAX '+num : 'beIN SPORTS '+num, categories: ['sports'], index: isMax ? 40 + parseInt(num, 10) : 30 + parseInt(num, 10) };
+    }
+    if (c.includes('EUROSPORT')) {
+        let is360 = c.includes('360'); let m = c.match(/EUROSPORT(?:360)?(\d+)/); let num = (m && m[1]) ? m[1] : '1';
+        if (is360) return { id: 'hyb_sport_euro360_'+num, name: 'Eurosport 360 - '+num, categories: ['sports'], index: 60 + parseInt(num, 10) };
+        return { id: 'hyb_sport_euro_'+num, name: 'Eurosport '+num, categories: ['sports'], index: 50 + parseInt(num, 10) };
+    }
+    if (c.includes('RMCSPORT') || (c.includes('RMC') && c.includes('LIVE'))) {
+        let isLive = c.includes('LIVE'); let m = c.match(/RMCSPORT(?:LIVE)?(\d+)/); let num = (m && m[1]) ? m[1] : '1';
+        if (isLive) return { id: 'hyb_sport_rmclive_'+num, name: 'RMC Sport Live '+num, categories: ['sports'], index: 80 + parseInt(num, 10) };
+        return { id: 'hyb_sport_rmc_'+num, name: 'RMC Sport '+num, categories: ['sports'], index: 70 + parseInt(num, 10) };
+    }
+    if (c.includes('SPORTTV')) {
+        let m = c.match(/SPORTTV(\d+)/); let num = m ? m[1] : '1';
+        return { id: 'hyb_sport_sporttv_' + num, name: 'SPORT TV ' + num, categories: ['sports'], index: 110 + parseInt(num, 10) };
+    }
+    if (c.includes('EQUIDIA')) return { id: 'hyb_sport_equidia', name: 'Equidia', categories: ['sports'], index: 120 };
+    if (c.includes('OLTV') || c.includes('OLYMPIQUELYONNAIS')) return { id: 'hyb_sport_oltv', name: 'OL TV', categories: ['sports'], index: 121 };
+    if (c.includes('LEQUIPE')) return { id: 'hyb_sport_lequipe', name: "L'Équipe", categories: ['sports', 'tnt'], index: 122 };
+    // === FIN SECTION SPORTS ===
 
     if (c.includes('JURAS') || c.includes('TOP14') || c.includes('LCENTRE') || c.includes('LIGA') || c === 'CANALPLUSL' || c === 'CPLUSL' || c === 'CPLUSSPORT') {
         let pretty = rawName.replace(/\[.*?\]|\(.*?\)/g, '').replace(/\b(?:FHD|HD|SD|4K|1080P|720P)\b/gi, '').trim();
@@ -200,20 +216,16 @@ function getChannelData(rawName) {
         if (c.includes('ELLES') || c.includes('LCENTRE') || c.includes('CENTRE') || c === 'CANALL' || c.includes('REGIONAL') || c.includes('LOCAL') || c.includes('OUTREMER')) {
             return { id: 'hyb_aut_canal_elles', name: 'Canal+ Elles', categories: ['autres'], index: 1000 };
         }
-
         if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 100 };
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
-        
         if (c.includes('LIVE')) {
             let m = c.match(/LIVE(\d+)/); let num = m ? m[1] : '1';
-            return { id: 'hyb_canal_live_' + num, name: 'Canal+ Live ' + num, categories: ['canal'], index: 200 + parseInt(num, 10) };
+            return { id: 'hyb_canal_live_' + num, name: 'Canal+ Live ' + num, categories: ['canal', 'sports'], index: 200 + parseInt(num, 10) };
         }
-
         if (c.includes('SPORT360') || c.includes('360')) return { id: 'hyb_canal_sport360', name: 'Canal+ Sport 360', categories: ['canal', 'sports'], index: 90 };
         if (c.includes('FOOT')) return { id: 'hyb_canal_foot', name: 'Canal+ Foot', categories: ['canal', 'sports'], index: 91 };
         if (c.includes('FORMULA1') || c.includes('F1')) return { id: 'hyb_canal_f1', name: 'Canal+ Formula 1', categories: ['canal', 'sports'], index: 93 };
         if (c.includes('SPORT')) return { id: 'hyb_canal_sport', name: 'Canal+ Sport', categories: ['canal', 'sports'], index: 94 };
-        
         if (c.includes('CINEMA') || c.includes('CNEMA')) return { id: 'hyb_canal_cinema', name: 'Canal+ Cinéma', categories: ['canal', 'cinema'], index: 2 };
         if (c.includes('GRANDECRAN') || c.includes('ECRAN')) return { id: 'hyb_canal_grandecran', name: 'Canal+ Grand Écran', categories: ['canal', 'cinema'], index: 3 };
         if (c.includes('SERIES') || c.includes('SERIE')) return { id: 'hyb_canal_series', name: 'Canal+ Séries', categories: ['canal', 'cinema'], index: 4 };
@@ -221,27 +233,8 @@ function getChannelData(rawName) {
         if (c.includes('DOC')) return { id: 'hyb_canal_docs', name: 'Canal+ Docs', categories: ['canal', 'decouverte'], index: 6 };
         if (c.includes('DECALE')) return { id: 'hyb_canal_decale', name: 'Canal+ Décalé', categories: ['canal'], index: 14 };
         if (c.includes('FAMILY')) return { id: 'hyb_canal_family', name: 'Canal+ Family', categories: ['canal'], index: 15 };
-        
         return { id: 'hyb_canal_cplus', name: 'Canal+', categories: ['canal'], index: 1 };
     }
-
-    if (c.includes('BEINSPORT') || c.includes('BEIN')) {
-        let isMax = c.includes('MAX'); let m = c.match(/BEIN(?:SPORT|MAX)?S?(\d+)/); let num = (m && m[1]) ? m[1] : '1';
-        return { id: 'hyb_sport_bein_' + (isMax?'max':'') + num, name: isMax ? 'beIN SPORTS MAX '+num : 'beIN SPORTS '+num, categories: ['sports'], index: isMax ? 40 + parseInt(num, 10) : 30 + parseInt(num, 10) };
-    }
-    if (c.includes('EUROSPORT')) {
-        let is360 = c.includes('360'); let m = c.match(/EUROSPORT(?:360)?(\d+)/); let num = (m && m[1]) ? m[1] : '1';
-        if (is360) return { id: 'hyb_sport_euro360_'+num, name: 'Eurosport 360 - '+num, categories: ['sports'], index: 60 + parseInt(num, 10) };
-        return { id: 'hyb_sport_euro_'+num, name: 'Eurosport '+num, categories: ['sports'], index: 50 + parseInt(num, 10) };
-    }
-    if (c.includes('RMCSPORT')) {
-        let isLive = c.includes('LIVE'); let m = c.match(/RMCSPORT(?:LIVE)?(\d+)/); let num = (m && m[1]) ? m[1] : '1';
-        if (isLive) return { id: 'hyb_sport_rmclive_'+num, name: 'RMC Sport Live '+num, categories: ['sports'], index: 80 + parseInt(num, 10) };
-        return { id: 'hyb_sport_rmc_'+num, name: 'RMC Sport '+num, categories: ['sports'], index: 70 + parseInt(num, 10) };
-    }
-    if (c.includes('EQUIDIA')) return { id: 'hyb_sport_equidia', name: 'Equidia', categories: ['sports'], index: 96 };
-    if (c.includes('OLTV') || c.includes('OLYMPIQUELYONNAIS')) return { id: 'hyb_sport_oltv', name: 'OL TV', categories: ['sports'], index: 97 };
-    if (c.includes('LEQUIPE')) return { id: 'hyb_sport_lequipe', name: "L'Équipe", categories: ['sports', 'tnt'], index: 98 };
 
     if (c.includes('CINE') || c.includes('CINA')) {
         if (c.includes('PREMIER')) return { id: 'hyb_cine_premier', name: 'Ciné+ Premier', categories: ['cinema', 'canal'], index: 11 };
@@ -566,6 +559,7 @@ async function getChannelsForSources(sourcesList) {
         try {
             let tempChannelsMap = {};
             let sourceReport = {};
+            let originalOrderCounter = 0; // CORRECTIF : Permet de retenir l'ordre exact de ton fichier M3U/Addon
 
             for (let i = 0; i < sourcesList.length; i++) {
                 const sourceInput = sourcesList[i].trim();
@@ -593,7 +587,8 @@ async function getChannelsForSources(sourcesList) {
                         if (!tempChannelsMap[id]) {
                             tempChannelsMap[id] = { 
                                 id: id, name: channelInfo.name, displayName: channelInfo.name, categories: channelInfo.categories,
-                                sortIndex: channelInfo.index, sources: [], poster: finalPoster 
+                                sortIndex: channelInfo.index, sources: [], poster: finalPoster,
+                                originalOrder: originalOrderCounter++ // Assignation du numéro d'apparition
                             };
                         }
                         
@@ -611,9 +606,13 @@ async function getChannelsForSources(sourcesList) {
             }
 
             let tempChannelsData = Object.values(tempChannelsMap).filter(ch => ch.sources.length > 0);
+            
+            // CORRECTIF DU TRI : Respecte l'index hardcodé, ou garde l'ordre original du M3U si inconnu !
             tempChannelsData.sort((a, b) => {
-                if (a.sortIndex !== b.sortIndex) return a.sortIndex - b.sortIndex;
-                return a.displayName.localeCompare(b.displayName);
+                if (a.sortIndex !== 300 || b.sortIndex !== 300) {
+                    if (a.sortIndex !== b.sortIndex) return a.sortIndex - b.sortIndex;
+                }
+                return a.originalOrder - b.originalOrder;
             });
 
             cacheObj.data = tempChannelsData;
@@ -876,7 +875,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.1).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.2).</p>
             </div>
 
             <div class="tabs">
@@ -1232,9 +1231,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.2.1',
+        version: '1.2.2',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.1). Smart Prioritization & Integrated CORS Proxy Relay.',
+        description: 'Meta-Addon IPTV (v1.2.2). Original Order Restored & Sports Catalog Fixed.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1415,6 +1414,12 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
                             let streamNumMatch = nStream.match(/LIVE(\d+)/i);
                             if (streamNumMatch) { if (streamNumMatch[1] !== targetNum) penalty += 5000; } else { penalty += 5000; }
+                        }
+
+                        if (channel.id.startsWith('hyb_sport_sporttv')) {
+                            let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
+                            let streamNumMatch = nStream.match(/SPORTTV(\d+)/i);
+                            if (streamNumMatch && streamNumMatch[1] !== targetNum) penalty += 5000;
                         }
 
                         // --- DÉTECTION QUALITÉ ---
