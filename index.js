@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.10 (Restored Stream Debugger, Multi-Source Orchestration & Event Routing)
+ * Version: 1.2.9 (Clean Multi-Source Orchestrator & Strict Event Routing)
  * Core Engine: Synchronous Health Check (6.5s), Smart Cache, Strict Category Separation, HLS Proxy Relay.
  */
 
@@ -70,7 +70,7 @@ function parseConfig(encodedConfig) {
     }
 }
 
-// --- DÉTECTION STRICTE DES ÉVÉNEMENTS ---
+// --- DÉTECTION STRICTE DES ÉVÉNEMENTS (UNIQUEMENT CATÉGORIE EVENTS) ---
 function extractMatchEvent(rawName) {
     if (!rawName) return null;
     let s = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -112,10 +112,11 @@ function extractMatchEvent(rawName) {
     return null;
 }
 
-// --- CATALOGUE DES CHAÎNES LINÉAIRES ET ÉVÉNEMENTS ---
+// --- CATALOGUE DES CHAÎNES LINÉAIRES (EXCLUSIVEMENT HORS EVENTS) ---
 function getChannelData(rawName, catalogHint = '') {
     if (!rawName) return null;
     
+    // Si l'add-on source est explicitement orienté sports/events ou que le nom indique un match
     if (catalogHint === 'events' || catalogHint === 'sports') {
         let eventData = extractMatchEvent(rawName);
         if (eventData) return eventData;
@@ -185,35 +186,121 @@ function getChannelData(rawName, catalogHint = '') {
     if (c.includes('EQUIDIA')) return { id: 'hyb_sport_equidia', name: 'Equidia', categories: ['sports'], index: 200 };
     if (c.includes('LEQUIPE')) return { id: 'hyb_sport_lequipe', name: "L'Équipe", categories: ['sports', 'tnt'], index: 210 };
 
+    if (c.includes('JURAS') || c.includes('TOP14') || c.includes('LCENTRE') || c.includes('LIGA') || c === 'CANALPLUSL' || c === 'CPLUSL' || c === 'CPLUSSPORT') {
+        let pretty = rawName.replace(/\[.*?\]|\(.*?\)/g, '').replace(/\b(?:FHD|HD|SD|4K|1080P|720P)\b/gi, '').trim();
+        return { id: 'hyb_aut_' + c.substring(0, 15), name: pretty, categories: ['autres'], index: 200 };
+    }
+
     if (c.startsWith('FRANCE24')) return { id: 'hyb_info_06', name: 'France 24', categories: ['info'], index: 6 };
     if (c.startsWith('FRANCEINFO')) return { id: 'hyb_info_07', name: 'France Info', categories: ['info'], index: 7 };
     if (c.includes('METEO')) return { id: 'hyb_info_08', name: 'La Chaîne Météo', categories: ['info'], index: 8 };
     if (c.includes('I24')) return { id: 'hyb_info_09', name: 'i24News', categories: ['info'], index: 9 };
     if (c.includes('TVBREIZH') || c.includes('BREIZH')) return { id: 'hyb_info_breizh', name: 'TV Breizh', categories: ['info'], index: 40 };
+    if (c.includes('BFMPARIS')) return { id: 'hyb_info_50', name: 'BFM Paris Île-de-France', categories: ['info'], index: 50 };
+    if (c.includes('BFMLYON')) return { id: 'hyb_info_51', name: 'BFM Lyon', categories: ['info'], index: 51 };
+    if (c.includes('BFMLILLE') || c.includes('GRANDLILLE')) return { id: 'hyb_info_52', name: 'BFM Grand Lille', categories: ['info'], index: 52 };
     if (c === 'BFMTV' || c === 'BFM') return { id: 'hyb_info_01', name: 'BFMTV', categories: ['info'], index: 1 };
+    if (c.includes('BFMBUSINESS')) return { id: 'hyb_info_02', name: 'BFM Business', categories: ['info'], index: 2 };
     if (c.includes('CNEWS')) return { id: 'hyb_info_03', name: 'CNews', categories: ['info'], index: 3 };
     if (c === 'LCI') return { id: 'hyb_info_04', name: 'LCI', categories: ['info'], index: 4 };
 
-    if (c.startsWith('TF1SERIESFILMS') || c.startsWith('TF1SF')) return { id: 'hyb_tnt_20', name: 'TF1 Séries Films', categories: ['tnt', 'cinema'], index: 20 };
+    if (c.includes('COMEDYCENTRAL')) return { id: 'hyb_aut_comedycentral', name: 'Comedy Central', categories: ['autres'], index: 11 };
+    if (c.includes('COMEDIE') || c.includes('COMEDY')) return { id: 'hyb_canal_comedie', name: 'Comédie+', categories: ['canal', 'autres'], index: 10 };
+
+    if (c.includes('CANAL') || c.includes('CPLUS')) {
+        if (c.includes('ELLES') || c.includes('LCENTRE') || c.includes('CENTRE') || c === 'CANALL' || c.includes('REGIONAL') || c.includes('LOCAL') || c.includes('OUTREMER')) {
+            return { id: 'hyb_aut_canal_elles', name: 'Canal+ Elles', categories: ['autres'], index: 1000 };
+        }
+        if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 100 };
+        if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
+        if (c.includes('LIVE')) {
+            let m = c.match(/LIVE(\d+)/); let num = m ? m[1] : '1';
+            return { id: 'hyb_canal_live_' + num, name: 'Canal+ Live ' + num, categories: ['canal', 'sports'], index: 220 + parseInt(num, 10) };
+        }
+        if (c.includes('SPORT360') || c.includes('360')) return { id: 'hyb_canal_sport360', name: 'Canal+ Sport 360', categories: ['canal', 'sports'], index: 90 };
+        if (c.includes('FOOT')) return { id: 'hyb_canal_foot', name: 'Canal+ Foot', categories: ['canal', 'sports'], index: 91 };
+        if (c.includes('FORMULA1') || c.includes('F1')) return { id: 'hyb_canal_f1', name: 'Canal+ Formula 1', categories: ['canal', 'sports'], index: 93 };
+        if (c.includes('SPORT')) return { id: 'hyb_canal_sport', name: 'Canal+ Sport', categories: ['canal', 'sports'], index: 94 };
+        if (c.includes('CINEMA') || c.includes('CNEMA')) return { id: 'hyb_canal_cinema', name: 'Canal+ Cinéma', categories: ['canal', 'cinema'], index: 2 };
+        if (c.includes('GRANDECRAN') || c.includes('ECRAN')) return { id: 'hyb_canal_grandecran', name: 'Canal+ Grand Écran', categories: ['canal', 'cinema'], index: 3 };
+        if (c.includes('SERIES') || c.includes('SERIE')) return { id: 'hyb_canal_series', name: 'Canal+ Séries', categories: ['canal', 'cinema'], index: 4 };
+        if (c.includes('BOXOFFICE') || c.includes('BOX')) return { id: 'hyb_canal_boxoffice', name: 'Canal+ Box Office', categories: ['canal', 'cinema'], index: 5 };
+        if (c.includes('DOC')) return { id: 'hyb_canal_docs', name: 'Canal+ Docs', categories: ['canal', 'decouverte'], index: 6 };
+        if (c.includes('DECALE')) return { id: 'hyb_canal_decale', name: 'Canal+ Décalé', categories: ['canal'], index: 14 };
+        if (c.includes('FAMILY')) return { id: 'hyb_canal_family', name: 'Canal+ Family', categories: ['canal'], index: 15 };
+        return { id: 'hyb_canal_cplus', name: 'Canal+', categories: ['canal'], index: 1 };
+    }
+
+    if (c.includes('CINE') || c.includes('CINA')) {
+        if (c.includes('PREMIER')) return { id: 'hyb_cine_premier', name: 'Ciné+ Premier', categories: ['cinema', 'canal'], index: 11 };
+        if (c.includes('FRISSON') || c.includes('ISSON')) return { id: 'hyb_cine_frisson', name: 'Ciné+ Frisson', categories: ['cinema', 'canal'], index: 12 };
+        if (c.includes('EMOTION')) return { id: 'hyb_cine_emotion', name: 'Ciné+ Émotion', categories: ['cinema', 'canal'], index: 13 };
+        if (c.includes('FAMIZ')) return { id: 'hyb_cine_famiz', name: 'Ciné+ Famiz', categories: ['cinema', 'canal'], index: 14 };
+        if (c.includes('CLUB') && !c.includes('SERIE')) return { id: 'hyb_cine_club', name: 'Ciné+ Club', categories: ['cinema', 'canal'], index: 15 };
+        if (c.includes('CLASSIC')) return { id: 'hyb_cine_classic', name: 'Ciné+ Classic', categories: ['cinema', 'canal'], index: 16 };
+        if (c.includes('ACTION')) return { id: 'hyb_cine_action', name: 'Action', categories: ['cinema'], index: 30 };
+        return { id: 'hyb_cine_plus', name: 'Ciné+', categories: ['cinema', 'canal'], index: 19 };
+    }
+    
+    if (c.includes('OCS')) {
+        let m = n.match(/OCS\s*([A-Z]*)/i); let suffix = (m && m[1]) ? ' ' + m[1] : '';
+        return { id: 'hyb_cine_ocs_' + suffix.trim().toLowerCase(), name: 'OCS' + suffix, categories: ['cinema'], index: 20 };
+    }
+    if (c.includes('WARNER')) return { id: 'hyb_cine_warner', name: 'Warner TV', categories: ['cinema'], index: 34 };
+    if (c.includes('SYFY') || c.includes('SCIFI')) return { id: 'hyb_cine_syfy', name: 'Syfy', categories: ['cinema'], index: 35 };
+    if (c.includes('PARAMOUNT')) return { id: 'hyb_cine_paramount', name: 'Paramount Channel', categories: ['cinema'], index: 32 };
+
+    if (c.startsWith('TF1SERIESFILMS') || c.startsWith('TF1SF') || (c.startsWith('TF1') && (c.includes('SERIE') || c.includes('FILM')))) {
+        return { id: 'hyb_tnt_20', name: 'TF1 Séries Films', categories: ['tnt', 'cinema'], index: 20 };
+    }
     if (c.startsWith('TF1')) return { id: 'hyb_tnt_1', name: 'TF1', categories: ['tnt'], index: 1 };
+    
     if (c.startsWith('FRANCE2') || c === 'FR2') return { id: 'hyb_tnt_2', name: 'France 2', categories: ['tnt'], index: 2 };
     if (c.startsWith('FRANCE3') || c === 'FR3') return { id: 'hyb_tnt_3', name: 'France 3', categories: ['tnt'], index: 3 };
     if (c.startsWith('FRANCE4') || c === 'FR4') return { id: 'hyb_tnt_4', name: 'France 4', categories: ['tnt'], index: 4 };
     if (c.startsWith('FRANCE5') || c === 'FR5') return { id: 'hyb_tnt_5', name: 'France 5', categories: ['tnt'], index: 5 };
+    if (c.startsWith('M6MUSIC')) return { id: 'hyb_mus_m6', name: 'M6 Music', categories: ['musique'], index: 1 };
     if (c.startsWith('M6')) return { id: 'hyb_tnt_6', name: 'M6', categories: ['tnt'], index: 6 };
     if (c.startsWith('ARTE')) return { id: 'hyb_tnt_7', name: 'Arte', categories: ['tnt'], index: 7 };
     if (c.startsWith('C8')) return { id: 'hyb_tnt_8', name: 'C8', categories: ['tnt'], index: 8 };
     if (c.startsWith('W9')) return { id: 'hyb_tnt_9', name: 'W9', categories: ['tnt'], index: 9 };
     if (c.startsWith('TMC')) return { id: 'hyb_tnt_10', name: 'TMC', categories: ['tnt'], index: 10 };
-    if (c.startsWith('TFX')) return { id: 'hyb_tnt_11', name: 'TFX', categories: ['tnt'], index: 11 };
-    if (c.startsWith('NRJ12')) return { id: 'hyb_tnt_12', name: 'NRJ 12', categories: ['tnt'], index: 12 };
+    if (c.startsWith('TFX') || c === 'NT1') return { id: 'hyb_tnt_11', name: 'TFX', categories: ['tnt'], index: 11 };
+    if (c.startsWith('NRJ12') || c.startsWith('NRJ')) return { id: 'hyb_tnt_12', name: 'NRJ 12', categories: ['tnt'], index: 12 };
+    if (c.includes('PUBLICSENAT') || c === 'LCP') return { id: 'hyb_tnt_13', name: 'LCP / Public Sénat', categories: ['tnt', 'info'], index: 13 };
     if (c.includes('GULLI')) return { id: 'hyb_jeu_gulli', name: 'Gulli', categories: ['jeunesse', 'tnt'], index: 18 };
+    if (c.includes('CSTAR')) return { id: 'hyb_tnt_17', name: 'CStar', categories: ['tnt', 'musique'], index: 17 };
+    if (c.includes('6TER')) return { id: 'hyb_tnt_22', name: '6ter', categories: ['tnt'], index: 22 };
+    if (c.includes('RMCSTORY') || c.includes('NUMERO23')) return { id: 'hyb_tnt_23', name: 'RMC Story', categories: ['tnt', 'decouverte'], index: 23 };
+    if (c.includes('RMCDECOUVERTE')) return { id: 'hyb_tnt_24', name: 'RMC Découverte', categories: ['tnt', 'decouverte'], index: 24 };
+    if (c.includes('CHERIE25') || c === 'CHERIE') return { id: 'hyb_tnt_25', name: 'Chérie 25', categories: ['tnt'], index: 25 };
+    if (c.includes('13EMERUE') || c.includes('13RUE')) return { id: 'hyb_tnt_13rue', name: '13ème Rue', categories: ['tnt', 'cinema'], index: 30 };
+    if (c.includes('TEVA')) return { id: 'hyb_tnt_teva', name: 'Téva', categories: ['tnt'], index: 31 };
+    if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
+    if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
+
+    if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 150 };
+    if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
+    if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 3 };
+    if (c.includes('DISNEYJR') || c.includes('DISNEYJUNIOR') || (c.includes('DISNEY') && c.includes('JR'))) return { id: 'hyb_jeu_disneyjr', name: 'Disney Junior', categories: ['jeunesse'], index: 5 };
+    if (c.includes('DISNEY') && c.includes('PLUS1')) return { id: 'hyb_jeu_disney_plus1', name: 'Disney Channel +1', categories: ['jeunesse'], index: 50 };
+    if (c.includes('DISNEY')) return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 2 };
+    if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 5 };
+    if (c.includes('BOING')) return { id: 'hyb_jeu_boing', name: 'Boing', categories: ['jeunesse'], index: 6 };
+    if (c.includes('NICKELODEON') || c.includes('NICK')) return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 7 };
+    if (c.includes('TIJI')) return { id: 'hyb_jeu_tiji', name: 'Tiji', categories: ['jeunesse'], index: 9 };
+    if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 10 };
+    if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 11 };
+    if (c.includes('PIWI')) return { id: 'hyb_jeu_piwi', name: 'Piwi+', categories: ['jeunesse'], index: 100 };
 
     let cat = 'autres';
     let idx = 300;
-    if (c.includes('SPORT') || c.includes('FOOT')) cat = 'sports';
-    else if (c.includes('CINE') || c.includes('FILM') || c.includes('SERIE')) cat = 'cinema';
-    else if (c.includes('INFO') || c.includes('NEWS')) cat = 'info';
+    if (c.includes('SPORT') || c.includes('FOOT') || c.includes('GOLF') || c.includes('TENNIS') || c.includes('RUGBY') || c.includes('AUTO') || c.includes('MOTO')) cat = 'sports';
+    else if (c.includes('CINE') || c.includes('FILM') || c.includes('SERIE') || c.includes('ACTION') || c.includes('PARAMOUNT')) cat = 'cinema';
+    else if (c.includes('INFO') || c.includes('NEWS') || c.includes('METEO')) cat = 'info';
+    else if (c.includes('DOC') || c.includes('NATURE') || c.includes('HISTOIRE') || c.includes('CRIME') || c.includes('ANIMAUX') || c.includes('PLANET') || c.includes('CHASSE') || c.includes('SCIENC')) cat = 'decouverte';
+    else if (c.includes('KIDS') || c.includes('JUNIOR') || c.includes('TOON') || c.includes('NICKELODEON') || c.includes('DISNEY')) cat = 'jeunesse';
+    else if (c.includes('MUSIC') || c.includes('HIT') || c.includes('POP') || c.includes('ROCK') || c.includes('TRACE') || c.includes('MELODY') || c.includes('MTV') || c.includes('MCM')) cat = 'musique';
 
     let prettyName = rawName.replace(/\[.*?\]|\(.*?\)/g, '').replace(/\b(?:FHD|HD|SD|4K|1080P|720P)\b/gi, '').trim();
     prettyName = prettyName.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.substr(1).toLowerCase());
@@ -239,12 +326,99 @@ function formatTime(timestamp) {
     return new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }).format(new Date(timestamp)).replace(':', 'h');
 }
 
-// --- CATALOG ENGINE ---
+// --- EPG SYNC ---
+async function fetchAndParseEPG(url, isGz) {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const response = await axios.get(url, { responseType: 'stream', timeout: 60000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+            let stream = response.data;
+            if (isGz) { const unzip = zlib.createGunzip(); stream = stream.pipe(unzip); }
+
+            const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+            let localChannels = {}; let localEpg = {};      
+            let inChannel = false, chanBlock = '';
+            let inProgramme = false, progBlock = '';
+
+            rl.on('line', (line) => {
+                if (line.includes('<desc') || line.includes('<icon')) return;
+
+                if (line.includes('<channel ')) { inChannel = true; chanBlock = line; }
+                else if (inChannel) { chanBlock += '\n' + line; }
+                
+                if (inChannel && chanBlock.includes('</channel>')) {
+                    const idM = chanBlock.match(/id=["']([^"']+)["']/);
+                    const nameM = chanBlock.match(/<display-name[^>]*>([^<]+)<\/display-name>/);
+                    if (idM && nameM) {
+                        let cData = getChannelData(nameM[1]);
+                        if (cData) localChannels[idM[1]] = cData.id; 
+                    }
+                    inChannel = false; chanBlock = '';
+                }
+
+                if (line.includes('<programme ')) { inProgramme = true; progBlock = line; }
+                else if (inProgramme) { progBlock += '\n' + line; }
+
+                if (inProgramme && progBlock.includes('</programme>')) {
+                    const startM = progBlock.match(/start=["']([^"']+)["']/);
+                    const stopM = progBlock.match(/stop=["']([^"']+)["']/);
+                    const chanM = progBlock.match(/channel=["']([^"']+)["']/);
+                    const titleM = progBlock.match(/<title[^>]*>([^<]+)<\/title>/);
+                    
+                    if (startM && stopM && chanM && titleM) {
+                        const syncId = localChannels[chanM[1]];
+                        if (syncId) {
+                            if (!localEpg[syncId]) localEpg[syncId] = [];
+                            localEpg[syncId].push({
+                                start: parseXmltvDate(startM[1]), stop: parseXmltvDate(stopM[1]),
+                                title: titleM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").replace(/&quot;/g, '"').trim()
+                            });
+                        }
+                    }
+                    inProgramme = false; progBlock = '';
+                }
+            });
+
+            const timeoutId = setTimeout(() => { stream.destroy(); reject(new Error("Timeout")); }, 60000);
+            rl.on('close', () => { clearTimeout(timeoutId); resolve(localEpg); });
+            rl.on('error', (err) => { clearTimeout(timeoutId); reject(err); });
+        } catch (err) { reject(err); }
+    });
+}
+
+async function updateEPG() {
+    if (isUpdatingEPG) return;
+    isUpdatingEPG = true; 
+    let tempEpgData = {};
+    const sources = [
+        { url: 'https://xmltvfr.fr/xmltv/xmltv_francophone.xml', isGz: false },
+        { url: 'https://epgshare01.online/epgshare01/epg_ripper_FR1.xml.gz', isGz: true }
+    ];
+
+    try {
+        for (const source of sources) {
+            try {
+                const parsedEpg = await fetchAndParseEPG(source.url, source.isGz);
+                for (const channelId in parsedEpg) {
+                    if (!tempEpgData[channelId]) tempEpgData[channelId] = [];
+                    tempEpgData[channelId] = tempEpgData[channelId].concat(parsedEpg[channelId]);
+                }
+                if (Object.keys(tempEpgData).length > 100) break;
+            } catch (err) {}
+        }
+        if (Object.keys(tempEpgData).length > 10) {
+            epgData = tempEpgData;
+            lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
+        }
+    } finally { isUpdatingEPG = false; }
+}
+
+// --- CATALOG ENGINE (ORCHESTRATEUR DE SOURCES MULTIPLES) ---
 async function fetchCatalogFromSource(sourceInput) {
     let metas = [];
     let cleanInput = sourceInput.trim();
     if (!cleanInput) return metas;
 
+    // 1. ROUTEUR M3U CLASSIC
     if (cleanInput.endsWith('.m3u') || cleanInput.endsWith('.m3u8') || cleanInput.includes('get.php') || cleanInput.includes('/live/')) {
         try {
             const res = await axios.get(cleanInput, { timeout: 10000 });
@@ -273,6 +447,7 @@ async function fetchCatalogFromSource(sourceInput) {
         return metas;
     }
 
+    // 2. ROUTEUR ADD-ON JSON CLASSIC (Qu'il s'agisse d'un add-on TV ou d'un add-on externe de sport/events)
     if (cleanInput.includes('manifest.json')) {
         try {
             let cleanUrl = cleanInput;
@@ -280,6 +455,8 @@ async function fetchCatalogFromSource(sourceInput) {
 
             const manifestRes = await axios.get(cleanUrl, { timeout: 6000 });
             const catalogs = manifestRes.data.catalogs || [];
+            
+            // Détection si l'add-on distant est orienté sport/événements
             const isEventAddon = cleanUrl.toLowerCase().includes('sport') || cleanUrl.toLowerCase().includes('live') || cleanUrl.toLowerCase().includes('event') || cleanUrl.toLowerCase().includes('match');
 
             const catalogPromises = catalogs.map(async (catalog) => {
@@ -296,7 +473,7 @@ async function fetchCatalogFromSource(sourceInput) {
                         let currentSkip = skip + (i * 100);
                         let encodedCatId = encodeURIComponent(catalog.id);
                         let url = currentSkip > 0 ? `${base}/catalog/${catalog.type}/${encodedCatId}/skip=${currentSkip}.json` : `${base}/catalog/${catalog.type}/${encodedCatId}.json`;
-                        requests.push(axios.get(url, { timeout: 8000 }).catch(e => null));
+                        requests.push(axios.get(url, { timeout: 6000 }).catch(e => null));
                     }
                     
                     let responses = await Promise.all(requests);
@@ -308,6 +485,7 @@ async function fetchCatalogFromSource(sourceInput) {
                                 if (m && m.id && m.name && !seenIds.has(m.id)) {
                                     seenIds.add(m.id);
                                     let metaName = m.name;
+                                    // Si l'add-on source est un add-on d'événements externe, on force le tag live si absent
                                     if (isEventAddon && !metaName.includes('🔴') && !metaName.includes('[LIVE]')) {
                                         metaName = `🔴 ${metaName}`;
                                     }
@@ -325,7 +503,7 @@ async function fetchCatalogFromSource(sourceInput) {
 
             const results = await Promise.all(catalogPromises);
             results.flat().forEach(m => {
-                if (m && m.id) metas.push({ ...m, _providerBase: base, _isDirectStream: false });
+                if (m && m.id) metas.push({ ...m, _providerBase: base, _isDirectStream: false, _isWebScraped: false });
             });
             return metas;
         } catch (err) { return metas; }
@@ -493,7 +671,7 @@ app.get('/proxy/hls', async (req, res) => {
 });
 
 // ============================================================================
-// APP ROUTES & DASHBOARD WITH DEBUGGER
+// APP ROUTES & DASHBOARD
 // ============================================================================
 
 app.get('/api/metrics', (req, res) => {
@@ -539,59 +717,6 @@ app.get('/api/metrics', (req, res) => {
     });
 });
 
-// --- API DEBUG / TEST DE FLUX ---
-app.get('/api/debug/test', async (req, res) => {
-    let channelId = req.query.channelId;
-    let sourcesParam = req.query.sources;
-    if (!channelId || !sourcesParam) return res.json({ error: "Paramètres manquants" });
-
-    let sourcesList = sourcesParam.split(',');
-    let channelsData = await getChannelsForSources(sourcesList);
-    let channel = channelsData.find(c => c.id === channelId);
-
-    if (!channel) return res.json({ error: "Chaîne ou événement introuvable dans le cache" });
-
-    let results = [];
-    for (let source of channel.sources) {
-        let streamUrl = '';
-        let info = { type: source.type, originalName: source.originalName, provider: source.providerBase || 'Direct M3U' };
-        
-        if (source.type === 'm3u') {
-            streamUrl = source.directUrl;
-        } else {
-            try {
-                let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
-                const streamRes = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 4000 });
-                if (streamRes.data && streamRes.data.streams && streamRes.data.streams.length > 0) {
-                    streamUrl = streamRes.data.streams[0].url;
-                    info.title = streamRes.data.streams[0].title || streamRes.data.streams[0].name;
-                }
-            } catch (e) {
-                info.error = e.message;
-            }
-        }
-
-        info.resolvedUrl = streamUrl;
-
-        if (streamUrl) {
-            try {
-                const headRes = await axios.get(streamUrl, { responseType: 'stream', timeout: 4000, headers: { 'User-Agent': 'Mozilla/5.0' } });
-                if (headRes.data && typeof headRes.data.destroy === 'function') headRes.data.destroy();
-                info.status = 'OK (200)';
-                info.healthy = true;
-            } catch (err) {
-                info.status = err.response ? `Erreur HTTP ${err.response.status}` : err.message;
-                info.healthy = false;
-            }
-        } else {
-            info.status = 'URL introuvable';
-            info.healthy = false;
-        }
-        results.push(info);
-    }
-    res.json({ channelName: channel.displayName, streamsTested: results });
-});
-
 app.get('/', async (req, res) => {
     let sourcesParam = req.query.sources;
     let sourcesList = sourcesParam ? sourcesParam.split(',') : ['', ''];
@@ -602,16 +727,16 @@ app.get('/', async (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>HybridTV Dashboard & Debugger</title>
+        <title>HybridTV Dashboard</title>
         <style>
             :root { --bg: #141414; --card: #1f1f1f; --card-alt: #111; --primary: #e50914; --text: #fff; --text-muted: #bbb; --border: #333; }
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 40px 20px; margin: 0; }
-            .container { max-width: 750px; margin: 0 auto; background: var(--card); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; }
+            .container { max-width: 700px; margin: 0 auto; background: var(--card); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; }
             .header { padding: 30px; text-align: center; border-bottom: 1px solid var(--border); }
             h1 { margin: 0 0 10px 0; font-size: 28px; }
             .subtitle { font-size: 14px; color: var(--text-muted); margin: 0; }
             .tabs { display: flex; border-bottom: 1px solid var(--border); background: #1a1a1a; overflow-x: auto; }
-            .tab-btn { flex: 1; padding: 15px; background: none; border: none; color: var(--text-muted); font-size: 14px; font-weight: bold; cursor: pointer; transition: 0.2s; white-space: nowrap; }
+            .tab-btn { flex: 1; padding: 15px; background: none; border: none; color: var(--text-muted); font-size: 15px; font-weight: bold; cursor: pointer; transition: 0.2s; white-space: nowrap; }
             .tab-btn:hover { color: var(--text); background: #222; }
             .tab-btn.active { color: var(--text); border-bottom: 3px solid var(--primary); background: var(--card); }
             .tab-content { display: none; padding: 30px; }
@@ -629,7 +754,7 @@ app.get('/', async (req, res) => {
             .btn-small:hover { background: #555; }
             .btn-danger { background: #800; padding: 8px 10px; border-radius: 6px; cursor: pointer; color: #fff; border: none; }
             .btn-danger:hover { background: #a00; }
-            .main-link { width: 100%; padding: 15px; margin-top: 15px; background: #111; color: #fff; border: 1px dashed #666; border-radius: 6px; text-align: center; font-size: 13px; box-sizing: border-box; }
+            .main-link { width: 100%; padding: 15px; margin-top: 15px; background: #111; color: #fff; border: 1px dashed #666; border-radius: 6px; text-align: center; font-size: 14px; box-sizing: border-box; }
             input[type="text"].export-box { width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #aaa; border-radius: 6px; font-size: 12px; box-sizing: border-box; }
             .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
             .metric-card { background: #222; padding: 15px; border-radius: 8px; border: 1px solid var(--border); text-align: center; }
@@ -641,26 +766,32 @@ app.get('/', async (req, res) => {
             .status-ok { color: #4caf50; }
             .status-warn { color: #ff9800; }
             .status-err { color: #f44336; }
-            select { width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px; margin-bottom: 10px; }
-            pre { background: #111; padding: 12px; border-radius: 6px; font-size: 12px; overflow-x: auto; color: #00ff66; border: 1px solid #333; }
         </style>
     </head>
     <body>
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">Gestionnaire IPTV et Outil de Diagnostic (v1.2.10).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.9).</p>
             </div>
             <div class="tabs">
                 <button class="tab-btn active" onclick="switchTab('config', this)">⚙️ Configurer</button>
                 <button class="tab-btn" onclick="switchTab('metrics', this)">📊 Métriques</button>
-                <button class="tab-btn" onclick="switchTab('debug', this)">🧪 Debug Flux</button>
             </div>
             <div id="config" class="tab-content active">
                 <div class="section">
-                    <h3 class="section-title">Sources (Add-ons TV, M3U & Sport)</h3>
+                    <h3 class="section-title">Sources (Add-ons TV, M3U ou Add-on Événements)</h3>
+                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Ajoutez vos listes de chaînes et vos add-ons de sport/événements externes.</p>
                     <div id="sourcesContainer"></div>
                     <button type="button" onclick="addSourceField()" class="btn btn-small" style="margin-top: 10px;">+ Ajouter une source</button>
+                </div>
+                <div class="section">
+                    <h3 class="section-title">Priorité des Langues</h3>
+                    <div id="languageList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                </div>
+                <div class="section">
+                    <h3 class="section-title">Priorité de Qualité</h3>
+                    <div id="qualityList" style="display: flex; flex-direction: column; gap: 8px;"></div>
                 </div>
                 <div class="section">
                     <h3 class="section-title">Code de Sauvegarde</h3>
@@ -679,22 +810,8 @@ app.get('/', async (req, res) => {
                     <div class="metric-card"><div class="metric-label">Performance Cache</div><div class="metric-value" id="m-cache">--</div></div>
                 </div>
                 <div class="section">
-                    <h3 class="section-title">Rapport des Sources</h3>
+                    <h3 class="section-title">Inventaire & Rapport Sources</h3>
                     <ul class="report-list" id="sourceReportList"><li><i>Chargement...</i></li></ul>
-                </div>
-            </div>
-            <div id="debug" class="tab-content">
-                <div class="section">
-                    <h3 class="section-title">Testeur de Flux & Chaînes</h3>
-                    <p class="subtitle" style="margin-bottom: 12px; font-size: 12px;">Sélectionne une chaîne ou un événement chargé pour tester la validité des flux en temps réel.</p>
-                    <select id="debugChannelSelect">
-                        <option value="">-- Générez ou chargez des sources d'abord --</option>
-                    </select>
-                    <button type="button" onclick="testSelectedChannel()" class="btn btn-small">🔍 Tester la chaîne / l'événement</button>
-                </div>
-                <div class="section">
-                    <h3 class="section-title">Résultat du Diagnostic</h3>
-                    <pre id="debugOutput">Sélectionnez une chaîne et lancez le test...</pre>
                 </div>
             </div>
         </div>
@@ -702,6 +819,7 @@ app.get('/', async (req, res) => {
             let sources = ${JSON.stringify(sourcesList)};
             let qualities = ['1080p', '720p', '4K', 'SD'];
             let languages = ['fr', 'en', 'es', 'other'];
+            const langLabels = { 'fr': '🇫🇷 Français (FR / VF)', 'en': '🇬🇧 Anglais (EN / VO)', 'es': '🇪🇸 Espagnol (ES)', 'other': '🌐 Autre / Non spécifié' };
 
             function switchTab(tabId, btn) {
                 document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -709,7 +827,6 @@ app.get('/', async (req, res) => {
                 document.getElementById(tabId).classList.add('active');
                 btn.classList.add('active');
                 if(tabId === 'metrics') fetchMetrics();
-                if(tabId === 'debug') loadDebugChannels();
             }
 
             function renderSources() {
@@ -732,7 +849,41 @@ app.get('/', async (req, res) => {
                 updateExportToken();
             }
 
+            function renderQualities() {
+                const container = document.getElementById('qualityList');
+                if (!container) return;
+                container.innerHTML = '';
+                qualities.forEach((q, index) => {
+                    container.innerHTML += \`
+                        <div style="display: flex; align-items: center; background: #222; border: 1px solid #444; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px;">
+                            <span style="font-size: 14px; font-weight: bold; color: #e50914; min-width: 25px;">\${index + 1}.</span>
+                            <span style="flex: 1; font-size: 13px;">\${q}</span>
+                            \${index > 0 ? '<button type="button" onclick="moveQuality(' + index + ', -1)" class="btn-small" style="padding: 4px 8px; margin-right: 5px;">▲</button>' : '<div style="width: 28px; margin-right: 5px;"></div>'}
+                            \${index < qualities.length - 1 ? '<button type="button" onclick="moveQuality(' + index + ', 1)" class="btn-small" style="padding: 4px 8px;">▼</button>' : '<div style="width: 28px;"></div>'}
+                        </div>\`;
+                });
+                updateExportToken();
+            }
+
+            function renderLanguages() {
+                const container = document.getElementById('languageList');
+                if (!container) return;
+                container.innerHTML = '';
+                languages.forEach((lang, index) => {
+                    container.innerHTML += \`
+                        <div style="display: flex; align-items: center; background: #222; border: 1px solid #444; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px;">
+                            <span style="font-size: 14px; font-weight: bold; color: #e50914; min-width: 25px;">\${index + 1}.</span>
+                            <span style="flex: 1; font-size: 13px;">\${langLabels[lang] || lang}</span>
+                            \${index > 0 ? '<button type="button" onclick="moveLanguage(' + index + ', -1)" class="btn-small" style="padding: 4px 8px; margin-right: 5px;">▲</button>' : '<div style="width: 28px; margin-right: 5px;"></div>'}
+                            \${index < languages.length - 1 ? '<button type="button" onclick="moveLanguage(' + index + ', 1)" class="btn-small" style="padding: 4px 8px;">▼</button>' : '<div style="width: 28px;"></div>'}
+                        </div>\`;
+                });
+                updateExportToken();
+            }
+
             function moveSource(index, dir) { saveInputs(); const ni = index + dir; if (ni < 0 || ni >= sources.length) return; const t = sources[index]; sources[index] = sources[ni]; sources[ni] = t; renderSources(); }
+            function moveQuality(index, dir) { const ni = index + dir; if (ni < 0 || ni >= qualities.length) return; const t = qualities[index]; qualities[index] = qualities[ni]; qualities[ni] = t; localStorage.setItem('hybrid_qualities', JSON.stringify(qualities)); renderQualities(); }
+            function moveLanguage(index, dir) { const ni = index + dir; if (ni < 0 || ni >= languages.length) return; const t = languages[index]; languages[index] = languages[ni]; languages[ni] = t; localStorage.setItem('hybrid_languages', JSON.stringify(languages)); renderLanguages(); }
             function addSourceField() { if (sources.length < 8) { saveInputs(); sources.push(''); renderSources(); } }
             function removeSource(index) { saveInputs(); sources.splice(index, 1); renderSources(); }
             
@@ -756,7 +907,9 @@ app.get('/', async (req, res) => {
                     const config = JSON.parse(atob(inputCode.trim()));
                     if (config.sources) {
                         sources = config.sources.length ? config.sources : ['', ''];
-                        renderSources(); alert("Importé !");
+                        if (config.qualities) qualities = config.qualities;
+                        if (config.languages) languages = config.languages;
+                        renderSources(); renderQualities(); renderLanguages(); alert("Importé !");
                     }
                 } catch(e) { alert("Code corrompu."); }
             }
@@ -790,8 +943,8 @@ app.get('/', async (req, res) => {
                         let cleanSrc = src.replace(/\\/manifest\\.json$/, '').trim(); 
                         let displaySrc = cleanSrc.length > 35 ? cleanSrc.substring(0, 32) + '...' : cleanSrc;
                         let r = data.sourceReport[cleanSrc];
-                        if (!r || r.status === 'fetching') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⏳ En attente (Chargement des flux...)</b></li>\`;
-                        else if (r.status === 'ok') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-ok">✅ \${r.count} flux/événements</b></li>\`;
+                        if (!r || r.status === 'fetching') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⏳ En attente</b></li>\`;
+                        else if (r.status === 'ok') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-ok">✅ \${r.count} flux</b></li>\`;
                         else if (r.status === 'empty') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⚠️ 0 flux</b></li>\`;
                         else htmlList += \`<li><span>\${displaySrc}</span> <b class="status-err">❌ Hors Ligne</b></li>\`;
                     });
@@ -799,56 +952,15 @@ app.get('/', async (req, res) => {
                 } catch(e) {}
             }
 
-            async function loadDebugChannels() {
-                saveInputs();
-                const select = document.getElementById('debugChannelSelect');
-                select.innerHTML = '<option value="">Chargement des chaînes...</option>';
-                try {
-                    let token = document.getElementById('exportTokenBox').value;
-                    let res = await fetch('/' + token + '/catalog/tv/tnt.json');
-                    let data1 = await res.json();
-                    let resSport = await fetch('/' + token + '/catalog/tv/sports.json');
-                    let dataSport = await resSport.json();
-                    let resEvents = await fetch('/' + token + '/catalog/tv/events.json');
-                    let dataEvents = await resEvents.json();
-
-                    let allMetas = [...(data1.metas || []), ...(dataSport.metas || []), ...(dataEvents.metas || [])];
-                    if(allMetas.length === 0) {
-                        select.innerHTML = '<option value="">Aucune chaîne trouvée (attendez la fin du chargement)</option>';
-                        return;
-                    }
-                    select.innerHTML = '';
-                    allMetas.forEach(m => {
-                        let opt = document.createElement('option');
-                        opt.value = m.id;
-                        opt.innerText = m.name;
-                        select.appendChild(opt);
-                    });
-                } catch(e) {
-                    select.innerHTML = '<option value="">Erreur de chargement</option>';
-                }
-            }
-
-            async function testSelectedChannel() {
-                const channelId = document.getElementById('debugChannelSelect').value;
-                if (!channelId) return alert("Sélectionnez une chaîne !");
-                const output = document.getElementById('debugOutput');
-                output.innerText = "Diagnostic en cours...";
-                
-                let token = document.getElementById('exportTokenBox').value;
-                let validSources = sources.filter(s => s.length > 0).join(',');
-                try {
-                    let res = await fetch(\`/api/debug/test?channelId=\${encodeURIComponent(channelId)}&sources=\${encodeURIComponent(validSources)}\`);
-                    let data = await res.json();
-                    output.innerText = JSON.stringify(data, null, 2);
-                } catch(e) {
-                    output.innerText = "Erreur lors du test : " + e.message;
-                }
-            }
-
             let savedSources = localStorage.getItem('hybrid_sources');
             if (savedSources && !${sourcesParam ? 'true' : 'false'}) sources = JSON.parse(savedSources);
-            renderSources();
+            let savedQualities = localStorage.getItem('hybrid_qualities');
+            if (savedQualities) try { qualities = JSON.parse(savedQualities); } catch(e){}
+            let savedLanguages = localStorage.getItem('hybrid_languages');
+            if (savedLanguages) try { languages = JSON.parse(savedLanguages); } catch(e){}
+
+            renderSources(); renderQualities(); renderLanguages();
+            setInterval(() => { if(document.getElementById('metrics').classList.contains('active')) fetchMetrics(); }, 5000);
         </script>
     </body>
     </html>
@@ -862,7 +974,9 @@ app.get('/:config/configure', (req, res) => {
 
 // --- MANIFEST BUILDER ---
 app.get('/:config/manifest.json', (req, res) => {
+    const config = parseConfig(req.params.config);
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
+
     let baseCatalogs = [
         { type: 'tv', id: 'tnt', name: '📺 TNT' },
         { type: 'tv', id: 'info', name: '📰 Information' },
@@ -878,9 +992,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.2.10',
+        version: '1.2.9',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.10) with Stream Debugger.',
+        description: 'Meta-Addon IPTV (v1.2.9). Multi-Source Orchestration & Clean Event Routing.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -923,6 +1037,23 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
     if (!channel) return res.json({ meta: {} });
     
     let descriptionText = `▶ Diffusion en cours sur ${channel.displayName}...`;
+    
+    if (Object.keys(epgData).length > 0) {
+        const epgList = epgData[channel.id]; 
+        if (epgList && epgList.length > 0) {
+            const now = Date.now();
+            epgList.sort((a, b) => a.start - b.start);
+            
+            const currentIndex = epgList.findIndex(p => now >= p.start && now <= p.stop);
+            if (currentIndex !== -1) {
+                const currentProg = epgList[currentIndex];
+                const sTime = formatTime(currentProg.start);
+                const eTime = formatTime(currentProg.stop);
+                descriptionText = `🔴 EN DIRECT (${sTime} - ${eTime}) : ${currentProg.title}`;
+            }
+        }
+    }
+
     res.json({ meta: { id: channel.id, type: 'tv', name: channel.displayName, poster: channel.poster, posterShape: 'square', description: descriptionText } });
 });
 
@@ -933,6 +1064,13 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const serverHost = `${req.protocol}://${req.get('host')}`;
     serverStats.channelClicks[req.params.id] = (serverStats.channelClicks[req.params.id] || 0) + 1;
 
+    const cacheKey = req.params.id + '|' + config.sources.join(',') + '|' + (config.languages || []).join(',');
+    if (streamCache.has(cacheKey)) {
+        serverStats.cacheHits++;
+        return res.json({ streams: streamCache.get(cacheKey) });
+    }
+    serverStats.cacheMisses++;
+
     let channelsData = await getChannelsForSources(config.sources);
     res.setHeader('Cache-Control', 'max-age=45, public'); 
 
@@ -941,26 +1079,137 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     
     try {
         let streamPromises = channel.sources.map(async (source) => {
+            let isBeluchon = source.providerBase && source.providerBase.toLowerCase().includes('beluchon');
+
             if (source.type === 'm3u') {
                 return [{
                     url: source.directUrl,
-                    name: `▶ Full HD (1080p)`,
+                    name: isBeluchon ? `▶ Source Officielle (HD)` : `▶ Full HD (1080p)`,
                     title: source.originalName || "Source M3U",
-                    _score: 1500
+                    _score: isBeluchon ? 4500 : 1500,
+                    _originalTitle: source.originalName || "Source M3U",
+                    behaviorHints: { proxyHeaders: { request: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase } } }
                 }];
             }
 
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
-                const streamRes = await axios.get(targetUrl, { timeout: 4500 });
+                const streamRes = await axios.get(targetUrl, {
+                    headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }, 
+                    timeout: 4500 
+                });
                 
                 if (streamRes.data && streamRes.data.streams) {
                     return streamRes.data.streams.map((s, idx) => {
-                        let outStream = { ...s };
-                        if (outStream.url && (outStream.url.includes('.m3u8') || outStream.url.includes('vavoo'))) {
-                            outStream.url = `${serverHost}/proxy/hls?url=${encodeURIComponent(outStream.url)}`;
+                        let score = 0;
+                        let rawName = s.name || '';
+                        let rawTitle = s.title || '';
+                        let originalTitle = (rawName !== rawTitle) ? `${rawName} ${rawTitle}` : rawName || rawTitle;
+                        originalTitle = originalTitle.replace(/http\S+/g, '').trim() || `Source Add-on ${idx + 1}`;
+
+                        let up = originalTitle.toUpperCase();
+                        let nStream = up.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').replace(/\+/g, ' PLUS ').replace(/[^A-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+
+                        let penalty = 0;
+                        
+                        if (channel.id.startsWith('hyb_canal_') && !channel.id.includes('live') && channel.id !== 'hyb_aut_canal_elles') {
+                            let isBaseCanal = (channel.id === 'hyb_canal_cplus');
+                            if (isBaseCanal) {
+                                if (nStream.match(/(SPORT|FOOT|CINE|DECALE|KIDS|DOC|BOX|GRAND|SERIE|PREMIER|FRISSON|EMOTION|FAMIZ|CLUB|CLASSIC|COMEDIE|F1|MOTO|360|FAMILY|LIGUE\s*1|DAZN|BEIN|MULTI|ELLES)/)) penalty += 2000;
+                            } else {
+                                let target = channel.id.replace('hyb_canal_', '').toUpperCase();
+                                if (target.includes('SPORT') || target.includes('FOOT')) {
+                                    if (nStream.match(/(CINE|DOC|KIDS|SERIE|BOX|GRAND)/)) penalty += 2000;
+                                } else if (target.includes('CINE') || target.includes('SERIE') || target.includes('BOX') || target.includes('GRAND')) {
+                                    if (nStream.match(/(SPORT|FOOT|F1|MOTO|LIGUE\s*1)/)) penalty += 2000;
+                                }
+                            }
                         }
-                        outStream._score = 1000 - idx;
+
+                        if (channel.id === 'hyb_tnt_1' && (nStream.includes('SERIE') || nStream.includes('FILM') || nStream.includes('TFX') || nStream.includes('TMC') || nStream.includes('SF'))) penalty += 2000;
+
+                        if (channel.id.startsWith('hyb_sport_bein')) {
+                            let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1'; let isTargetMax = channel.id.includes('max');
+                            let streamNumMatch = nStream.match(/BEIN\s*(?:SPORT\s*)?(?:MAX\s*)?S?\s*(\d+)/i);
+                            if (streamNumMatch) { 
+                                if (streamNumMatch[1] !== targetNum) penalty += 5000; 
+                            } else if (targetNum !== '1') { 
+                                penalty += 2000; 
+                            }
+                            if (isTargetMax !== nStream.includes('MAX')) penalty += 2000;
+                        }
+
+                        if (channel.id.startsWith('hyb_sport_dazn_') && !channel.id.includes('live') && !channel.id.includes('rise')) {
+                            let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
+                            let streamNumMatch = nStream.match(/DAZN\s*(\d+)/i);
+                            if (streamNumMatch) { 
+                                if (streamNumMatch[1] !== targetNum) penalty += 5000; 
+                            } else if (targetNum !== '1') { 
+                                penalty += 2000; 
+                            }
+                            if (nStream.includes('LIVE ') || nStream.includes('LIGUE 1') || nStream.match(/\bL1\b/)) penalty += 5000;
+                        }
+
+                        if (channel.id.startsWith('hyb_sport_ligue1plus')) {
+                            let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
+                            let streamNumMatch = nStream.match(/(?:LIGUE\s*1|L1|LIVE|PLUS)\s*(\d+)/i);
+                            if (streamNumMatch) { 
+                                if (streamNumMatch[1] !== targetNum) penalty += 5000; 
+                            } else if (targetNum !== '1') { 
+                                penalty += 2000; 
+                            }
+                            if (nStream.includes('DAZN') && !nStream.includes('LIVE') && !nStream.includes('LIGUE') && !nStream.match(/\bL1\b/)) penalty += 5000;
+                        }
+
+                        let detectedQual = 'SD';
+                        if (up.includes('4K') || up.includes('2160') || up.includes('UHD')) detectedQual = '4K';
+                        else if (up.includes('FHD') || up.includes('1080')) detectedQual = '1080p';
+                        else if (up.includes('HD') || up.includes('720')) detectedQual = '720p';
+
+                        let priorityIndex = config.qualities.indexOf(detectedQual);
+                        if (priorityIndex === -1) priorityIndex = 3; 
+                        let qScore = (4 - priorityIndex) * 1000; 
+
+                        let qualStr = detectedQual === '4K' ? "4K (UHD)" : detectedQual === '1080p' ? "Full HD (1080p)" : detectedQual === '720p' ? "HD (720p)" : "SD";
+                        if (isBeluchon) { qualStr = "Source Officielle Légale (HD)"; qScore = 5000; }
+
+                        let detectedLang = 'other';
+                        if (up.match(/\bFR\b/) || up.match(/\bVF\b/) || up.includes('FRENCH') || up.includes('TRUEFRENCH') || up.includes('FRANCAIS')) detectedLang = 'fr';
+                        else if (up.match(/\bEN\b/) || up.match(/\bVO\b/) || up.includes('ENG') || up.includes('ENGLISH')) detectedLang = 'en';
+                        else if (up.match(/\bES\b/) || up.match(/\bESP\b/) || up.includes('SPANISH') || up.includes('CASTELLANO')) detectedLang = 'es';
+
+                        let langIndex = config.languages.indexOf(detectedLang);
+                        if (langIndex === -1) langIndex = config.languages.indexOf('other');
+                        if (langIndex === -1) langIndex = 3;
+                        let langScore = (4 - langIndex) * 600;
+
+                        score += qScore + langScore - penalty - idx + ((10 - source.sourceIndex) * 50);
+                        if (up.includes('BACKUP') || up.includes('SECOURS') || up.includes('ALT') || up.includes('TEST')) score -= 1000;
+
+                        let outStream = { ...s };
+                        if (outStream.url) {
+                            let rawUrl = outStream.url.trim();
+                            if (rawUrl.startsWith('//')) outStream.url = 'https:' + rawUrl;
+                            else if (rawUrl.startsWith('/')) {
+                                try { let baseObj = new URL(source.providerBase); outStream.url = baseObj.origin + rawUrl; } catch(e){}
+                            } else if (!rawUrl.startsWith('http') && !rawUrl.includes('://')) {
+                                outStream.url = 'http://' + rawUrl;
+                            }
+                        }
+
+                        let refDomain = "https://vavoo.to/";
+                        try { let uObj = new URL(source.providerBase); refDomain = uObj.origin + "/"; } catch(e){}
+
+                        if (outStream.url && (outStream.url.includes('.m3u8') || outStream.url.includes('vavoo'))) {
+                            outStream.url = `${serverHost}/proxy/hls?url=${encodeURIComponent(outStream.url)}&referer=${encodeURIComponent(refDomain)}`;
+                        }
+
+                        let fallbackName = source.originalName || "Source Add-on";
+                        outStream.name = s.name ? s.name : fallbackName;
+                        let langBadge = detectedLang !== 'other' ? ` [${detectedLang.toUpperCase()}]` : '';
+                        let combinedTitle = s.title || s.description || "";
+                        outStream.title = combinedTitle ? `${combinedTitle}\n▶ ${qualStr}${langBadge}` : `▶ ${qualStr}${langBadge}`;
+                        outStream._score = score;
                         return outStream;
                     });
                 }
@@ -970,14 +1219,51 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
-        allStreams.sort((a, b) => b._score - a._score);
 
-        const finalStreams = allStreams.map(s => { let o = {...s}; delete o._score; return o; });
+        allStreams.sort((a, b) => b._score - a._score);
+        let limitedStreams = allStreams.slice(0, 25);
+
+        // --- SCANNER SYNCHRONE DE VALIDATION ---
+        if (limitedStreams.length > 0) {
+            await Promise.all(limitedStreams.map(async (s) => {
+                if (!s.url) return;
+                try {
+                    const r = await axios.get(s.url, {
+                        responseType: 'stream',
+                        timeout: 5000,
+                        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+                    });
+                    if (r.data && typeof r.data.destroy === 'function') r.data.destroy();
+                } catch (err) {
+                    if (err.response && (err.response.status === 523 || err.response.status === 403)) {
+                        return;
+                    }
+                    s._score -= 100000; 
+                    let status = err.response ? err.response.status : 'ERR';
+                    let msg = status === 404 ? "Flux Introuvable" : status >= 500 ? "Serveur Injoignable" : err.message;
+                    s.title = `⚠️ Vérif (${status} - ${msg})\n` + s.title;
+                }
+            }));
+            
+            limitedStreams.sort((a, b) => b._score - a._score);
+        }
+
+        const finalStreams = limitedStreams.map((s) => {
+            let streamObj = { ...s };
+            delete streamObj._score; 
+            return streamObj;
+        });
+        
+        streamCache.set(cacheKey, finalStreams);
+        setTimeout(() => streamCache.delete(cacheKey), 45000); 
+
         res.json({ streams: finalStreams });
     } catch (err) { res.json({ streams: [] }); }
 });
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`[INFO] Server started on port ${PORT}`);
+    updateEPG(); 
+    setInterval(updateEPG, 3600000); 
 });
