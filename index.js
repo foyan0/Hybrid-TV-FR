@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.9 (Clean Multi-Source Orchestrator & Strict Event Routing)
- * Core Engine: Synchronous Health Check (6.5s), Smart Cache, Strict Category Separation, HLS Proxy Relay.
+ * Version: 1.2.8 (Strict Events Isolation, Cloudflare 523 Bypass, Resilient Scraping)
+ * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing, HLS Proxy Relay.
  */
 
 const express = require('express');
@@ -10,6 +10,7 @@ const cors = require('cors');
 const zlib = require('zlib');
 const readline = require('readline');
 const urlModule = require('url');
+const cheerio = require('cheerio');
 
 const app = express();
 app.use(cors());
@@ -70,7 +71,7 @@ function parseConfig(encodedConfig) {
     }
 }
 
-// --- DÉTECTION STRICTE DES ÉVÉNEMENTS (UNIQUEMENT CATÉGORIE EVENTS) ---
+// --- DÉTECTION STRICTE DES ÉVÉNEMENTS (UNIQUEMENT ONGLET EVENTS) ---
 function extractMatchEvent(rawName) {
     if (!rawName) return null;
     let s = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -79,7 +80,7 @@ function extractMatchEvent(rawName) {
     let isMatch = false;
     let eventName = '';
 
-    if (s.includes('MATCH TIME') || s.includes('MATCHTIME') || s.includes('[LIVE]') || s.includes('🔴') || s.includes('VS')) {
+    if (s.includes('MATCH TIME') || s.includes('MATCHTIME') || s.includes('[LIVE]') || s.includes('🔴')) {
         let cleanName = s.replace(/^(?:FR|BE|CH|VIP|LIVE|DIRECT|EVENT|MATCH|LIGUE\s*1|DAZN|BEIN|RMC|CANAL\+?|MULTI|MULTIPLEX|\[LIVE\]|🔴)\s*[:|-|\|]*\s*/gi, '')
                          .replace(/\d{1,2}[hH:]\d{2}/g, '')
                          .replace(/\b(?:FHD|HD|SD|4K|1080P|720P|MATCH\s*TIME|MATCHTIME)\b/gi, '')
@@ -112,20 +113,11 @@ function extractMatchEvent(rawName) {
     return null;
 }
 
-// --- CATALOGUE DES CHAÎNES LINÉAIRES (EXCLUSIVEMENT HORS EVENTS) ---
-function getChannelData(rawName, catalogHint = '') {
+// --- CATALOGUE DES CHAÎNES LINÉAIRES (EXCLUSIVEMENT DANS SPORTS) ---
+function getChannelData(rawName) {
     if (!rawName) return null;
-    
-    // Si l'add-on source est explicitement orienté sports/events ou que le nom indique un match
-    if (catalogHint === 'events' || catalogHint === 'sports') {
-        let eventData = extractMatchEvent(rawName);
-        if (eventData) return eventData;
-    }
-
     let eventData = extractMatchEvent(rawName);
-    if (eventData && (rawName.includes('vs') || rawName.includes('VS') || rawName.includes('🔴') || rawName.includes('LIVE'))) {
-        return eventData;
-    }
+    if (eventData) return eventData;
 
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     n = n.replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
@@ -279,20 +271,6 @@ function getChannelData(rawName, catalogHint = '') {
     if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
     if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
 
-    if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 150 };
-    if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
-    if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 3 };
-    if (c.includes('DISNEYJR') || c.includes('DISNEYJUNIOR') || (c.includes('DISNEY') && c.includes('JR'))) return { id: 'hyb_jeu_disneyjr', name: 'Disney Junior', categories: ['jeunesse'], index: 5 };
-    if (c.includes('DISNEY') && c.includes('PLUS1')) return { id: 'hyb_jeu_disney_plus1', name: 'Disney Channel +1', categories: ['jeunesse'], index: 50 };
-    if (c.includes('DISNEY')) return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 2 };
-    if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 5 };
-    if (c.includes('BOING')) return { id: 'hyb_jeu_boing', name: 'Boing', categories: ['jeunesse'], index: 6 };
-    if (c.includes('NICKELODEON') || c.includes('NICK')) return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 7 };
-    if (c.includes('TIJI')) return { id: 'hyb_jeu_tiji', name: 'Tiji', categories: ['jeunesse'], index: 9 };
-    if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 10 };
-    if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 11 };
-    if (c.includes('PIWI')) return { id: 'hyb_jeu_piwi', name: 'Piwi+', categories: ['jeunesse'], index: 100 };
-
     let cat = 'autres';
     let idx = 300;
     if (c.includes('SPORT') || c.includes('FOOT') || c.includes('GOLF') || c.includes('TENNIS') || c.includes('RUGBY') || c.includes('AUTO') || c.includes('MOTO')) cat = 'sports';
@@ -324,6 +302,96 @@ function parseXmltvDate(str) {
 
 function formatTime(timestamp) {
     return new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }).format(new Date(timestamp)).replace(':', 'h');
+}
+
+// ============================================================================
+// WEB SCRAPER UNIVERSEL OPTIMISÉ (DIRECTS ET EVENTS UNIQUEMENT)
+// ============================================================================
+
+async function scrapeUniversalLiveWebsite(baseUrl) {
+    let metas = [];
+    try {
+        const response = await axios.get(baseUrl, {
+            headers: { 
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+            },
+            timeout: 10000
+        });
+
+        const $ = cheerio.load(response.data);
+        let seenIds = new Set();
+
+        $('a, div, article, li').each((i, el) => {
+            const text = $(el).text().toUpperCase();
+            const isLive = text.includes('LIVE') || text.includes('DIRECT') || text.includes('EN COURS') || $(el).find('.live, .badge-live, .red-dot').length > 0;
+            const hasMatchKeywords = text.includes(' VS ') || text.includes(' - ') || text.includes(' CONTRE ') || text.includes('COURT') || text.includes('PISTE') || text.includes('TERRAIN') || text.includes('TABLE');
+
+            if (isLive && hasMatchKeywords) {
+                const anchor = $(el).is('a') ? $(el) : $(el).find('a').first();
+                const link = anchor.attr('href');
+
+                if (link && !link.includes('#') && !link.includes('javascript')) {
+                    let matchTitle = anchor.text().trim() || $(el).find('h3, h4, span').first().text().trim();
+                    matchTitle = matchTitle.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+
+                    if (matchTitle && matchTitle.length > 5 && !matchTitle.toUpperCase().startsWith('LIVE')) {
+                        let fullMatchUrl = link.startsWith('http') ? link : urlModule.resolve(baseUrl, link);
+                        let metaId = Buffer.from(fullMatchUrl).toString('base64');
+
+                        if (!seenIds.has(metaId)) {
+                            seenIds.add(metaId);
+                            metas.push({
+                                id: metaId,
+                                name: `🔴 ${matchTitle}`,
+                                poster: EVENT_POSTER,
+                                _isDirectStream: false,
+                                _isWebScraped: true,
+                                _scrapedUrl: fullMatchUrl,
+                                _providerBase: baseUrl
+                            });
+                        }
+                    }
+                }
+            }
+        });
+    } catch (e) {
+        console.error("[SCRAPER ERR] Universal :", e.message);
+    }
+    return metas;
+}
+
+async function extractUniversalStreamUrl(scrapedUrl) {
+    try {
+        const response = await axios.get(scrapedUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+            timeout: 8000
+        });
+        const $ = cheerio.load(response.data);
+        let streamUrl = null;
+        
+        $('source').each((i, el) => {
+            let src = $(el).attr('src');
+            if (src && src.includes('.m3u8')) streamUrl = src;
+        });
+
+        if (!streamUrl) {
+            const htmlStr = response.data;
+            const match = htmlStr.match(/(https?:\/\/[^\s"'<>]+\.m3u8[^\s"'<>]*)/);
+            if (match) streamUrl = match[1];
+        }
+
+        if (!streamUrl) {
+            $('iframe').each((i, el) => {
+                let src = $(el).attr('src');
+                if (src && !src.includes('ads') && !src.includes('tracker')) streamUrl = src;
+            });
+        }
+        
+        return streamUrl;
+    } catch (e) {
+        return null;
+    }
 }
 
 // --- EPG SYNC ---
@@ -412,13 +480,12 @@ async function updateEPG() {
     } finally { isUpdatingEPG = false; }
 }
 
-// --- CATALOG ENGINE (ORCHESTRATEUR DE SOURCES MULTIPLES) ---
+// --- CATALOG ENGINE ---
 async function fetchCatalogFromSource(sourceInput) {
     let metas = [];
     let cleanInput = sourceInput.trim();
     if (!cleanInput) return metas;
 
-    // 1. ROUTEUR M3U CLASSIC
     if (cleanInput.endsWith('.m3u') || cleanInput.endsWith('.m3u8') || cleanInput.includes('get.php') || cleanInput.includes('/live/')) {
         try {
             const res = await axios.get(cleanInput, { timeout: 10000 });
@@ -447,7 +514,6 @@ async function fetchCatalogFromSource(sourceInput) {
         return metas;
     }
 
-    // 2. ROUTEUR ADD-ON JSON CLASSIC (Qu'il s'agisse d'un add-on TV ou d'un add-on externe de sport/events)
     if (cleanInput.includes('manifest.json')) {
         try {
             let cleanUrl = cleanInput;
@@ -456,9 +522,6 @@ async function fetchCatalogFromSource(sourceInput) {
             const manifestRes = await axios.get(cleanUrl, { timeout: 6000 });
             const catalogs = manifestRes.data.catalogs || [];
             
-            // Détection si l'add-on distant est orienté sport/événements
-            const isEventAddon = cleanUrl.toLowerCase().includes('sport') || cleanUrl.toLowerCase().includes('live') || cleanUrl.toLowerCase().includes('event') || cleanUrl.toLowerCase().includes('match');
-
             const catalogPromises = catalogs.map(async (catalog) => {
                 let catMetas = []; 
                 let hasMore = true; 
@@ -484,12 +547,7 @@ async function fetchCatalogFromSource(sourceInput) {
                             res.data.metas.forEach(m => {
                                 if (m && m.id && m.name && !seenIds.has(m.id)) {
                                     seenIds.add(m.id);
-                                    let metaName = m.name;
-                                    // Si l'add-on source est un add-on d'événements externe, on force le tag live si absent
-                                    if (isEventAddon && !metaName.includes('🔴') && !metaName.includes('[LIVE]')) {
-                                        metaName = `🔴 ${metaName}`;
-                                    }
-                                    catMetas.push({ id: m.id, name: metaName, poster: m.poster || null });
+                                    catMetas.push({ id: m.id, name: m.name, poster: m.poster || null });
                                     addedInBatch++;
                                 }
                             });
@@ -507,6 +565,10 @@ async function fetchCatalogFromSource(sourceInput) {
             });
             return metas;
         } catch (err) { return metas; }
+    }
+
+    if (cleanInput.startsWith('http')) {
+        return await scrapeUniversalLiveWebsite(cleanInput);
     }
 
     return metas;
@@ -575,6 +637,9 @@ async function getChannelsForSources(sourcesList) {
                         if (meta._isDirectStream) {
                             const sourceExists = tempChannelsMap[id].sources.find(s => s.directUrl === meta._directUrl);
                             if (!sourceExists) tempChannelsMap[id].sources.push({ type: 'm3u', directUrl: meta._directUrl, sourceIndex: i, originalName: meta.name });
+                        } else if (meta._isWebScraped) {
+                            const sourceExists = tempChannelsMap[id].sources.find(s => s.scrapedUrl === meta._scrapedUrl);
+                            if (!sourceExists) tempChannelsMap[id].sources.push({ type: 'scraped', scrapedUrl: meta._scrapedUrl, providerBase: meta._providerBase, sourceIndex: i, originalName: meta.name });
                         } else {
                             const sourceExists = tempChannelsMap[id].sources.find(s => s.metaId === meta.id && s.providerBase === cleanUrl);
                             if (!sourceExists) tempChannelsMap[id].sources.push({ type: 'addon', metaId: meta.id, providerBase: cleanUrl, sourceIndex: i, originalName: meta.name });
@@ -772,7 +837,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.9).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.8).</p>
             </div>
             <div class="tabs">
                 <button class="tab-btn active" onclick="switchTab('config', this)">⚙️ Configurer</button>
@@ -780,8 +845,7 @@ app.get('/', async (req, res) => {
             </div>
             <div id="config" class="tab-content active">
                 <div class="section">
-                    <h3 class="section-title">Sources (Add-ons TV, M3U ou Add-on Événements)</h3>
-                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Ajoutez vos listes de chaînes et vos add-ons de sport/événements externes.</p>
+                    <h3 class="section-title">Sources (Add-ons, M3U ou Sites Web Live)</h3>
                     <div id="sourcesContainer"></div>
                     <button type="button" onclick="addSourceField()" class="btn btn-small" style="margin-top: 10px;">+ Ajouter une source</button>
                 </div>
@@ -839,7 +903,7 @@ app.get('/', async (req, res) => {
                     div.className = 'source-row';
                     div.innerHTML = \`
                         <span class="source-num">#\${index + 1}</span>
-                        <input type="text" id="src_\${index}" value="\${src}" placeholder="URL manifest.json ou M3U">
+                        <input type="text" id="src_\${index}" value="\${src}" placeholder="URL manifest.json, M3U ou Site Web">
                         \${index > 0 ? '<button type="button" onclick="moveSource(' + index + ', -1)" class="btn-small">▲</button>' : '<div style="width: 28px;"></div>'}
                         \${index < sources.length - 1 ? '<button type="button" onclick="moveSource(' + index + ', 1)" class="btn-small">▼</button>' : '<div style="width: 28px;"></div>'}
                         \${sources.length > 1 ? '<button type="button" onclick="removeSource(' + index + ')" class="btn-danger">✕</button>' : ''}
@@ -992,9 +1056,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.2.9',
+        version: '1.2.8',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.9). Multi-Source Orchestration & Clean Event Routing.',
+        description: 'Meta-Addon IPTV (v1.2.8). Strict Catalog Routing & Resilient Health Scan.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1088,6 +1152,24 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                     title: source.originalName || "Source M3U",
                     _score: isBeluchon ? 4500 : 1500,
                     _originalTitle: source.originalName || "Source M3U",
+                    behaviorHints: { proxyHeaders: { request: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase } } }
+                }];
+            }
+            
+            if (source.type === 'scraped') {
+                let resolvedUrl = await extractUniversalStreamUrl(source.scrapedUrl);
+                if (!resolvedUrl) return [];
+                
+                if (resolvedUrl.includes('.m3u8')) {
+                    resolvedUrl = `${serverHost}/proxy/hls?url=${encodeURIComponent(resolvedUrl)}&referer=${encodeURIComponent(source.providerBase)}`;
+                }
+
+                return [{
+                    url: resolvedUrl,
+                    name: `▶ Flux Live Direct`,
+                    title: source.originalName || "Événement en direct",
+                    _score: 3000,
+                    _originalTitle: source.originalName,
                     behaviorHints: { proxyHeaders: { request: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase } } }
                 }];
             }
@@ -1223,7 +1305,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         allStreams.sort((a, b) => b._score - a._score);
         let limitedStreams = allStreams.slice(0, 25);
 
-        // --- SCANNER SYNCHRONE DE VALIDATION ---
+        // --- SCANNER SYNCHRONE DE VALIDATION (GESTION PROPRE DES ERREURS 523 / TIMEOUT) ---
         if (limitedStreams.length > 0) {
             await Promise.all(limitedStreams.map(async (s) => {
                 if (!s.url) return;
@@ -1236,8 +1318,10 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                     if (r.data && typeof r.data.destroy === 'function') r.data.destroy();
                 } catch (err) {
                     if (err.response && (err.response.status === 523 || err.response.status === 403)) {
+                        // Bypass du faux positif Cloudflare 523/403 : le flux fonctionnera en lecture via proxy
                         return;
                     }
+                    
                     s._score -= 100000; 
                     let status = err.response ? err.response.status : 'ERR';
                     let msg = status === 404 ? "Flux Introuvable" : status >= 500 ? "Serveur Injoignable" : err.message;
