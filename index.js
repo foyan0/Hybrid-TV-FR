@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.2 (Original Catalog Order Restored, Sports Fixed, CORS Proxy, Multi-Lang)
+ * Version: 1.2.3 (Sports Catalog Fixed, DAZN Rise to bottom, Softened Penalties)
  * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing, HLS Proxy Relay.
  */
 
@@ -150,18 +150,25 @@ function getChannelData(rawName) {
 
     n = n.replace(/\+/g, 'PLUS');
 
-    // === SECTION SPORTS (Ligue 1, DAZN, BeIN, etc.) ===
-    if (n.includes('DAZN') || n.includes('DAZONE')) {
-        if (n.includes('RISE')) return { id: 'hyb_sport_dazn_rise', name: 'DAZN Rise', categories: ['sports'], index: 19 };
-        let m = n.match(/(?:DAZN|DAZONE)[^\d]*([1-9]|1[0-8])/i); let num = m ? m[1] : '1';
-        return { id: 'hyb_sport_dazn_'+num, name: 'DAZN '+num, categories: ['sports'], index: 10 + parseInt(num, 10) };
+    // === SECTION SPORTS REVISITÉE (v1.2.3) ===
+    
+    // 1. DAZN RISE / WOMEN (Banni tout en bas de la liste)
+    if ((n.includes('DAZN') || n.includes('DAZONE')) && (n.includes('RISE') || n.includes('WOMEN') || n.includes('FEMME'))) {
+        return { id: 'hyb_sport_dazn_rise', name: 'DAZN Rise', categories: ['sports'], index: 999 };
     }
 
-    let isLigue1 = n.includes('LIGUE 1') || n.includes('LIGUE1') || n.match(/\bL1\b/) || n.includes('LEAGUE 1') || n.includes('LEAGUE1');
-    if (isLigue1) {
-        let m = n.match(/(?:LIGUE\s*1|LEAGUE\s*1|L1|LIGUE1|LEAGUE1)(?:.*?PLUS|.*?LIVE)?[^\d]*([1-9]|1[0-8])/i);
+    // 2. LIGUE 1+ / DAZN LIVE / DAZN LIGUE 1
+    if (n.includes('LIGUE 1') || n.includes('LIGUE1') || n.match(/\bL1\b/) || n.includes('LEAGUE 1') || (n.includes('DAZN') && n.includes('LIVE'))) {
+        let m = n.match(/(?:LIVE|PLUS|LIGUE\s*1|L1|LIGUE1)[^\d]*([1-9]|1[0-8])/i);
         let num = m ? m[1] : '1';
         return { id: 'hyb_sport_ligue1plus_' + num, name: num === '1' ? 'Ligue 1+' : 'Ligue 1+ ' + num, categories: ['sports'], index: 20 + parseInt(num, 10) };
+    }
+
+    // 3. DAZN 1, DAZN 2 (Chaînes linéaires principales)
+    if (n.includes('DAZN') || n.includes('DAZONE')) {
+        let m = n.match(/(?:DAZN|DAZONE)[^\d]*([1-9]|1[0-8])/i);
+        let num = m ? m[1] : '1';
+        return { id: 'hyb_sport_dazn_'+num, name: 'DAZN '+num, categories: ['sports'], index: 10 + parseInt(num, 10) };
     }
 
     let c = n.replace(/[^A-Z0-9]/g, '');
@@ -559,7 +566,7 @@ async function getChannelsForSources(sourcesList) {
         try {
             let tempChannelsMap = {};
             let sourceReport = {};
-            let originalOrderCounter = 0; // CORRECTIF : Permet de retenir l'ordre exact de ton fichier M3U/Addon
+            let originalOrderCounter = 0; // Garantit le maintien de l'ordre d'origine de ton M3U
 
             for (let i = 0; i < sourcesList.length; i++) {
                 const sourceInput = sourcesList[i].trim();
@@ -588,7 +595,7 @@ async function getChannelsForSources(sourcesList) {
                             tempChannelsMap[id] = { 
                                 id: id, name: channelInfo.name, displayName: channelInfo.name, categories: channelInfo.categories,
                                 sortIndex: channelInfo.index, sources: [], poster: finalPoster,
-                                originalOrder: originalOrderCounter++ // Assignation du numéro d'apparition
+                                originalOrder: originalOrderCounter++
                             };
                         }
                         
@@ -607,7 +614,7 @@ async function getChannelsForSources(sourcesList) {
 
             let tempChannelsData = Object.values(tempChannelsMap).filter(ch => ch.sources.length > 0);
             
-            // CORRECTIF DU TRI : Respecte l'index hardcodé, ou garde l'ordre original du M3U si inconnu !
+            // Tri respectueux de l'origine
             tempChannelsData.sort((a, b) => {
                 if (a.sortIndex !== 300 || b.sortIndex !== 300) {
                     if (a.sortIndex !== b.sortIndex) return a.sortIndex - b.sortIndex;
@@ -875,7 +882,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.2).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.3).</p>
             </div>
 
             <div class="tabs">
@@ -1231,9 +1238,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.2.2',
+        version: '1.2.3',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.2). Original Order Restored & Sports Catalog Fixed.',
+        description: 'Meta-Addon IPTV (v1.2.3). Soft Penalties & Accurate Sports Catalog.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1367,59 +1374,71 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         let originalTitle = (rawName !== rawTitle) ? `${rawName} ${rawTitle}` : rawName || rawTitle;
                         originalTitle = originalTitle.replace(/http\S+/g, '').trim() || `Source Add-on ${idx + 1}`;
 
+                        // On garde les espaces dans nStream pour que les Regex fonctionnent sans chevauchement
                         let up = originalTitle.toUpperCase();
-                        let nStream = up.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').replace(/\+/g, 'PLUS').replace(/[^A-Z0-9]/g, '');
+                        let nStream = up.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').replace(/\+/g, ' PLUS ').replace(/[^A-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 
                         let penalty = 0;
                         
                         if (channel.id.startsWith('hyb_canal_') && !channel.id.includes('live') && channel.id !== 'hyb_aut_canal_elles') {
                             let isBaseCanal = (channel.id === 'hyb_canal_cplus');
                             if (isBaseCanal) {
-                                if (nStream.match(/(SPORT|FOOT|CINE|CNEMA|DECALE|KIDS|DOC|BOX|GRAND|SERIE|PREMIER|FRISSON|EMOTION|FAMIZ|CLUB|CLASSIC|COMEDIE|F1|MOTO|360|FAMILY|LIGUE1|DAZN|BEIN|MULTI|ELLES)/)) penalty += 5000;
+                                if (nStream.match(/(SPORT|FOOT|CINE|DECALE|KIDS|DOC|BOX|GRAND|SERIE|PREMIER|FRISSON|EMOTION|FAMIZ|CLUB|CLASSIC|COMEDIE|F1|MOTO|360|FAMILY|LIGUE\s*1|DAZN|BEIN|MULTI|ELLES)/)) penalty += 2000;
                             } else {
                                 let target = channel.id.replace('hyb_canal_', '').toUpperCase();
                                 if (target.includes('SPORT') || target.includes('FOOT')) {
-                                    if (nStream.includes('CINE') || nStream.includes('DOC') || nStream.includes('KIDS') || nStream.includes('SERIE') || nStream.includes('BOX')) penalty += 5000;
+                                    if (nStream.match(/(CINE|DOC|KIDS|SERIE|BOX|GRAND)/)) penalty += 2000;
                                 } else if (target.includes('CINE') || target.includes('SERIE') || target.includes('BOX') || target.includes('GRAND')) {
-                                    if (nStream.includes('SPORT') || nStream.includes('FOOT') || nStream.includes('F1') || nStream.includes('MOTO') || nStream.includes('LIGUE1')) penalty += 5000;
+                                    if (nStream.match(/(SPORT|FOOT|F1|MOTO|LIGUE\s*1)/)) penalty += 2000;
                                 }
                             }
                         }
 
-                        if (channel.id === 'hyb_tnt_1' && (nStream.includes('SERIE') || nStream.includes('FILM') || nStream.includes('TFX') || nStream.includes('TMC') || nStream.includes('SF'))) penalty += 5000;
-                        if (channel.id === 'hyb_dec_discovery' && (nStream.includes('INVESTIGATION') || nStream.includes('ID') || nStream.includes('SCIENCE'))) penalty += 5000;
-                        if (channel.id === 'hyb_dec_investigation' && (!nStream.includes('INVESTIGATION') && !nStream.includes('ID'))) penalty += 5000;
-                        if (channel.id === 'hyb_jeu_disney' && (nStream.includes('JR') || nStream.includes('JUNIOR') || nStream.includes('XD') || nStream.includes('PLUS1'))) penalty += 5000;
+                        if (channel.id === 'hyb_tnt_1' && (nStream.includes('SERIE') || nStream.includes('FILM') || nStream.includes('TFX') || nStream.includes('TMC') || nStream.includes('SF'))) penalty += 2000;
+                        if (channel.id === 'hyb_dec_discovery' && (nStream.includes('INVESTIGATION') || nStream.includes('ID') || nStream.includes('SCIENCE'))) penalty += 2000;
+                        if (channel.id === 'hyb_dec_investigation' && (!nStream.includes('INVESTIGATION') && !nStream.includes('ID'))) penalty += 2000;
+                        if (channel.id === 'hyb_jeu_disney' && (nStream.includes('JR') || nStream.includes('JUNIOR') || nStream.includes('XD') || nStream.includes('PLUS1'))) penalty += 2000;
 
                         if (channel.id.startsWith('hyb_sport_bein')) {
                             let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1'; let isTargetMax = channel.id.includes('max');
-                            let streamNumMatch = nStream.match(/BEIN(?:SPORT|MAX)?S?(\d+)/i);
-                            if (streamNumMatch) { if (streamNumMatch[1] !== targetNum) penalty += 5000; } else if (targetNum !== '1') { penalty += 5000; }
-                            if (isTargetMax !== nStream.includes('MAX')) penalty += 5000;
+                            let streamNumMatch = nStream.match(/BEIN\s*(?:SPORT\s*)?(?:MAX\s*)?S?\s*(\d+)/i);
+                            if (streamNumMatch) { 
+                                if (streamNumMatch[1] !== targetNum) penalty += 5000; 
+                            } else if (targetNum !== '1') { 
+                                penalty += 2000; 
+                            }
+                            if (isTargetMax !== nStream.includes('MAX')) penalty += 2000;
                         }
 
+                        // Pénalités réparées pour DAZN
+                        if (channel.id.startsWith('hyb_sport_dazn_') && !channel.id.includes('live') && !channel.id.includes('rise')) {
+                            let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
+                            let streamNumMatch = nStream.match(/DAZN\s*(\d+)/i);
+                            if (streamNumMatch) { 
+                                if (streamNumMatch[1] !== targetNum) penalty += 5000; 
+                            } else if (targetNum !== '1') { 
+                                penalty += 2000; 
+                            }
+                            if (nStream.includes('LIVE ') || nStream.includes('LIGUE 1') || nStream.match(/\bL1\b/)) penalty += 5000;
+                        }
+
+                        // Pénalités réparées pour LIGUE 1+ / DAZN LIVE
                         if (channel.id.startsWith('hyb_sport_ligue1plus')) {
                             let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
-                            let streamNumMatch = nStream.match(/(?:LIGUE1|LEAGUE1|L1)(?:PLUS|LIVE)?(\d+)/i);
-                            if (streamNumMatch) { if (streamNumMatch[1] !== targetNum) penalty += 5000; } else if (targetNum !== '1') { penalty += 5000; }
-                        }
-
-                        if (channel.id.startsWith('hyb_sport_dazn') && !channel.id.includes('live') && !channel.id.includes('rise')) {
-                            let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
-                            let streamNumMatch = nStream.match(/DAZN(\d+)/i);
-                            if (streamNumMatch && streamNumMatch[1] !== targetNum) penalty += 5000;
+                            let streamNumMatch = nStream.match(/(?:LIGUE\s*1|L1|LIVE|PLUS)\s*(\d+)/i);
+                            if (streamNumMatch) { 
+                                if (streamNumMatch[1] !== targetNum) penalty += 5000; 
+                            } else if (targetNum !== '1') { 
+                                penalty += 2000; 
+                            }
+                            // Si c'est DAZN principal (ex: DAZN 1) sans mention LIVE/LIGUE 1, on pénalise pour ne pas l'afficher dans Ligue 1+ 1
+                            if (nStream.includes('DAZN') && !nStream.includes('LIVE') && !nStream.includes('LIGUE') && !nStream.match(/\bL1\b/)) penalty += 5000;
                         }
 
                         if (channel.id.startsWith('hyb_canal_live')) {
                             let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
-                            let streamNumMatch = nStream.match(/LIVE(\d+)/i);
-                            if (streamNumMatch) { if (streamNumMatch[1] !== targetNum) penalty += 5000; } else { penalty += 5000; }
-                        }
-
-                        if (channel.id.startsWith('hyb_sport_sporttv')) {
-                            let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
-                            let streamNumMatch = nStream.match(/SPORTTV(\d+)/i);
-                            if (streamNumMatch && streamNumMatch[1] !== targetNum) penalty += 5000;
+                            let streamNumMatch = nStream.match(/LIVE\s*(\d+)/i);
+                            if (streamNumMatch) { if (streamNumMatch[1] !== targetNum) penalty += 5000; } else { penalty += 2000; }
                         }
 
                         // --- DÉTECTION QUALITÉ ---
@@ -1512,7 +1531,9 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
         // --- TRI INITIAL PAR SCORE ---
         allStreams.sort((a, b) => b._score - a._score);
-        let limitedStreams = allStreams.slice(0, 15);
+        
+        // Limite augmentée à 25 flux pour éviter de faire disparaître les bonnes sources
+        let limitedStreams = allStreams.slice(0, 25);
 
         // --- SCANNER SYNCHRONE DE LIENS MORTS ---
         if (limitedStreams.length > 0) {
