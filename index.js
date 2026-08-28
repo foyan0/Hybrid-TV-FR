@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.13 (Restored Full EPG, Complete Channel Map, RAM Metrics & Table Debugger)
+ * Version: 1.2.14 (Fixed Channel Separation for Nickelodeon Variants, Full EPG & Debugger)
  * Core Engine: Synchronous Health Check (6.5s), Smart Cache, Strict Category Separation, HLS Proxy Relay.
  */
 
@@ -112,7 +112,7 @@ function extractMatchEvent(rawName) {
     return null;
 }
 
-// --- CATALOGUE DES CHAÎNES COMPLET ET RESTAURÉ ---
+// --- CATALOGUE DES CHAÎNES LINÉAIRES RIGOUREUX ---
 function getChannelData(rawName, catalogHint = '') {
     if (!rawName) return null;
     
@@ -273,6 +273,7 @@ function getChannelData(rawName, catalogHint = '') {
     if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
     if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
 
+    // --- RÈGLES JEUNESSE (Ordre strict : sous-chaînes AVANT les chaînes principales) ---
     if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 150 };
     if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
     if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 3 };
@@ -281,7 +282,12 @@ function getChannelData(rawName, catalogHint = '') {
     if (c.includes('DISNEY')) return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 2 };
     if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 5 };
     if (c.includes('BOING')) return { id: 'hyb_jeu_boing', name: 'Boing', categories: ['jeunesse'], index: 6 };
-    if (c.includes('NICKELODEON') || c.includes('NICK')) return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 7 };
+    
+    if (c.includes('NICKELODEONJUNIOR') || c.includes('NICKJUNIOR')) return { id: 'hyb_jeu_nick_jr', name: 'Nickelodeon Junior', categories: ['jeunesse'], index: 7 };
+    if (c.includes('NICKELODEONTEEN') || c.includes('NICKTEEN')) return { id: 'hyb_jeu_nick_teen', name: 'Nickelodeon Teen', categories: ['jeunesse'], index: 8 };
+    if (c.includes('NICKTOON') || c.includes('NICKTOONS')) return { id: 'hyb_jeu_nicktoons', name: 'Nicktoons', categories: ['jeunesse'], index: 9 };
+    if (c.includes('NICKELODEON') || c === 'NICK') return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 7 };
+
     if (c.includes('TIJI')) return { id: 'hyb_jeu_tiji', name: 'Tiji', categories: ['jeunesse'], index: 9 };
     if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 10 };
     if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 11 };
@@ -837,7 +843,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">Gestionnaire IPTV et Diagnostic Avancé (v1.2.13).</p>
+                <p class="subtitle">Gestionnaire IPTV et Diagnostic Avancé (v1.2.14).</p>
             </div>
             <div class="tabs">
                 <button class="tab-btn active" onclick="switchTab('config', this)">⚙️ Configurer</button>
@@ -1089,9 +1095,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.2.13',
+        version: '1.2.14',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.13) - Full EPG & Complete Categories.',
+        description: 'Meta-Addon IPTV (v1.2.14) - Fixed Nickelodeon & Full EPG.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
