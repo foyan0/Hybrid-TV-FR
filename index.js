@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.12 (Restored Bulletproof Channel Categorization, RAM Metrics & Table Debugger)
+ * Version: 1.2.13 (Restored Full EPG, Complete Channel Map, RAM Metrics & Table Debugger)
  * Core Engine: Synchronous Health Check (6.5s), Smart Cache, Strict Category Separation, HLS Proxy Relay.
  */
 
@@ -112,7 +112,7 @@ function extractMatchEvent(rawName) {
     return null;
 }
 
-// --- CATALOGUE DES CHAÎNES LINÉAIRES RESTAURÉ RIGOUREUSEMENT ---
+// --- CATALOGUE DES CHAÎNES COMPLET ET RESTAURÉ ---
 function getChannelData(rawName, catalogHint = '') {
     if (!rawName) return null;
     
@@ -192,6 +192,7 @@ function getChannelData(rawName, catalogHint = '') {
     if (c.includes('TVBREIZH') || c.includes('BREIZH')) return { id: 'hyb_info_breizh', name: 'TV Breizh', categories: ['info'], index: 40 };
     if (c.includes('BFMPARIS')) return { id: 'hyb_info_50', name: 'BFM Paris Île-de-France', categories: ['info'], index: 50 };
     if (c.includes('BFMLYON')) return { id: 'hyb_info_51', name: 'BFM Lyon', categories: ['info'], index: 51 };
+    if (c.includes('BFMLILLE') || c.includes('GRANDLILLE')) return { id: 'hyb_info_52', name: 'BFM Grand Lille', categories: ['info'], index: 52 };
     if (c === 'BFMTV' || c === 'BFM') return { id: 'hyb_info_01', name: 'BFMTV', categories: ['info'], index: 1 };
     if (c.includes('BFMBUSINESS')) return { id: 'hyb_info_02', name: 'BFM Business', categories: ['info'], index: 2 };
     if (c.includes('CNEWS')) return { id: 'hyb_info_03', name: 'CNews', categories: ['info'], index: 3 };
@@ -201,7 +202,7 @@ function getChannelData(rawName, catalogHint = '') {
     if (c.includes('COMEDIE') || c.includes('COMEDY')) return { id: 'hyb_canal_comedie', name: 'Comédie+', categories: ['canal', 'autres'], index: 10 };
 
     if (c.includes('CANAL') || c.includes('CPLUS')) {
-        if (c.includes('ELLES') || c.includes('LCENTRE') || c.includes('CENTRE') || c === 'CANALL') {
+        if (c.includes('ELLES') || c.includes('LCENTRE') || c.includes('CENTRE') || c === 'CANALL' || c.includes('REGIONAL') || c.includes('LOCAL') || c.includes('OUTREMER')) {
             return { id: 'hyb_aut_canal_elles', name: 'Canal+ Elles', categories: ['autres'], index: 1000 };
         }
         if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 100 };
@@ -229,7 +230,7 @@ function getChannelData(rawName, catalogHint = '') {
         if (c.includes('FRISSON') || c.includes('ISSON')) return { id: 'hyb_cine_frisson', name: 'Ciné+ Frisson', categories: ['cinema', 'canal'], index: 12 };
         if (c.includes('EMOTION')) return { id: 'hyb_cine_emotion', name: 'Ciné+ Émotion', categories: ['cinema', 'canal'], index: 13 };
         if (c.includes('FAMIZ')) return { id: 'hyb_cine_famiz', name: 'Ciné+ Famiz', categories: ['cinema', 'canal'], index: 14 };
-        if (c.includes('CLUB')) return { id: 'hyb_cine_club', name: 'Ciné+ Club', categories: ['cinema', 'canal'], index: 15 };
+        if (c.includes('CLUB') && !c.includes('SERIE')) return { id: 'hyb_cine_club', name: 'Ciné+ Club', categories: ['cinema', 'canal'], index: 15 };
         if (c.includes('CLASSIC')) return { id: 'hyb_cine_classic', name: 'Ciné+ Classic', categories: ['cinema', 'canal'], index: 16 };
         if (c.includes('ACTION')) return { id: 'hyb_cine_action', name: 'Action', categories: ['cinema'], index: 30 };
         return { id: 'hyb_cine_plus', name: 'Ciné+', categories: ['cinema', 'canal'], index: 19 };
@@ -247,6 +248,7 @@ function getChannelData(rawName, catalogHint = '') {
         return { id: 'hyb_tnt_20', name: 'TF1 Séries Films', categories: ['tnt', 'cinema'], index: 20 };
     }
     if (c.startsWith('TF1')) return { id: 'hyb_tnt_1', name: 'TF1', categories: ['tnt'], index: 1 };
+    
     if (c.startsWith('FRANCE2') || c === 'FR2') return { id: 'hyb_tnt_2', name: 'France 2', categories: ['tnt'], index: 2 };
     if (c.startsWith('FRANCE3') || c === 'FR3') return { id: 'hyb_tnt_3', name: 'France 3', categories: ['tnt'], index: 3 };
     if (c.startsWith('FRANCE4') || c === 'FR4') return { id: 'hyb_tnt_4', name: 'France 4', categories: ['tnt'], index: 4 };
@@ -263,7 +265,7 @@ function getChannelData(rawName, catalogHint = '') {
     if (c.includes('GULLI')) return { id: 'hyb_jeu_gulli', name: 'Gulli', categories: ['jeunesse', 'tnt'], index: 18 };
     if (c.includes('CSTAR')) return { id: 'hyb_tnt_17', name: 'CStar', categories: ['tnt', 'musique'], index: 17 };
     if (c.includes('6TER')) return { id: 'hyb_tnt_22', name: '6ter', categories: ['tnt'], index: 22 };
-    if (c.includes('RMCSTORY')) return { id: 'hyb_tnt_23', name: 'RMC Story', categories: ['tnt', 'decouverte'], index: 23 };
+    if (c.includes('RMCSTORY') || c.includes('NUMERO23')) return { id: 'hyb_tnt_23', name: 'RMC Story', categories: ['tnt', 'decouverte'], index: 23 };
     if (c.includes('RMCDECOUVERTE')) return { id: 'hyb_tnt_24', name: 'RMC Découverte', categories: ['tnt', 'decouverte'], index: 24 };
     if (c.includes('CHERIE25') || c === 'CHERIE') return { id: 'hyb_tnt_25', name: 'Chérie 25', categories: ['tnt'], index: 25 };
     if (c.includes('13EMERUE') || c.includes('13RUE')) return { id: 'hyb_tnt_13rue', name: '13ème Rue', categories: ['tnt', 'cinema'], index: 30 };
@@ -273,20 +275,26 @@ function getChannelData(rawName, catalogHint = '') {
 
     if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 150 };
     if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
+    if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 3 };
+    if (c.includes('DISNEYJR') || c.includes('DISNEYJUNIOR') || (c.includes('DISNEY') && c.includes('JR'))) return { id: 'hyb_jeu_disneyjr', name: 'Disney Junior', categories: ['jeunesse'], index: 5 };
+    if (c.includes('DISNEY') && c.includes('PLUS1')) return { id: 'hyb_jeu_disney_plus1', name: 'Disney Channel +1', categories: ['jeunesse'], index: 50 };
     if (c.includes('DISNEY')) return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 2 };
+    if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 5 };
+    if (c.includes('BOING')) return { id: 'hyb_jeu_boing', name: 'Boing', categories: ['jeunesse'], index: 6 };
     if (c.includes('NICKELODEON') || c.includes('NICK')) return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 7 };
     if (c.includes('TIJI')) return { id: 'hyb_jeu_tiji', name: 'Tiji', categories: ['jeunesse'], index: 9 };
     if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 10 };
-    if (c.includes('GAMEONE') || c.match(/\bG1\b/)) return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 11 };
+    if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 11 };
+    if (c.includes('PIWI')) return { id: 'hyb_jeu_piwi', name: 'Piwi+', categories: ['jeunesse'], index: 100 };
 
     let cat = 'autres';
     let idx = 300;
-    if (c.includes('SPORT') || c.includes('FOOT') || c.includes('TENNIS') || c.includes('RUGBY')) cat = 'sports';
-    else if (c.includes('CINE') || c.includes('FILM') || c.includes('SERIE') || c.includes('ACTION')) cat = 'cinema';
+    if (c.includes('SPORT') || c.includes('FOOT') || c.includes('GOLF') || c.includes('TENNIS') || c.includes('RUGBY') || c.includes('AUTO') || c.includes('MOTO')) cat = 'sports';
+    else if (c.includes('CINE') || c.includes('FILM') || c.includes('SERIE') || c.includes('ACTION') || c.includes('PARAMOUNT')) cat = 'cinema';
     else if (c.includes('INFO') || c.includes('NEWS') || c.includes('METEO')) cat = 'info';
-    else if (c.includes('DOC') || c.includes('NATURE') || c.includes('HISTOIRE') || c.includes('CRIME') || c.includes('ANIMAUX')) cat = 'decouverte';
-    else if (c.includes('KIDS') || c.includes('JUNIOR') || c.includes('TOON')) cat = 'jeunesse';
-    else if (c.includes('MUSIC') || c.includes('HIT') || c.includes('POP') || c.includes('MELODY')) cat = 'musique';
+    else if (c.includes('DOC') || c.includes('NATURE') || c.includes('HISTOIRE') || c.includes('CRIME') || c.includes('ANIMAUX') || c.includes('PLANET') || c.includes('CHASSE') || c.includes('SCIENC')) cat = 'decouverte';
+    else if (c.includes('KIDS') || c.includes('JUNIOR') || c.includes('TOON') || c.includes('NICKELODEON') || c.includes('DISNEY')) cat = 'jeunesse';
+    else if (c.includes('MUSIC') || c.includes('HIT') || c.includes('POP') || c.includes('ROCK') || c.includes('TRACE') || c.includes('MELODY') || c.includes('MTV') || c.includes('MCM')) cat = 'musique';
 
     let prettyName = rawName.replace(/\[.*?\]|\(.*?\)/g, '').replace(/\b(?:FHD|HD|SD|4K|1080P|720P)\b/gi, '').trim();
     prettyName = prettyName.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.substr(1).toLowerCase());
@@ -296,6 +304,106 @@ function getChannelData(rawName, catalogHint = '') {
 function toSyncId(rawName) {
     if (!rawName) return '';
     return rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, ''); 
+}
+
+function parseXmltvDate(str) {
+    if (!str || str.length < 14) return 0;
+    const y = str.substring(0,4), m = str.substring(4,6), d = str.substring(6,8);
+    const h = str.substring(8,10), min = str.substring(10,12), s = str.substring(12,14);
+    let offset = str.substring(15).trim() || '+0200';
+    if (!offset.includes(':') && offset.length >= 5) offset = offset.slice(0,3) + ':' + offset.slice(3);
+    else if (offset.length < 5) offset = '+02:00';
+    return new Date(`${y}-${m}-${d}T${h}:${min}:${s}${offset}`).getTime() || 0;
+}
+
+function formatTime(timestamp) {
+    return new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }).format(new Date(timestamp)).replace(':', 'h');
+}
+
+// --- EPG SYNC ENGINE ---
+async function fetchAndParseEPG(url, isGz) {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const response = await axios.get(url, { responseType: 'stream', timeout: 60000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+            let stream = response.data;
+            if (isGz) { const unzip = zlib.createGunzip(); stream = stream.pipe(unzip); }
+
+            const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+            let localChannels = {}; let localEpg = {};      
+            let inChannel = false, chanBlock = '';
+            let inProgramme = false, progBlock = '';
+
+            rl.on('line', (line) => {
+                if (line.includes('<desc') || line.includes('<icon')) return;
+
+                if (line.includes('<channel ')) { inChannel = true; chanBlock = line; }
+                else if (inChannel) { chanBlock += '\n' + line; }
+                
+                if (inChannel && chanBlock.includes('</channel>')) {
+                    const idM = chanBlock.match(/id=["']([^"']+)["']/);
+                    const nameM = chanBlock.match(/<display-name[^>]*>([^<]+)<\/display-name>/);
+                    if (idM && nameM) {
+                        let cData = getChannelData(nameM[1]);
+                        if (cData) localChannels[idM[1]] = cData.id; 
+                    }
+                    inChannel = false; chanBlock = '';
+                }
+
+                if (line.includes('<programme ')) { inProgramme = true; progBlock = line; }
+                else if (inProgramme) { progBlock += '\n' + line; }
+
+                if (inProgramme && progBlock.includes('</programme>')) {
+                    const startM = progBlock.match(/start=["']([^"']+)["']/);
+                    const stopM = progBlock.match(/stop=["']([^"']+)["']/);
+                    const chanM = progBlock.match(/channel=["']([^"']+)["']/);
+                    const titleM = progBlock.match(/<title[^>]*>([^<]+)<\/title>/);
+                    
+                    if (startM && stopM && chanM && titleM) {
+                        const syncId = localChannels[chanM[1]];
+                        if (syncId) {
+                            if (!localEpg[syncId]) localEpg[syncId] = [];
+                            localEpg[syncId].push({
+                                start: parseXmltvDate(startM[1]), stop: parseXmltvDate(stopM[1]),
+                                title: titleM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").replace(/&quot;/g, '"').trim()
+                            });
+                        }
+                    }
+                    inProgramme = false; progBlock = '';
+                }
+            });
+
+            const timeoutId = setTimeout(() => { stream.destroy(); reject(new Error("Timeout")); }, 60000);
+            rl.on('close', () => { clearTimeout(timeoutId); resolve(localEpg); });
+            rl.on('error', (err) => { clearTimeout(timeoutId); reject(err); });
+        } catch (err) { reject(err); }
+    });
+}
+
+async function updateEPG() {
+    if (isUpdatingEPG) return;
+    isUpdatingEPG = true; 
+    let tempEpgData = {};
+    const sources = [
+        { url: 'https://xmltvfr.fr/xmltv/xmltv_francophone.xml', isGz: false },
+        { url: 'https://epgshare01.online/epgshare01/epg_ripper_FR1.xml.gz', isGz: true }
+    ];
+
+    try {
+        for (const source of sources) {
+            try {
+                const parsedEpg = await fetchAndParseEPG(source.url, source.isGz);
+                for (const channelId in parsedEpg) {
+                    if (!tempEpgData[channelId]) tempEpgData[channelId] = [];
+                    tempEpgData[channelId] = tempEpgData[channelId].concat(parsedEpg[channelId]);
+                }
+                if (Object.keys(tempEpgData).length > 100) break;
+            } catch (err) {}
+        }
+        if (Object.keys(tempEpgData).length > 10) {
+            epgData = tempEpgData;
+            lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
+        }
+    } finally { isUpdatingEPG = false; }
 }
 
 // --- CATALOG ENGINE ---
@@ -729,7 +837,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">Gestionnaire IPTV et Diagnostic Avancé (v1.2.12).</p>
+                <p class="subtitle">Gestionnaire IPTV et Diagnostic Avancé (v1.2.13).</p>
             </div>
             <div class="tabs">
                 <button class="tab-btn active" onclick="switchTab('config', this)">⚙️ Configurer</button>
@@ -981,9 +1089,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.2.12',
+        version: '1.2.13',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.12) - Fixed Categories.',
+        description: 'Meta-Addon IPTV (v1.2.13) - Full EPG & Complete Categories.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1026,6 +1134,23 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
     if (!channel) return res.json({ meta: {} });
     
     let descriptionText = `▶ Diffusion en cours sur ${channel.displayName}...`;
+    
+    if (Object.keys(epgData).length > 0) {
+        const epgList = epgData[channel.id]; 
+        if (epgList && epgList.length > 0) {
+            const now = Date.now();
+            epgList.sort((a, b) => a.start - b.start);
+            
+            const currentIndex = epgList.findIndex(p => now >= p.start && now <= p.stop);
+            if (currentIndex !== -1) {
+                const currentProg = epgList[currentIndex];
+                const sTime = formatTime(currentProg.start);
+                const eTime = formatTime(currentProg.stop);
+                descriptionText = `🔴 EN DIRECT (${sTime} - ${eTime}) : ${currentProg.title}`;
+            }
+        }
+    }
+
     res.json({ meta: { id: channel.id, type: 'tv', name: channel.displayName, poster: channel.poster, posterShape: 'square', description: descriptionText } });
 });
 
@@ -1081,6 +1206,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`[INFO] Server started on port ${PORT}`);
+    updateEPG(); 
+    setInterval(updateEPG, 3600000); 
 });
