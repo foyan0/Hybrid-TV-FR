@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.3 (Sports Catalog Fixed, DAZN Rise to bottom, Softened Penalties)
+ * Version: 1.2.3
  * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing, HLS Proxy Relay.
  */
 
