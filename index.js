@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.5 (Smart Router & Native Web Scraping)
- * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing, HLS Proxy Relay.
+ * Version: 1.2.5 (Universal Heuristic Web Scraper)
+ * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing, Universal Scraper.
  */
 
 const express = require('express');
@@ -10,7 +10,7 @@ const cors = require('cors');
 const zlib = require('zlib');
 const readline = require('readline');
 const urlModule = require('url');
-const cheerio = require('cheerio'); // NOUVEAU : Outil de Web Scraping
+const cheerio = require('cheerio'); // Moteur de scraping
 
 const app = express();
 app.use(cors());
@@ -31,7 +31,6 @@ const serverStats = {
     activeIps: new Map()
 };
 
-// --- MIDDLEWARE: Metrics Tracker ---
 app.use((req, res, next) => {
     if (req.path.includes('.json')) {
         serverStats.totalRequests++;
@@ -49,7 +48,6 @@ app.use((req, res, next) => {
     next();
 });
 
-// --- ASSETS & CONFIG ---
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 const EVENT_POSTER = 'https://cdn-icons-png.flaticon.com/512/861/861512.png';
 
@@ -65,19 +63,14 @@ function parseConfig(encodedConfig) {
         }
         const jsonStr = Buffer.from(encodedConfig, 'base64').toString('utf8');
         let parsed = JSON.parse(jsonStr);
-        if (!parsed.qualities || !Array.isArray(parsed.qualities)) {
-            parsed.qualities = ['1080p', '720p', '4K', 'SD'];
-        }
-        if (!parsed.languages || !Array.isArray(parsed.languages)) {
-            parsed.languages = ['fr', 'en', 'es', 'other'];
-        }
+        if (!parsed.qualities || !Array.isArray(parsed.qualities)) parsed.qualities = ['1080p', '720p', '4K', 'SD'];
+        if (!parsed.languages || !Array.isArray(parsed.languages)) parsed.languages = ['fr', 'en', 'es', 'other'];
         return parsed;
     } catch (e) {
         return { sources: [], qualities: ['1080p', '720p', '4K', 'SD'], languages: ['fr', 'en', 'es', 'other'] };
     }
 }
 
-// --- ORIGINAL LIVE EVENTS PARSER ---
 function extractMatchEvent(rawName) {
     if (!rawName) return null;
     let s = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -132,7 +125,6 @@ function extractMatchEvent(rawName) {
     return null;
 }
 
-// --- ORIGINAL SEMANTIC ROUTING ---
 function getChannelData(rawName) {
     if (!rawName) return null;
     let eventData = extractMatchEvent(rawName);
@@ -151,7 +143,6 @@ function getChannelData(rawName) {
 
     n = n.replace(/\+/g, 'PLUS');
 
-    // === SECTION SPORTS EXACTE (v1.2.4) ===
     if ((n.includes('DAZN') || n.includes('DAZONE')) && (n.includes('RISE') || n.includes('WOMEN') || n.includes('FEMME'))) {
         return { id: 'hyb_sport_dazn_rise', name: 'DAZN Rise', categories: ['sports'], index: 999 };
     }
@@ -197,7 +188,6 @@ function getChannelData(rawName) {
     }
     if (c.includes('EQUIDIA')) return { id: 'hyb_sport_equidia', name: 'Equidia', categories: ['sports'], index: 200 };
     if (c.includes('LEQUIPE')) return { id: 'hyb_sport_lequipe', name: "L'Équipe", categories: ['sports', 'tnt'], index: 210 };
-    // === FIN SECTION SPORTS EXACTE ===
 
     if (c.includes('JURAS') || c.includes('TOP14') || c.includes('LCENTRE') || c.includes('LIGA') || c === 'CANALPLUSL' || c === 'CPLUSL' || c === 'CPLUSSPORT') {
         let pretty = rawName.replace(/\[.*?\]|\(.*?\)/g, '').replace(/\b(?:FHD|HD|SD|4K|1080P|720P)\b/gi, '').trim();
@@ -306,33 +296,6 @@ function getChannelData(rawName) {
     if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 11 };
     if (c.includes('PIWI')) return { id: 'hyb_jeu_piwi', name: 'Piwi+', categories: ['jeunesse'], index: 100 };
 
-    if (c.includes('RFMTV') || c.includes('RFM')) return { id: 'hyb_mus_rfm', name: 'RFM TV', categories: ['musique'], index: 34 }; 
-    if (c.includes('MTV')) return { id: 'hyb_mus_mtv', name: 'MTV', categories: ['musique'], index: 10 };
-    if (c.includes('MCM')) return { id: 'hyb_mus_mcm', name: 'MCM', categories: ['musique'], index: 20 };
-    if (c.includes('TRACE')) {
-        let m = n.match(/TRACE\s*([A-Z]*)/i); let suffix = (m && m[1]) ? ' ' + m[1] : '';
-        return { id: 'hyb_mus_trace' + suffix.trim(), name: 'Trace' + suffix, categories: ['musique'], index: 30 };
-    }
-    if (c.includes('NRJHITS') || (c.includes('NRJ') && c.includes('HIT'))) return { id: 'hyb_mus_nrjhits', name: 'NRJ Hits', categories: ['musique'], index: 31 };
-    if (c.includes('MELODY')) return { id: 'hyb_mus_melody', name: 'Melody', categories: ['musique'], index: 32 };
-    if (c.includes('MEZZO')) return { id: 'hyb_mus_mezzo', name: 'Mezzo', categories: ['musique'], index: 33 };
-    if (c.includes('CLUBBING')) return { id: 'hyb_mus_clubbing', name: 'Clubbing TV', categories: ['musique'], index: 35 };
-
-    if (c.includes('INVESTIGATION') || c.includes('IDDISCOVERY')) return { id: 'hyb_dec_investigation', name: 'Investigation Discovery', categories: ['decouverte'], index: 21 };
-    if (c.includes('DISCOVERY')) {
-        let m = n.match(/DISCOVERY\s*([A-Z]*)/i); 
-        let suffix = (m && m[1]) ? m[1].trim() : '';
-        if (suffix === 'CHANNEL' || suffix === 'FR' || suffix === 'FRANCE') suffix = ''; 
-        return { id: 'hyb_dec_discovery' + (suffix ? '_' + suffix : ''), name: 'Discovery' + (suffix ? ' ' + suffix : ''), categories: ['decouverte'], index: 20 };
-    }
-    if (c.includes('CRIMEDISTRICT') || c.includes('CRIMED')) return { id: 'hyb_dec_crime', name: 'Crime District', categories: ['decouverte'], index: 1 };
-    if (c.includes('NATGEO') || c.includes('NATIONALGEO')) return { id: 'hyb_dec_natgeo', name: 'National Geographic', categories: ['decouverte'], index: 1 };
-    if (c.includes('PLANET')) return { id: 'hyb_dec_planete', name: 'Planète+', categories: ['decouverte'], index: 210 };
-    if (c.includes('USHUAIA')) return { id: 'hyb_dec_ushuaia', name: 'Ushuaïa TV', categories: ['decouverte'], index: 30 };
-    if (c.includes('HISTOIRE')) return { id: 'hyb_dec_histoire', name: 'Histoire TV', categories: ['decouverte'], index: 32 };
-    if (c.includes('CHASSE') || c.includes('PECHE')) return { id: 'hyb_dec_chasse', name: 'Chasse et Pêche', categories: ['decouverte'], index: 34 };
-    if (c.includes('ANIMAUX')) return { id: 'hyb_dec_animaux', name: 'Animaux', categories: ['decouverte'], index: 35 };
-
     let cat = 'autres';
     let idx = 300;
     if (c.includes('SPORT') || c.includes('FOOT') || c.includes('GOLF') || c.includes('TENNIS') || c.includes('RUGBY') || c.includes('AUTO') || c.includes('MOTO')) cat = 'sports';
@@ -367,54 +330,93 @@ function formatTime(timestamp) {
 }
 
 // ============================================================================
-// WEB SCRAPING ENGINE (NOUVEAU)
+// WEB SCRAPING ENGINE UNIVERSAL (NOUVEAU)
 // ============================================================================
 
-// Scraper spécifique pour Streamed.su
-async function scrapeStreamedCatalog(baseUrl) {
+async function scrapeGenericWebsite(baseUrl) {
     let metas = [];
     try {
         const response = await axios.get(baseUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'text/html,application/xhtml+xml'
-            },
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Accept': 'text/html' },
             timeout: 10000
         });
 
         const $ = cheerio.load(response.data);
+        let seenIds = new Set();
         
-        // Analyse de chaque ligne de match sur Streamed
-        $('a.flex.w-full').each((i, el) => {
+        // On cherche des liens qui ressemblent à des flux ou des pages vidéo
+        $('a').each((i, el) => {
             const link = $(el).attr('href');
-            if (!link || !link.includes('/watch/')) return;
+            let title = $(el).text().trim() || $(el).attr('title') || "Événement";
             
-            let fullMatchUrl = link.startsWith('http') ? link : urlModule.resolve(baseUrl, link);
-            
-            // Extraction du nom des équipes et de l'heure
-            const matchTitle = $(el).find('h1.text-sm.font-semibold').text().trim();
-            const matchTime = $(el).find('span.text-xs.font-medium').first().text().trim();
-            const sportType = $(el).find('h2.text-xs').text().trim() || "Sport";
-            
-            if (matchTitle) {
-                let formattedName = `${matchTitle} (${matchTime}) - ${sportType}`;
+            // Filtre heuristique : si le lien contient des mots-clés liés à la vidéo/live
+            if (link && (link.includes('watch') || link.includes('live') || link.includes('video') || link.includes('stream') || link.includes('play') || link.includes('event'))) {
+                // On ignore les liens de menu génériques
+                if (title.length < 4 || title.toLowerCase() === 'live' || title.toLowerCase() === 'watch') return;
+                
+                let fullMatchUrl = link.startsWith('http') ? link : urlModule.resolve(baseUrl, link);
                 let metaId = Buffer.from(fullMatchUrl).toString('base64');
                 
-                metas.push({
-                    id: metaId,
-                    name: formattedName,
-                    poster: EVENT_POSTER,
-                    _isDirectStream: false,
-                    _isWebScraped: true,
-                    _scrapedUrl: fullMatchUrl,
-                    _providerBase: baseUrl
-                });
+                if (!seenIds.has(metaId)) {
+                    seenIds.add(metaId);
+                    // On formate avec un petit marqueur pour le repérer
+                    let formattedName = `📺 ${title}`;
+                    
+                    metas.push({
+                        id: metaId,
+                        name: formattedName,
+                        poster: EVENT_POSTER,
+                        _isDirectStream: false,
+                        _isWebScraped: true,
+                        _scrapedUrl: fullMatchUrl,
+                        _providerBase: baseUrl
+                    });
+                }
             }
         });
     } catch (e) {
-        console.error("[SCRAPER ERR] Streamed.su :", e.message);
+        console.error("[SCRAPER ERR] Universal :", e.message);
     }
     return metas;
+}
+
+// Extracteur de flux M3U8 générique
+async function extractGenericStreamUrl(scrapedUrl) {
+    try {
+        const response = await axios.get(scrapedUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            timeout: 8000
+        });
+        const $ = cheerio.load(response.data);
+        
+        let streamUrl = null;
+        
+        // 1. Cherche dans les balises standards HTML5
+        $('source').each((i, el) => {
+            let src = $(el).attr('src');
+            if (src && src.includes('.m3u8')) streamUrl = src;
+        });
+
+        // 2. Cherche dans le code Javascript de la page
+        if (!streamUrl) {
+            const htmlStr = response.data;
+            const match = htmlStr.match(/(https?:\/\/[^\s"'<>]+\.m3u8[^\s"'<>]*)/);
+            if (match) streamUrl = match[1];
+        }
+        
+        // 3. Cherche une iframe (Embed)
+        if (!streamUrl) {
+            $('iframe').each((i, el) => {
+                let src = $(el).attr('src');
+                if (src && !src.includes('ads') && !src.includes('tracker')) streamUrl = src;
+            });
+        }
+        
+        return streamUrl;
+    } catch (e) {
+        console.error("Erreur Extraction M3U8 :", e.message);
+        return null;
+    }
 }
 
 // --- EPG SYNC ---
@@ -509,12 +511,7 @@ async function fetchCatalogFromSource(sourceInput) {
     let cleanInput = sourceInput.trim();
     if (!cleanInput) return metas;
 
-    // 1. ROUTEUR SCRAPER WEB
-    if (cleanInput.includes('streamed.')) {
-        return await scrapeStreamedCatalog(cleanInput);
-    }
-
-    // 2. ROUTEUR M3U CLASSIC
+    // 1. ROUTEUR M3U CLASSIC
     if (cleanInput.endsWith('.m3u') || cleanInput.endsWith('.m3u8') || cleanInput.includes('get.php') || cleanInput.includes('/live/')) {
         try {
             const res = await axios.get(cleanInput, { timeout: 10000 });
@@ -543,57 +540,64 @@ async function fetchCatalogFromSource(sourceInput) {
         return metas;
     }
 
-    // 3. ROUTEUR ADD-ON JSON CLASSIC
-    try {
-        let cleanUrl = cleanInput;
-        if (!cleanUrl.endsWith('manifest.json')) cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
-        const base = cleanUrl.replace(/\/manifest\.json$/, '');
+    // 2. ROUTEUR ADD-ON JSON CLASSIC
+    if (cleanInput.includes('manifest.json')) {
+        try {
+            let cleanUrl = cleanInput;
+            const base = cleanUrl.replace(/\/manifest\.json$/, '');
 
-        const manifestRes = await axios.get(cleanUrl, { timeout: 6000 });
-        const catalogs = manifestRes.data.catalogs || [];
-        
-        const catalogPromises = catalogs.map(async (catalog) => {
-            let catMetas = []; 
-            let hasMore = true; 
-            let skip = 0;
-            const maxSkip = 50000; 
-            const batchSize = 3;   
-            let seenIds = new Set(); 
+            const manifestRes = await axios.get(cleanUrl, { timeout: 6000 });
+            const catalogs = manifestRes.data.catalogs || [];
+            
+            const catalogPromises = catalogs.map(async (catalog) => {
+                let catMetas = []; 
+                let hasMore = true; 
+                let skip = 0;
+                const maxSkip = 50000; 
+                const batchSize = 3;   
+                let seenIds = new Set(); 
 
-            while (hasMore && skip < maxSkip) {
-                let requests = [];
-                for (let i = 0; i < batchSize; i++) {
-                    let currentSkip = skip + (i * 100);
-                    let encodedCatId = encodeURIComponent(catalog.id);
-                    let url = currentSkip > 0 ? `${base}/catalog/${catalog.type}/${encodedCatId}/skip=${currentSkip}.json` : `${base}/catalog/${catalog.type}/${encodedCatId}.json`;
-                    requests.push(axios.get(url, { timeout: 6000 }).catch(e => null));
-                }
-                
-                let responses = await Promise.all(requests);
-                let addedInBatch = 0;
-                
-                for (let res of responses) {
-                    if (res && res.data && res.data.metas && res.data.metas.length > 0) {
-                        res.data.metas.forEach(m => {
-                            if (m && m.id && m.name && !seenIds.has(m.id)) {
-                                seenIds.add(m.id);
-                                catMetas.push({ id: m.id, name: m.name, poster: m.poster || null });
-                                addedInBatch++;
-                            }
-                        });
+                while (hasMore && skip < maxSkip) {
+                    let requests = [];
+                    for (let i = 0; i < batchSize; i++) {
+                        let currentSkip = skip + (i * 100);
+                        let encodedCatId = encodeURIComponent(catalog.id);
+                        let url = currentSkip > 0 ? `${base}/catalog/${catalog.type}/${encodedCatId}/skip=${currentSkip}.json` : `${base}/catalog/${catalog.type}/${encodedCatId}.json`;
+                        requests.push(axios.get(url, { timeout: 6000 }).catch(e => null));
                     }
+                    
+                    let responses = await Promise.all(requests);
+                    let addedInBatch = 0;
+                    
+                    for (let res of responses) {
+                        if (res && res.data && res.data.metas && res.data.metas.length > 0) {
+                            res.data.metas.forEach(m => {
+                                if (m && m.id && m.name && !seenIds.has(m.id)) {
+                                    seenIds.add(m.id);
+                                    catMetas.push({ id: m.id, name: m.name, poster: m.poster || null });
+                                    addedInBatch++;
+                                }
+                            });
+                        }
+                    }
+                    if (addedInBatch === 0) hasMore = false; 
+                    skip += (batchSize * 100);
                 }
-                if (addedInBatch === 0) hasMore = false; 
-                skip += (batchSize * 100);
-            }
-            return catMetas;
-        });
+                return catMetas;
+            });
 
-        const results = await Promise.all(catalogPromises);
-        results.flat().forEach(m => {
-            if (m && m.id) metas.push({ ...m, _providerBase: base, _isDirectStream: false, _isWebScraped: false });
-        });
-    } catch (err) {}
+            const results = await Promise.all(catalogPromises);
+            results.flat().forEach(m => {
+                if (m && m.id) metas.push({ ...m, _providerBase: base, _isDirectStream: false, _isWebScraped: false });
+            });
+            return metas;
+        } catch (err) { return metas; }
+    }
+
+    // 3. ROUTEUR SCRAPER WEB (Si c'est juste un site web ex: https://fencing.tv)
+    if (cleanInput.startsWith('http')) {
+        return await scrapeGenericWebsite(cleanInput);
+    }
 
     return metas;
 }
@@ -957,7 +961,7 @@ app.get('/', async (req, res) => {
             <div id="config" class="tab-content active">
                 <div class="section">
                     <h3 class="section-title">Sources (Add-ons, M3U ou Site Web)</h3>
-                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Collez l'URL de votre add-on, M3U, ou d'un site de sport supporté (ex: https://streamed.su).</p>
+                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Collez l'URL de votre add-on, M3U, ou d'un site à scanner (ex: https://fencing.tv).</p>
                     <div id="sourcesContainer"></div>
                     <button type="button" onclick="addSourceField()" class="btn btn-small" style="margin-top: 10px;">+ Ajouter une source</button>
                 </div>
@@ -1081,7 +1085,7 @@ app.get('/', async (req, res) => {
                     div.className = 'source-row';
                     div.innerHTML = \`
                         <span class="source-num">#\${index + 1}</span>
-                        <input type="text" id="src_\${index}" value="\${src}" placeholder="URL manifest.json ou site web">
+                        <input type="text" id="src_\${index}" value="\${src}" placeholder="URL manifest.json, M3U ou Site Web">
                         \${index > 0 ? '<button type="button" onclick="moveSource(' + index + ', -1)" class="btn-small">▲</button>' : '<div style="width: 28px;"></div>'}
                         \${index < sources.length - 1 ? '<button type="button" onclick="moveSource(' + index + ', 1)" class="btn-small">▼</button>' : '<div style="width: 28px;"></div>'}
                         \${sources.length > 1 ? '<button type="button" onclick="removeSource(' + index + ')" class="btn-danger">✕</button>' : ''}
@@ -1304,7 +1308,7 @@ app.get('/:config/manifest.json', (req, res) => {
         id: 'org.hybridtv.meta', 
         version: '1.2.5',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.5). Integrates Native Web Scraping for Sports Sites.',
+        description: 'Meta-Addon IPTV (v1.2.5). Integrates Universal Web Scraping for custom websites.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1385,49 +1389,6 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
     res.json({ meta: { id: channel.id, type: 'tv', name: channel.displayName, poster: channel.poster, posterShape: 'square', description: descriptionText } });
 });
 
-// SCRAPER DE LIEN DIRECT (Pour résoudre la page Streamed au clic)
-async function extractStreamedVideoUrl(scrapedUrl) {
-    try {
-        const response = await axios.get(scrapedUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0' },
-            timeout: 8000
-        });
-        const $ = cheerio.load(response.data);
-        
-        // Le lien m3u8 est souvent injecté dans une iframe ou une balise video/source sur ces sites
-        let streamUrl = null;
-        
-        $('source').each((i, el) => {
-            let src = $(el).attr('src');
-            if (src && src.includes('.m3u8')) streamUrl = src;
-        });
-
-        if (!streamUrl) {
-            const scripts = $('script').toArray();
-            for (let s of scripts) {
-                const html = $(s).html();
-                if (html && html.includes('.m3u8')) {
-                    const match = html.match(/(https?:\/\/[^\s"'<>]+\.m3u8[^\s"'<>]*)/);
-                    if (match) streamUrl = match[1];
-                }
-            }
-        }
-        
-        // Si c'est une iframe externe (Embed), on renvoie l'URL de l'iframe pour l'instant
-        if (!streamUrl) {
-            $('iframe').each((i, el) => {
-                let src = $(el).attr('src');
-                if (src && !src.includes('ads') && !src.includes('tracker')) streamUrl = src;
-            });
-        }
-        
-        return streamUrl;
-    } catch (e) {
-        console.error("Erreur Extraction M3U8 Streamed :", e.message);
-        return null;
-    }
-}
-
 app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
@@ -1465,9 +1426,9 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                 }];
             }
             
-            // RESOLUTION WEB SCRAPER (Streamed.su)
+            // RESOLUTION WEB SCRAPER UNIVERSEL
             if (source.type === 'scraped') {
-                let resolvedUrl = await extractStreamedVideoUrl(source.scrapedUrl);
+                let resolvedUrl = await extractGenericStreamUrl(source.scrapedUrl);
                 if (!resolvedUrl) return [];
                 
                 // Si on a un .m3u8 direct, on le passe par le Proxy CORS
@@ -1661,7 +1622,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         // --- TRI INITIAL PAR SCORE ---
         allStreams.sort((a, b) => b._score - a._score);
         
-        // Limite augmentée à 25 flux
+        // Limite augmentée à 25 flux pour éviter de faire disparaître les bonnes sources
         let limitedStreams = allStreams.slice(0, 25);
 
         // --- SCANNER SYNCHRONE DE LIENS MORTS ---
