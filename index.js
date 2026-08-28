@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.4 (Sports Exact Ordering: Ligue1+ > DAZN > beIN > Euro > RMC > OLTV)
+ * Version: 1.2.5 (Smart Router & Native Web Scraping - "Streamed.su" Integration)
  * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing, HLS Proxy Relay.
  */
 
@@ -10,6 +10,7 @@ const cors = require('cors');
 const zlib = require('zlib');
 const readline = require('readline');
 const urlModule = require('url');
+const cheerio = require('cheerio'); // NOUVEAU : Outil de Web Scraping
 
 const app = express();
 app.use(cors());
@@ -151,20 +152,16 @@ function getChannelData(rawName) {
     n = n.replace(/\+/g, 'PLUS');
 
     // === SECTION SPORTS EXACTE (v1.2.4) ===
-    
-    // 1. DAZN RISE / WOMEN (Banni tout en bas de la liste)
     if ((n.includes('DAZN') || n.includes('DAZONE')) && (n.includes('RISE') || n.includes('WOMEN') || n.includes('FEMME'))) {
         return { id: 'hyb_sport_dazn_rise', name: 'DAZN Rise', categories: ['sports'], index: 999 };
     }
 
-    // 2. LIGUE 1+ / DAZN LIVE / DAZN LIGUE 1 (Doit être EN PREMIER) -> index 10+
     if (n.includes('LIGUE 1') || n.includes('LIGUE1') || n.match(/\bL1\b/) || n.includes('LEAGUE 1') || (n.includes('DAZN') && n.includes('LIVE'))) {
         let m = n.match(/(?:LIVE|PLUS|LIGUE\s*1|L1|LIGUE1)[^\d]*([1-9]|1[0-8])/i);
         let num = m ? m[1] : '1';
         return { id: 'hyb_sport_ligue1plus_' + num, name: num === '1' ? 'Ligue 1+' : 'Ligue 1+ ' + num, categories: ['sports'], index: 10 + parseInt(num, 10) };
     }
 
-    // 3. DAZN 1, DAZN 2 (Chaînes linéaires principales) -> index 30+
     if (n.includes('DAZN') || n.includes('DAZONE')) {
         let m = n.match(/(?:DAZN|DAZONE)[^\d]*([1-9]|1[0-8])/i);
         let num = m ? m[1] : '1';
@@ -175,30 +172,25 @@ function getChannelData(rawName) {
     if (!c || c.length < 2) return null;
     if (BLACKLIST.some(b => c.includes(b))) return null;
 
-    // 4. BEIN SPORTS -> index 50+ (régulier), 70+ (MAX)
     if (c.includes('BEINSPORT') || c.includes('BEIN')) {
         let isMax = c.includes('MAX'); let m = c.match(/BEIN(?:SPORT|MAX)?S?(\d+)/); let num = (m && m[1]) ? m[1] : '1';
         return { id: 'hyb_sport_bein_' + (isMax?'max':'') + num, name: isMax ? 'beIN SPORTS MAX '+num : 'beIN SPORTS '+num, categories: ['sports'], index: isMax ? 70 + parseInt(num, 10) : 50 + parseInt(num, 10) };
     }
     
-    // 5. EUROSPORT -> index 90+ (régulier), 110+ (360)
     if (c.includes('EUROSPORT')) {
         let is360 = c.includes('360'); let m = c.match(/EUROSPORT(?:360)?(\d+)/); let num = (m && m[1]) ? m[1] : '1';
         if (is360) return { id: 'hyb_sport_euro360_'+num, name: 'Eurosport 360 - '+num, categories: ['sports'], index: 110 + parseInt(num, 10) };
         return { id: 'hyb_sport_euro_'+num, name: 'Eurosport '+num, categories: ['sports'], index: 90 + parseInt(num, 10) };
     }
     
-    // 6. RMC SPORT -> index 130+ (régulier), 150+ (Live)
     if (c.includes('RMCSPORT') || (c.includes('RMC') && c.includes('LIVE'))) {
         let isLive = c.includes('LIVE'); let m = c.match(/RMCSPORT(?:LIVE)?(\d+)/); let num = (m && m[1]) ? m[1] : '1';
         if (isLive) return { id: 'hyb_sport_rmclive_'+num, name: 'RMC Sport Live '+num, categories: ['sports'], index: 150 + parseInt(num, 10) };
         return { id: 'hyb_sport_rmc_'+num, name: 'RMC Sport '+num, categories: ['sports'], index: 130 + parseInt(num, 10) };
     }
     
-    // 7. OL TV -> index 170
     if (c.includes('OLTV') || c.includes('OLYMPIQUELYONNAIS')) return { id: 'hyb_sport_oltv', name: 'OL TV', categories: ['sports'], index: 170 };
     
-    // 8. AUTRES SPORTS -> index 180+
     if (c.includes('SPORTTV')) {
         let m = c.match(/SPORTTV(\d+)/); let num = m ? m[1] : '1';
         return { id: 'hyb_sport_sporttv_' + num, name: 'SPORT TV ' + num, categories: ['sports'], index: 180 + parseInt(num, 10) };
@@ -374,6 +366,57 @@ function formatTime(timestamp) {
     return new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }).format(new Date(timestamp)).replace(':', 'h');
 }
 
+// ============================================================================
+// WEB SCRAPING ENGINE (NOUVEAU)
+// ============================================================================
+
+// Scraper spécifique pour Streamed.su
+async function scrapeStreamedCatalog(baseUrl) {
+    let metas = [];
+    try {
+        const response = await axios.get(baseUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'text/html,application/xhtml+xml'
+            },
+            timeout: 10000
+        });
+
+        const $ = cheerio.load(response.data);
+        
+        // Analyse de chaque ligne de match sur Streamed
+        $('a.flex.w-full').each((i, el) => {
+            const link = $(el).attr('href');
+            if (!link || !link.includes('/watch/')) return;
+            
+            let fullMatchUrl = link.startsWith('http') ? link : urlModule.resolve(baseUrl, link);
+            
+            // Extraction du nom des équipes et de l'heure
+            const matchTitle = $(el).find('h1.text-sm.font-semibold').text().trim();
+            const matchTime = $(el).find('span.text-xs.font-medium').first().text().trim();
+            const sportType = $(el).find('h2.text-xs').text().trim() || "Sport";
+            
+            if (matchTitle) {
+                let formattedName = `${matchTitle} (${matchTime}) - ${sportType}`;
+                let metaId = Buffer.from(fullMatchUrl).toString('base64');
+                
+                metas.push({
+                    id: metaId,
+                    name: formattedName,
+                    poster: EVENT_POSTER,
+                    _isDirectStream: false,
+                    _isWebScraped: true,
+                    _scrapedUrl: fullMatchUrl,
+                    _providerBase: baseUrl
+                });
+            }
+        });
+    } catch (e) {
+        console.error("[SCRAPER ERR] Streamed.su :", e.message);
+    }
+    return metas;
+}
+
 // --- EPG SYNC ---
 async function fetchAndParseEPG(url, isGz) {
     return new Promise(async (resolve, reject) => {
@@ -460,12 +503,18 @@ async function updateEPG() {
     } finally { isUpdatingEPG = false; }
 }
 
-// --- CATALOG ENGINE ---
+// --- CATALOG ENGINE (ROUTEUR INTELLIGENT) ---
 async function fetchCatalogFromSource(sourceInput) {
     let metas = [];
     let cleanInput = sourceInput.trim();
     if (!cleanInput) return metas;
 
+    // 1. ROUTEUR SCRAPER WEB
+    if (cleanInput.includes('streamed.')) {
+        return await scrapeStreamedCatalog(cleanInput);
+    }
+
+    // 2. ROUTEUR M3U CLASSIC
     if (cleanInput.endsWith('.m3u') || cleanInput.endsWith('.m3u8') || cleanInput.includes('get.php') || cleanInput.includes('/live/')) {
         try {
             const res = await axios.get(cleanInput, { timeout: 10000 });
@@ -494,6 +543,7 @@ async function fetchCatalogFromSource(sourceInput) {
         return metas;
     }
 
+    // 3. ROUTEUR ADD-ON JSON CLASSIC
     try {
         let cleanUrl = cleanInput;
         if (!cleanUrl.endsWith('manifest.json')) cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
@@ -541,7 +591,7 @@ async function fetchCatalogFromSource(sourceInput) {
 
         const results = await Promise.all(catalogPromises);
         results.flat().forEach(m => {
-            if (m && m.id) metas.push({ ...m, _providerBase: base, _isDirectStream: false });
+            if (m && m.id) metas.push({ ...m, _providerBase: base, _isDirectStream: false, _isWebScraped: false });
         });
     } catch (err) {}
 
@@ -611,6 +661,9 @@ async function getChannelsForSources(sourcesList) {
                         if (meta._isDirectStream) {
                             const sourceExists = tempChannelsMap[id].sources.find(s => s.directUrl === meta._directUrl);
                             if (!sourceExists) tempChannelsMap[id].sources.push({ type: 'm3u', directUrl: meta._directUrl, sourceIndex: i, originalName: meta.name });
+                        } else if (meta._isWebScraped) {
+                            const sourceExists = tempChannelsMap[id].sources.find(s => s.scrapedUrl === meta._scrapedUrl);
+                            if (!sourceExists) tempChannelsMap[id].sources.push({ type: 'scraped', scrapedUrl: meta._scrapedUrl, providerBase: meta._providerBase, sourceIndex: i, originalName: meta.name });
                         } else {
                             const sourceExists = tempChannelsMap[id].sources.find(s => s.metaId === meta.id && s.providerBase === cleanUrl);
                             if (!sourceExists) tempChannelsMap[id].sources.push({ type: 'addon', metaId: meta.id, providerBase: cleanUrl, sourceIndex: i, originalName: meta.name });
@@ -785,6 +838,8 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                 }
             }
             inspectionResults.push(testRes);
+        } else if (source.type === 'scraped') {
+            inspectionResults.push({ source: source.providerBase, type: 'web_scrape', url: source.scrapedUrl, status: 'Lien dynamique à résoudre au clic' });
         } else {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
@@ -890,7 +945,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.4).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.5).</p>
             </div>
 
             <div class="tabs">
@@ -901,7 +956,8 @@ app.get('/', async (req, res) => {
 
             <div id="config" class="tab-content active">
                 <div class="section">
-                    <h3 class="section-title">Sources (Add-ons ou M3U)</h3>
+                    <h3 class="section-title">Sources (Add-ons, M3U ou Site Web)</h3>
+                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Collez l'URL de votre add-on, M3U, ou d'un site de sport supporté (ex: https://streamed.su).</p>
                     <div id="sourcesContainer"></div>
                     <button type="button" onclick="addSourceField()" class="btn btn-small" style="margin-top: 10px;">+ Ajouter une source</button>
                 </div>
@@ -1025,7 +1081,7 @@ app.get('/', async (req, res) => {
                     div.className = 'source-row';
                     div.innerHTML = \`
                         <span class="source-num">#\${index + 1}</span>
-                        <input type="text" id="src_\${index}" value="\${src}" placeholder="URL manifest.json ou .m3u">
+                        <input type="text" id="src_\${index}" value="\${src}" placeholder="URL manifest.json ou site web">
                         \${index > 0 ? '<button type="button" onclick="moveSource(' + index + ', -1)" class="btn-small">▲</button>' : '<div style="width: 28px;"></div>'}
                         \${index < sources.length - 1 ? '<button type="button" onclick="moveSource(' + index + ', 1)" class="btn-small">▼</button>' : '<div style="width: 28px;"></div>'}
                         \${sources.length > 1 ? '<button type="button" onclick="removeSource(' + index + ')" class="btn-danger">✕</button>' : ''}
@@ -1246,9 +1302,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.2.4',
+        version: '1.2.5',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.4). Exact Sports Ordering (Ligue1 > DAZN > beIN) & Proxy.',
+        description: 'Meta-Addon IPTV (v1.2.5). Integrates Native Web Scraping for Sports Sites.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1329,6 +1385,49 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
     res.json({ meta: { id: channel.id, type: 'tv', name: channel.displayName, poster: channel.poster, posterShape: 'square', description: descriptionText } });
 });
 
+// SCRAPER DE LIEN DIRECT (Pour résoudre la page Streamed au clic)
+async function extractStreamedVideoUrl(scrapedUrl) {
+    try {
+        const response = await axios.get(scrapedUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            timeout: 8000
+        });
+        const $ = cheerio.load(response.data);
+        
+        // Le lien m3u8 est souvent injecté dans une iframe ou une balise video/source sur ces sites
+        let streamUrl = null;
+        
+        $('source').each((i, el) => {
+            let src = $(el).attr('src');
+            if (src && src.includes('.m3u8')) streamUrl = src;
+        });
+
+        if (!streamUrl) {
+            const scripts = $('script').toArray();
+            for (let s of scripts) {
+                const html = $(s).html();
+                if (html && html.includes('.m3u8')) {
+                    const match = html.match(/(https?:\/\/[^\s"'<>]+\.m3u8[^\s"'<>]*)/);
+                    if (match) streamUrl = match[1];
+                }
+            }
+        }
+        
+        // Si c'est une iframe externe (Embed), on renvoie l'URL de l'iframe pour l'instant
+        if (!streamUrl) {
+            $('iframe').each((i, el) => {
+                let src = $(el).attr('src');
+                if (src && !src.includes('ads') && !src.includes('tracker')) streamUrl = src;
+            });
+        }
+        
+        return streamUrl;
+    } catch (e) {
+        console.error("Erreur Extraction M3U8 Streamed :", e.message);
+        return null;
+    }
+}
+
 app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
@@ -1362,6 +1461,26 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                     title: source.originalName || "Source M3U",
                     _score: isBeluchon ? 4500 : 1500,
                     _originalTitle: source.originalName || "Source M3U",
+                    behaviorHints: { proxyHeaders: { request: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase } } }
+                }];
+            }
+            
+            // RESOLUTION WEB SCRAPER (Streamed.su)
+            if (source.type === 'scraped') {
+                let resolvedUrl = await extractStreamedVideoUrl(source.scrapedUrl);
+                if (!resolvedUrl) return [];
+                
+                // Si on a un .m3u8 direct, on le passe par le Proxy CORS
+                if (resolvedUrl.includes('.m3u8')) {
+                    resolvedUrl = `${serverHost}/proxy/hls?url=${encodeURIComponent(resolvedUrl)}&referer=${encodeURIComponent(source.providerBase)}`;
+                }
+
+                return [{
+                    url: resolvedUrl,
+                    name: `▶ Flux Web Aspire`,
+                    title: source.originalName || "Flux Live",
+                    _score: 2000,
+                    _originalTitle: source.originalName,
                     behaviorHints: { proxyHeaders: { request: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase } } }
                 }];
             }
@@ -1542,7 +1661,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         // --- TRI INITIAL PAR SCORE ---
         allStreams.sort((a, b) => b._score - a._score);
         
-        // Limite augmentée à 25 flux pour éviter de faire disparaître les bonnes sources
+        // Limite augmentée à 25 flux
         let limitedStreams = allStreams.slice(0, 25);
 
         // --- SCANNER SYNCHRONE DE LIENS MORTS ---
