@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.9-STABLE (Unlocked EPG, Sequential Sync, Strict Math Order)
+ * Version: 1.3.0 (Fast Batch Scraper, Perfect Jeunesse Order, Condensed EPG)
  * Core Engine: Synchronous Health Check (6.5s), Smart Cache, Strict Category Separation, HLS Proxy Relay.
  */
 
@@ -112,7 +112,7 @@ function extractMatchEvent(rawName) {
     return null;
 }
 
-// --- CATALOGUE DES CHAÎNES LINÉAIRES (EXCLUSIVEMENT HORS EVENTS) ---
+// --- CATALOGUE DES CHAÎNES LINÉAIRES ---
 function getChannelData(rawName, catalogHint = '') {
     if (!rawName) return null;
     
@@ -212,15 +212,12 @@ function getChannelData(rawName, catalogHint = '') {
         if (c.includes('PREMIERLEAGUE') || c.includes('PREMIERELIGUE') || c.includes('PREMIERLIGUE')) return { id: 'hyb_sport_canal_pl', name: 'Canal+ Premier League', categories: ['canal', 'sports'], index: 96 };
         if (c.includes('EMOTION')) return { id: 'hyb_cine_canal_emotion', name: 'Canal+ Émotion', categories: ['canal', 'cinema'], index: 16 };
         
-        // Canal Savoir relégué
-        if (c.includes('SAVOIR')) return { id: 'hyb_dec_canal_savoir', name: 'Canal Savoir', categories: ['decouverte'], index: 999 };
+        // Canal Savoir relégué à la fin de 'autres'
+        if (c.includes('SAVOIR')) return { id: 'hyb_aut_canal_savoir', name: 'Canal Savoir', categories: ['autres'], index: 999 };
         
         if (c.includes('ELLES') || c.includes('LCENTRE') || c.includes('CENTRE') || c === 'CANALL' || c.includes('REGIONAL') || c.includes('LOCAL') || c.includes('OUTREMER')) {
             return { id: 'hyb_aut_canal_elles', name: 'Canal+ Elles', categories: ['autres'], index: 1000 };
         }
-        
-        // PIÈGE CANAL J CONTOURNÉ AVEC NUMÉRO MATHÉMATIQUE SÉQUENTIEL JEUNESSE
-        if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 115 }; 
         
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
         if (c.includes('LIVE')) {
@@ -289,32 +286,35 @@ function getChannelData(rawName, catalogHint = '') {
     if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
     if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
 
-    // --- RÈGLES JEUNESSE STRICTEMENT SÉQUENTIELLES ---
-    if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 150 };
-    if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 110 };
+    // --- RÈGLES JEUNESSE STRICTES ET SÉQUENTIELLES ---
+    if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 126 };
+    if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 110 }; // 1. Cartoon Network
     
     if (c.includes('DISNEY') && c.includes('PLUS1')) return { id: 'hyb_jeu_disney_plus1', name: 'Disney Channel +1', categories: ['jeunesse'], index: 111 };
-    if (c.includes('DISNEY') && !c.includes('JUNIOR') && !c.includes('JR') && !c.includes('XD')) return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 111 };
+    if (c.includes('DISNEY') && !c.includes('JUNIOR') && !c.includes('JR') && !c.includes('XD')) return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 111 }; // 2. Disney Channel
     
-    if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 112 };
+    if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 112 }; // 3. Disney XD
     
-    if (c.includes('NICKELODEON') || c.match(/\bNICK\b/) || c === 'NICK') {
-        if (c.includes('JUNIOR') || c.includes('JR') || c.includes('FRHD') || c.match(/JUNIOR\d/)) return { id: 'hyb_jeu_nick_jr', name: 'Nickelodeon Junior', categories: ['jeunesse'], index: 113 };
-        if (c.includes('TEEN')) return { id: 'hyb_jeu_nick_teen', name: 'Nickelodeon Teen', categories: ['jeunesse'], index: 114 };
-        if (c.includes('PLUS1') || c.includes('1H')) return { id: 'hyb_jeu_nick_plus1', name: 'Nickelodeon +1', categories: ['jeunesse'], index: 114 };
-        if (c.includes('TOON')) return { id: 'hyb_jeu_nicktoons', name: 'Nicktoons', categories: ['jeunesse'], index: 114 };
-        return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 114 };
+    if (c.includes('NICKELODEON') || c.match(/\bNICK\b/) || c === 'NICK') { // 4. Nickelodeon
+        if (c.includes('JUNIOR') || c.includes('JR') || c.includes('FRHD') || c.match(/JUNIOR\d/)) return { id: 'hyb_jeu_nick_jr', name: 'Nickelodeon Junior', categories: ['jeunesse'], index: 114 }; // 5. Nickelodeon Junior
+        if (c.includes('TEEN')) return { id: 'hyb_jeu_nick_teen', name: 'Nickelodeon Teen', categories: ['jeunesse'], index: 115 };
+        if (c.includes('PLUS1') || c.includes('1H')) return { id: 'hyb_jeu_nick_plus1', name: 'Nickelodeon +1', categories: ['jeunesse'], index: 116 };
+        if (c.includes('TOON')) return { id: 'hyb_jeu_nicktoons', name: 'Nicktoons', categories: ['jeunesse'], index: 117 };
+        return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 113 }; // 4. Nickelodeon (Base)
     }
     
-    if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 115 };
-    if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 116 };
-    if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 117 };
+    // Le bloc Canal ne piège plus Canal J, on le traite ici
+    if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 118 }; // 6. Canal J
     
-    if (c.includes('DISNEYJR') || c.includes('DISNEYJUNIOR') || (c.includes('DISNEY') && c.includes('JR'))) return { id: 'hyb_jeu_disneyjr', name: 'Disney Junior', categories: ['jeunesse'], index: 118 };
-    if (c.includes('BOING')) return { id: 'hyb_jeu_boing', name: 'Boing', categories: ['jeunesse'], index: 120 };
-    if (c.includes('TIJI')) return { id: 'hyb_jeu_tiji', name: 'Tiji', categories: ['jeunesse'], index: 121 };
-    if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 122 };
-    if (c.includes('PIWI')) return { id: 'hyb_jeu_piwi', name: 'Piwi+', categories: ['jeunesse'], index: 124 };
+    if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 119 }; // 7. Boomerang
+    if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 120 }; // 8. Game One
+    
+    // Suite de la catégorie Jeunesse
+    if (c.includes('DISNEYJR') || c.includes('DISNEYJUNIOR') || (c.includes('DISNEY') && c.includes('JR'))) return { id: 'hyb_jeu_disneyjr', name: 'Disney Junior', categories: ['jeunesse'], index: 121 };
+    if (c.includes('BOING')) return { id: 'hyb_jeu_boing', name: 'Boing', categories: ['jeunesse'], index: 122 };
+    if (c.includes('TIJI')) return { id: 'hyb_jeu_tiji', name: 'Tiji', categories: ['jeunesse'], index: 123 };
+    if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 124 };
+    if (c.includes('PIWI')) return { id: 'hyb_jeu_piwi', name: 'Piwi+', categories: ['jeunesse'], index: 125 };
 
     let cat = 'autres';
     let idx = 300;
@@ -353,7 +353,7 @@ function formatTime(timestamp) {
 async function fetchAndParseEPG(url, isGz) {
     return new Promise(async (resolve, reject) => {
         try {
-            const response = await axios.get(url, { responseType: 'stream', timeout: 60000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+            const response = await axios.get(url, { responseType: 'stream', timeout: 120000, headers: { 'User-Agent': 'Mozilla/5.0' } });
             let stream = response.data;
             if (isGz) { const unzip = zlib.createGunzip(); stream = stream.pipe(unzip); }
 
@@ -401,7 +401,7 @@ async function fetchAndParseEPG(url, isGz) {
                 }
             });
 
-            const timeoutId = setTimeout(() => { stream.destroy(); reject(new Error("Timeout")); }, 60000);
+            const timeoutId = setTimeout(() => { stream.destroy(); reject(new Error("Timeout")); }, 120000);
             rl.on('close', () => { clearTimeout(timeoutId); resolve(localEpg); });
             rl.on('error', (err) => { clearTimeout(timeoutId); reject(err); });
         } catch (err) { reject(err); }
@@ -425,7 +425,6 @@ async function updateEPG() {
                     if (!tempEpgData[channelId]) tempEpgData[channelId] = [];
                     tempEpgData[channelId] = tempEpgData[channelId].concat(parsedEpg[channelId]);
                 }
-                // Suppression du "break" castrateur. Le script lit TOUT jusqu'au bout.
             } catch (err) {}
         }
         if (Object.keys(tempEpgData).length > 10) {
@@ -435,20 +434,15 @@ async function updateEPG() {
     } finally { isUpdatingEPG = false; }
 }
 
-// --- CATALOG ENGINE (REQUÊTES SÉQUENTIELLES POUR PROTÉGER LE SCRAPER) ---
+// --- CATALOG ENGINE (MODE RAPIDE D'ORIGINE - BATCH = 3) ---
 async function fetchCatalogFromSource(sourceInput, reportObj) {
     let metas = [];
     let cleanInput = sourceInput.trim();
     if (!cleanInput) return metas;
 
     const reqConfig = {
-        timeout: 45000, 
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-        headers: { 
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json'
-        }
+        timeout: 15000, 
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
     };
 
     if (cleanInput.endsWith('.m3u') || cleanInput.endsWith('.m3u8') || cleanInput.includes('get.php') || cleanInput.includes('/live/')) {
@@ -476,7 +470,7 @@ async function fetchCatalogFromSource(sourceInput, reportObj) {
                 }
             }
         } catch (e) {
-            reportObj.errors.push(e.message);
+            if (reportObj) reportObj.errors.push(e.message);
         }
         return metas;
     }
@@ -497,8 +491,8 @@ async function fetchCatalogFromSource(sourceInput, reportObj) {
                 let skip = 0;
                 const maxSkip = 50000; 
                 
-                // Moteur Séquentiel pour Playwright (batchSize = 1)
-                const batchSize = 1;   
+                // Moteur rapide d'origine (batch de 3 requêtes simultanées)
+                const batchSize = 3;   
                 let seenIds = new Set(); 
 
                 while (hasMore && skip < maxSkip) {
@@ -508,7 +502,7 @@ async function fetchCatalogFromSource(sourceInput, reportObj) {
                         let encodedCatId = encodeURIComponent(catalog.id);
                         let url = currentSkip > 0 ? `${base}/catalog/${catalog.type}/${encodedCatId}/skip=${currentSkip}.json` : `${base}/catalog/${catalog.type}/${encodedCatId}.json`;
                         requests.push(axios.get(url, reqConfig).catch(e => {
-                            reportObj.errors.push(e.message);
+                            if (reportObj) reportObj.errors.push(e.message);
                             return null;
                         }));
                     }
@@ -531,12 +525,8 @@ async function fetchCatalogFromSource(sourceInput, reportObj) {
                             });
                         }
                     }
-                    
                     if (addedInBatch === 0) hasMore = false; 
                     skip += (batchSize * 100);
-                    
-                    // Micro-pause de 300ms pour préserver l'AWS Scraper
-                    await new Promise(r => setTimeout(r, 300));
                 }
                 return catMetas;
             });
@@ -547,7 +537,7 @@ async function fetchCatalogFromSource(sourceInput, reportObj) {
             });
             return metas;
         } catch (err) { 
-            reportObj.errors.push(err.message);
+            if (reportObj) reportObj.errors.push(err.message);
             return metas; 
         }
     }
@@ -767,7 +757,7 @@ app.get('/api/metrics', (req, res) => {
         epgCount: Object.keys(epgData).length,
         epgLastUpdate: lastUpdate,
         totalChannels: totalChannels > 1 ? totalChannels : 0,
-        syncedChannelsStr: `${syncedChannels}`,
+        syncedChannelsStr: `${syncedChannels} chaînes couvertes`,
         topChannels: sortedChannels,
         sourceReport: sourceReport
     });
@@ -1076,7 +1066,7 @@ app.get('/', async (req, res) => {
                         let cleanSrc = src.replace(/\\/manifest\\.json$/, '').trim(); 
                         let displaySrc = cleanSrc.length > 35 ? cleanSrc.substring(0, 32) + '...' : cleanSrc;
                         let r = data.sourceReport[cleanSrc];
-                        if (!r || r.status === 'fetching') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⏳ En attente (Séquentiel)</b></li>\`;
+                        if (!r || r.status === 'fetching') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⏳ En attente (Mode Rapide)</b></li>\`;
                         else if (r.status === 'ok') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-ok">✅ \${r.count} flux</b></li>\`;
                         else if (r.status === 'empty') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⚠️ 0 flux (\${r.lastError || 'Vide'})</b></li>\`;
                         else htmlList += \`<li><span>\${displaySrc}</span> <b class="status-err">❌ Hors Ligne</b></li>\`;
@@ -1159,7 +1149,7 @@ app.get('/:config/manifest.json', (req, res) => {
         id: 'org.hybridtv.meta', 
         version: '1.2.9-STABLE',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.9-STABLE). Unlocked EPG & Sequential.',
+        description: 'Meta-Addon IPTV (v1.2.9-STABLE). Fast Scraper & EPG.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1203,7 +1193,7 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
     
     let descriptionText = `▶ Diffusion en cours sur ${channel.displayName}...`;
     
-    // --- LOGIQUE EPG "À SUIVRE" CONDENSÉE ---
+    // --- LOGIQUE EPG CONDENSÉE ---
     if (Object.keys(epgData).length > 0) {
         const epgList = epgData[channel.id]; 
         if (epgList && epgList.length > 0) {
