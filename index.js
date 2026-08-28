@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.9-PRO (Strict Base + Custom Canal/Nick Rules, Manual Debugger & RAM Metrics)
+ * Version: 1.2.9-ULTIMATE (Strict Base, Full EPG Flow, RAM, Advanced Manual Debug)
  * Core Engine: Synchronous Health Check (6.5s), Smart Cache, Strict Category Separation, HLS Proxy Relay.
  */
 
@@ -112,7 +112,7 @@ function extractMatchEvent(rawName) {
     return null;
 }
 
-// --- CATALOGUE DES CHAÎNES LINÉAIRES ---
+// --- CATALOGUE DES CHAÎNES LINÉAIRES (EXCLUSIVEMENT HORS EVENTS) ---
 function getChannelData(rawName, catalogHint = '') {
     if (!rawName) return null;
     
@@ -206,7 +206,6 @@ function getChannelData(rawName, catalogHint = '') {
     if (c.includes('COMEDYCENTRAL')) return { id: 'hyb_aut_comedycentral', name: 'Comedy Central', categories: ['autres'], index: 11 };
     if (c.includes('COMEDIE') || c.includes('COMEDY')) return { id: 'hyb_canal_comedie', name: 'Comédie+', categories: ['canal', 'autres'], index: 10 };
 
-    // --- RÈGLES CANAL+ AVANCÉES ---
     if (c.includes('CANAL') || c.includes('CPLUS')) {
         if (c.includes('JURA')) return { id: 'hyb_aut_canal_jura', name: 'Canal+ Jura', categories: ['autres'], index: 1002 };
         if (c.includes('MOTOGP') || c.includes('MOTO')) return { id: 'hyb_sport_canal_motogp', name: 'Canal+ Moto GP', categories: ['canal', 'sports'], index: 95 };
@@ -217,7 +216,7 @@ function getChannelData(rawName, catalogHint = '') {
         if (c.includes('ELLES') || c.includes('LCENTRE') || c.includes('CENTRE') || c === 'CANALL' || c.includes('REGIONAL') || c.includes('LOCAL') || c.includes('OUTREMER')) {
             return { id: 'hyb_aut_canal_elles', name: 'Canal+ Elles', categories: ['autres'], index: 1000 };
         }
-        if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 100 };
+        if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 106 }; // L'index est corrigé pour l'ordre
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
         if (c.includes('LIVE')) {
             let m = c.match(/LIVE(\d+)/); let num = m ? m[1] : '1';
@@ -285,22 +284,24 @@ function getChannelData(rawName, catalogHint = '') {
     if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
     if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
 
-    // --- RÈGLES NICKELODEON SÉPARÉES STRICTEMENT ---
+    // --- RÈGLES JEUNESSE STRICTES ET ORDONNÉES ---
+    if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 100 };
+    
     if (c.includes('NICKELODEON') || c.match(/\bNICK\b/) || c === 'NICK') {
-        if (c.includes('JUNIOR') || c.includes('JR')) return { id: 'hyb_jeu_nick_jr', name: 'Nickelodeon Junior', categories: ['jeunesse'], index: 71 };
-        if (c.includes('TEEN')) return { id: 'hyb_jeu_nick_teen', name: 'Nickelodeon Teen', categories: ['jeunesse'], index: 72 };
-        if (c.includes('PLUS1') || c.includes('1H')) return { id: 'hyb_jeu_nick_plus1', name: 'Nickelodeon +1', categories: ['jeunesse'], index: 73 };
-        if (c.includes('TOON')) return { id: 'hyb_jeu_nicktoons', name: 'Nicktoons', categories: ['jeunesse'], index: 74 };
-        return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 70 };
+        if (c.includes('JUNIOR') || c.includes('JR') || c.includes('FRHD') || c.match(/JUNIOR\d/)) return { id: 'hyb_jeu_nick_jr', name: 'Nickelodeon Junior', categories: ['jeunesse'], index: 101 };
+        if (c.includes('TEEN')) return { id: 'hyb_jeu_nick_teen', name: 'Nickelodeon Teen', categories: ['jeunesse'], index: 102 };
+        if (c.includes('PLUS1') || c.includes('1H')) return { id: 'hyb_jeu_nick_plus1', name: 'Nickelodeon +1', categories: ['jeunesse'], index: 103 };
+        if (c.includes('TOON')) return { id: 'hyb_jeu_nicktoons', name: 'Nicktoons', categories: ['jeunesse'], index: 104 };
+        return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 105 };
     }
+    
+    if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 107 };
 
     if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 150 };
     if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
-    if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 3 };
     if (c.includes('DISNEYJR') || c.includes('DISNEYJUNIOR') || (c.includes('DISNEY') && c.includes('JR'))) return { id: 'hyb_jeu_disneyjr', name: 'Disney Junior', categories: ['jeunesse'], index: 5 };
     if (c.includes('DISNEY') && c.includes('PLUS1')) return { id: 'hyb_jeu_disney_plus1', name: 'Disney Channel +1', categories: ['jeunesse'], index: 50 };
     if (c.includes('DISNEY')) return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 2 };
-    if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 5 };
     if (c.includes('BOING')) return { id: 'hyb_jeu_boing', name: 'Boing', categories: ['jeunesse'], index: 6 };
     if (c.includes('TIJI')) return { id: 'hyb_jeu_tiji', name: 'Tiji', categories: ['jeunesse'], index: 9 };
     if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 10 };
@@ -422,7 +423,6 @@ async function updateEPG() {
         if (Object.keys(tempEpgData).length > 10) {
             epgData = tempEpgData;
             lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
-            console.log(`[INFO] EPG mis à jour avec succès : ${Object.keys(epgData).length} chaînes liées.`);
         }
     } finally { isUpdatingEPG = false; }
 }
@@ -433,10 +433,19 @@ async function fetchCatalogFromSource(sourceInput) {
     let cleanInput = sourceInput.trim();
     if (!cleanInput) return metas;
 
+    // CONFIGURATION DES REQUÊTES (TIMEOUT ALLONGÉ + ANTI-BOT)
+    const reqConfig = {
+        timeout: 25000, 
+        headers: { 
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json'
+        }
+    };
+
     // 1. ROUTEUR M3U CLASSIC
     if (cleanInput.endsWith('.m3u') || cleanInput.endsWith('.m3u8') || cleanInput.includes('get.php') || cleanInput.includes('/live/')) {
         try {
-            const res = await axios.get(cleanInput, { timeout: 10000 });
+            const res = await axios.get(cleanInput, reqConfig);
             const lines = res.data.split('\n');
             let currentLogo = DEFAULT_POSTER;
             let currentName = '';
@@ -468,7 +477,7 @@ async function fetchCatalogFromSource(sourceInput) {
             let cleanUrl = cleanInput;
             const base = cleanUrl.replace(/\/manifest\.json$/, '');
 
-            const manifestRes = await axios.get(cleanUrl, { timeout: 6000 });
+            const manifestRes = await axios.get(cleanUrl, reqConfig);
             const catalogs = manifestRes.data.catalogs || [];
             
             const isEventAddon = cleanUrl.toLowerCase().includes('sport') || cleanUrl.toLowerCase().includes('live') || cleanUrl.toLowerCase().includes('event') || cleanUrl.toLowerCase().includes('match');
@@ -487,7 +496,7 @@ async function fetchCatalogFromSource(sourceInput) {
                         let currentSkip = skip + (i * 100);
                         let encodedCatId = encodeURIComponent(catalog.id);
                         let url = currentSkip > 0 ? `${base}/catalog/${catalog.type}/${encodedCatId}/skip=${currentSkip}.json` : `${base}/catalog/${catalog.type}/${encodedCatId}.json`;
-                        requests.push(axios.get(url, { timeout: 6000 }).catch(e => null));
+                        requests.push(axios.get(url, reqConfig).catch(e => null));
                     }
                     
                     let responses = await Promise.all(requests);
@@ -684,11 +693,12 @@ app.get('/proxy/hls', async (req, res) => {
 });
 
 // ============================================================================
-// APP ROUTES, METRICS & MANUAL DEBUGGER
+// APP ROUTES & DASHBOARD
 // ============================================================================
 
 app.get('/api/metrics', (req, res) => {
     let totalChannels = 0;
+    let syncedChannels = 0;
     let sourceReport = {};
     let latestCache = null;
     let latestTime = 0;
@@ -703,8 +713,12 @@ app.get('/api/metrics', (req, res) => {
     if (latestCache && latestCache.data) {
         totalChannels = latestCache.data.length;
         sourceReport = latestCache.sourceReport || {};
+        latestCache.data.forEach(ch => {
+            if (epgData[ch.id] && epgData[ch.id].length > 0) syncedChannels++;
+        });
     }
 
+    let epgPercentage = totalChannels > 0 ? Math.round((syncedChannels / totalChannels) * 100) : 0;
     let sortedChannels = Object.entries(serverStats.channelClicks)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 5)
@@ -717,7 +731,6 @@ app.get('/api/metrics', (req, res) => {
     const totalCache = serverStats.cacheHits + serverStats.cacheMisses;
     const cacheRate = totalCache > 0 ? Math.round((serverStats.cacheHits / totalCache) * 100) + '%' : 'N/A';
     
-    // Ajout métrique RAM
     const memUsage = process.memoryUsage();
     const ramUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
 
@@ -730,12 +743,12 @@ app.get('/api/metrics', (req, res) => {
         epgCount: Object.keys(epgData).length,
         epgLastUpdate: lastUpdate,
         totalChannels: totalChannels > 1 ? totalChannels : 0,
+        syncedChannelsStr: `${syncedChannels} (${epgPercentage}%)`,
         topChannels: sortedChannels,
         sourceReport: sourceReport
     });
 });
 
-// API du Testeur Manuel (Debug Flux original)
 app.get('/api/debug/test', async (req, res) => {
     const query = req.query.query;
     const sourcesParam = req.query.sources;
@@ -747,35 +760,42 @@ app.get('/api/debug/test', async (req, res) => {
     let matchedChannels = channelsData.filter(c => c.displayName.toLowerCase().includes(query.toLowerCase()));
     if (matchedChannels.length === 0) return res.json({ error: "Aucun flux trouvé pour ce mot-clé." });
     
-    // Limitation aux 3 premiers résultats pour ne pas faire planter le serveur
-    matchedChannels = matchedChannels.slice(0, 3);
+    matchedChannels = matchedChannels.slice(0, 4);
     let results = [];
 
     for (let channel of matchedChannels) {
-        let channelInfo = { channel: channel.displayName, streams: [] };
-        for (let source of channel.sources.slice(0, 5)) {
+        let channelInfo = { channel: channel.displayName, id: channel.id, streams: [] };
+        
+        for (let source of channel.sources) {
             let streamUrl = '';
+            let providerName = source.type === 'm3u' ? 'M3U' : source.providerBase;
+            let originalName = source.originalName || "Inconnu";
+
             if (source.type === 'm3u') {
                 streamUrl = source.directUrl;
             } else {
                 try {
                     let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
-                    const streamRes = await axios.get(targetUrl, { timeout: 4000 });
+                    const streamRes = await axios.get(targetUrl, { 
+                        timeout: 5000, 
+                        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' } 
+                    });
                     if (streamRes.data && streamRes.data.streams && streamRes.data.streams.length > 0) {
                         streamUrl = streamRes.data.streams[0].url;
                     }
                 } catch (e) {}
             }
+            
             if (streamUrl) {
                 try {
-                    const headRes = await axios.get(streamUrl, { responseType: 'stream', timeout: 4000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+                    const headRes = await axios.get(streamUrl, { responseType: 'stream', timeout: 5000, headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
                     if (headRes.data && typeof headRes.data.destroy === 'function') headRes.data.destroy();
-                    channelInfo.streams.push({ url: streamUrl.substring(0, 40) + '...', status: '✅ Actif (200)' });
+                    channelInfo.streams.push({ provider: providerName, originalName, url: streamUrl, status: '✅ Actif (200 OK)' });
                 } catch (err) {
-                    channelInfo.streams.push({ url: streamUrl.substring(0, 40) + '...', status: `❌ Erreur (${err.response ? err.response.status : err.message})` });
+                    channelInfo.streams.push({ provider: providerName, originalName, url: streamUrl, status: `❌ Erreur (${err.response ? err.response.status : err.message})` });
                 }
             } else {
-                channelInfo.streams.push({ status: '❌ Lien non résolu' });
+                channelInfo.streams.push({ provider: providerName, originalName, url: 'N/A', status: '❌ Lien non résolu ou bloqué' });
             }
         }
         results.push(channelInfo);
@@ -838,7 +858,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.9-PRO).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.9-ULTIMATE).</p>
             </div>
             <div class="tabs">
                 <button class="tab-btn active" onclick="switchTab('config', this)">⚙️ Configurer</button>
@@ -874,23 +894,30 @@ app.get('/', async (req, res) => {
                     <div class="metric-card"><div class="metric-label">Uptime</div><div class="metric-value" id="m-uptime">--</div></div>
                     <div class="metric-card"><div class="metric-label">Mémoire RAM</div><div class="metric-value" id="m-ram">--</div></div>
                     <div class="metric-card"><div class="metric-label">Utilisateurs Actifs</div><div class="metric-value" id="m-users">--</div></div>
-                    <div class="metric-card"><div class="metric-label">Performance Cache</div><div class="metric-value" id="m-cache">--</div></div>
+                    <div class="metric-card"><div class="metric-label">Requêtes Totales</div><div class="metric-value" id="m-req">--</div></div>
                 </div>
                 <div class="section">
-                    <h3 class="section-title">Inventaire & Rapport Sources</h3>
+                    <h3 class="section-title">Inventaire de la Base</h3>
+                    <ul class="report-list" style="margin-bottom: 0;">
+                        <li><span>Chaînes Uniques prêtes</span> <b class="status-ok" id="m-total">--</b></li>
+                        <li><span>Guide TV Synchronisé</span> <b class="status-warn" id="m-epg-cov">--</b></li>
+                    </ul>
+                </div>
+                <div class="section">
+                    <h3 class="section-title">Rapport des Sources Distantes</h3>
                     <ul class="report-list" id="sourceReportList"><li><i>Chargement...</i></li></ul>
                 </div>
             </div>
             <div id="debug" class="tab-content">
                 <div class="section">
-                    <h3 class="section-title">Testeur de Flux (Manuel)</h3>
-                    <p class="subtitle" style="margin-bottom: 12px; font-size: 12px;">Tapez le nom d'une chaîne (ex: TF1, Moto) pour tester ses liens en direct.</p>
+                    <h3 class="section-title">Testeur de Flux Détaillé</h3>
+                    <p class="subtitle" style="margin-bottom: 12px; font-size: 12px;">Tapez le nom d'une chaîne (ex: TF1, Moto) pour obtenir le diagnostic complet.</p>
                     <input type="text" id="debugInput" class="export-box" placeholder="Nom de la chaîne..." style="margin-bottom: 10px;">
-                    <button type="button" onclick="testFluxManuel()" class="btn btn-small">🔍 Tester la chaîne</button>
+                    <button type="button" onclick="testFluxManuel()" class="btn btn-small">🔍 Inspecter les sources</button>
                 </div>
                 <div class="section">
-                    <h3 class="section-title">Résultat du Test</h3>
-                    <pre id="debugOutput" style="background: #111; padding: 12px; color: #00ff66; overflow-x: auto; font-size: 12px; border: 1px solid #333; border-radius: 6px;">En attente de recherche...</pre>
+                    <h3 class="section-title">Résultat de l'Inspection</h3>
+                    <pre id="debugOutput" style="background: #111; padding: 15px; color: #00ff66; overflow-x: auto; font-size: 13px; line-height: 1.5; border: 1px solid #333; border-radius: 6px;">En attente de recherche...</pre>
                 </div>
             </div>
         </div>
@@ -1014,17 +1041,20 @@ app.get('/', async (req, res) => {
                     document.getElementById('m-uptime').innerText = data.uptime;
                     document.getElementById('m-ram').innerText = data.ramUsed;
                     document.getElementById('m-users').innerText = data.activeUsers;
-                    document.getElementById('m-cache').innerText = data.cacheRate;
+                    document.getElementById('m-req').innerText = data.totalRequests;
                     
+                    document.getElementById('m-total').innerText = data.totalChannels;
+                    document.getElementById('m-epg-cov').innerText = data.syncedChannelsStr;
+
                     let htmlList = '';
                     sources.forEach(src => {
                         if (!src) return;
                         let cleanSrc = src.replace(/\\/manifest\\.json$/, '').trim(); 
                         let displaySrc = cleanSrc.length > 35 ? cleanSrc.substring(0, 32) + '...' : cleanSrc;
                         let r = data.sourceReport[cleanSrc];
-                        if (!r || r.status === 'fetching') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⏳ En attente</b></li>\`;
+                        if (!r || r.status === 'fetching') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⏳ En attente (Timeout possible 25s)</b></li>\`;
                         else if (r.status === 'ok') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-ok">✅ \${r.count} flux</b></li>\`;
-                        else if (r.status === 'empty') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⚠️ 0 flux</b></li>\`;
+                        else if (r.status === 'empty') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⚠️ 0 flux (Refusé/Vide)</b></li>\`;
                         else htmlList += \`<li><span>\${displaySrc}</span> <b class="status-err">❌ Hors Ligne</b></li>\`;
                     });
                     document.getElementById('sourceReportList').innerHTML = htmlList || '<li><i>Aucune source configurée</i></li>';
@@ -1035,7 +1065,7 @@ app.get('/', async (req, res) => {
                 const query = document.getElementById('debugInput').value;
                 if (!query) return alert("Entrez le nom d'une chaîne !");
                 const output = document.getElementById('debugOutput');
-                output.innerText = "Recherche et test en cours (cela peut prendre quelques secondes)...";
+                output.innerText = "Recherche et test en cours (analyse des sources en direct)...";
                 saveInputs();
                 let validSources = sources.filter(s => s.length > 0).join(',');
                 
@@ -1044,8 +1074,19 @@ app.get('/', async (req, res) => {
                     let data = await res.json();
                     if (data.error) {
                         output.innerText = data.error;
-                    } else {
-                        output.innerText = JSON.stringify(data.results, null, 2);
+                    } else if (data.results) {
+                        let html = '';
+                        data.results.forEach(ch => {
+                            html += \`<span style="color: #fff; font-weight: bold; font-size: 15px;">📺 \${ch.channel} (ID: \${ch.id})</span>\\n\`;
+                            html += \`--------------------------------------------------\\n\`;
+                            ch.streams.forEach((s, idx) => {
+                                html += \`  🔸 <span style="color: #bbb;">Source \${idx + 1} :</span> \${s.provider}\\n\`;
+                                html += \`     <span style="color: #bbb;">Nom Brut :</span> \${s.originalName}\\n\`;
+                                html += \`     <span style="color: #bbb;">Lien     :</span> <a href="\${s.url}" target="_blank" style="color: #66b3ff;">\${s.url}</a>\\n\`;
+                                html += \`     <span style="color: #bbb;">Statut   :</span> \${s.status}\\n\\n\`;
+                            });
+                        });
+                        output.innerHTML = html;
                     }
                 } catch(e) {
                     output.innerText = "Erreur lors du test : " + e.message;
@@ -1092,9 +1133,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.2.9',
+        version: '1.2.9-ULTIMATE',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.9-PRO). Clean Event Routing & EPG.',
+        description: 'Meta-Addon IPTV (v1.2.9-ULTIMATE). Complete EPG & Safe Sync.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1138,6 +1179,7 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
     
     let descriptionText = `▶ Diffusion en cours sur ${channel.displayName}...`;
     
+    // --- NOUVELLE LOGIQUE EPG "À SUIVRE" ---
     if (Object.keys(epgData).length > 0) {
         const epgList = epgData[channel.id]; 
         if (epgList && epgList.length > 0) {
@@ -1150,6 +1192,14 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
                 const sTime = formatTime(currentProg.start);
                 const eTime = formatTime(currentProg.stop);
                 descriptionText = `🔴 EN DIRECT (${sTime} - ${eTime}) : ${currentProg.title}`;
+
+                let following = epgList.slice(currentIndex + 1, currentIndex + 4);
+                if (following.length > 0) {
+                    descriptionText += `\n\n⏭️ À SUIVRE :`;
+                    following.forEach(p => {
+                        descriptionText += `\n• ${formatTime(p.start)} : ${p.title}`;
+                    });
+                }
             }
         }
     }
@@ -1195,7 +1245,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
                 const streamRes = await axios.get(targetUrl, {
-                    headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }, 
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'application/json' }, 
                     timeout: 4500 
                 });
                 
