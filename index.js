@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.10 (Restored Stream Debugger, Multi-Source Orchestration & Event Routing)
+ * Version: 1.2.11 (Advanced Telemetry, Full Stream Debugger Table & Mass Catalog Handling)
  * Core Engine: Synchronous Health Check (6.5s), Smart Cache, Strict Category Separation, HLS Proxy Relay.
  */
 
@@ -239,7 +239,7 @@ function formatTime(timestamp) {
     return new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }).format(new Date(timestamp)).replace(':', 'h');
 }
 
-// --- CATALOG ENGINE ---
+// --- CATALOG ENGINE AVEC SUPPORT DE MASSE ---
 async function fetchCatalogFromSource(sourceInput) {
     let metas = [];
     let cleanInput = sourceInput.trim();
@@ -278,7 +278,7 @@ async function fetchCatalogFromSource(sourceInput) {
             let cleanUrl = cleanInput;
             const base = cleanUrl.replace(/\/manifest\.json$/, '');
 
-            const manifestRes = await axios.get(cleanUrl, { timeout: 6000 });
+            const manifestRes = await axios.get(cleanUrl, { timeout: 8000 });
             const catalogs = manifestRes.data.catalogs || [];
             const isEventAddon = cleanUrl.toLowerCase().includes('sport') || cleanUrl.toLowerCase().includes('live') || cleanUrl.toLowerCase().includes('event') || cleanUrl.toLowerCase().includes('match');
 
@@ -286,8 +286,8 @@ async function fetchCatalogFromSource(sourceInput) {
                 let catMetas = []; 
                 let hasMore = true; 
                 let skip = 0;
-                const maxSkip = 50000; 
-                const batchSize = 3;   
+                const maxSkip = 100000; 
+                const batchSize = 5; // Lots plus larges pour accélérer l'ingestion massive
                 let seenIds = new Set(); 
 
                 while (hasMore && skip < maxSkip) {
@@ -296,7 +296,7 @@ async function fetchCatalogFromSource(sourceInput) {
                         let currentSkip = skip + (i * 100);
                         let encodedCatId = encodeURIComponent(catalog.id);
                         let url = currentSkip > 0 ? `${base}/catalog/${catalog.type}/${encodedCatId}/skip=${currentSkip}.json` : `${base}/catalog/${catalog.type}/${encodedCatId}.json`;
-                        requests.push(axios.get(url, { timeout: 8000 }).catch(e => null));
+                        requests.push(axios.get(url, { timeout: 10000 }).catch(e => null));
                     }
                     
                     let responses = await Promise.all(requests);
@@ -493,7 +493,7 @@ app.get('/proxy/hls', async (req, res) => {
 });
 
 // ============================================================================
-// APP ROUTES & DASHBOARD WITH DEBUGGER
+// APP ROUTES & ADVANCED METRICS / DEBUG API
 // ============================================================================
 
 app.get('/api/metrics', (req, res) => {
@@ -501,6 +501,7 @@ app.get('/api/metrics', (req, res) => {
     let sourceReport = {};
     let latestCache = null;
     let latestTime = 0;
+    let categoryCounts = { tnt: 0, sports: 0, events: 0, cinema: 0, info: 0, autres: 0 };
 
     for (const [key, val] of Object.entries(channelsCache)) {
         if (val.timestamp > latestTime) {
@@ -512,34 +513,50 @@ app.get('/api/metrics', (req, res) => {
     if (latestCache && latestCache.data) {
         totalChannels = latestCache.data.length;
         sourceReport = latestCache.sourceReport || {};
+        latestCache.data.forEach(ch => {
+            ch.categories.forEach(cat => {
+                if (categoryCounts[cat] !== undefined) categoryCounts[cat]++;
+                else categoryCounts.autres++;
+            });
+        });
     }
-
-    let sortedChannels = Object.entries(serverStats.channelClicks)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([id, count]) => ({ id: id.replace('hyb_', ''), count }));
 
     const uptimeMs = Date.now() - serverStats.startTime;
     const uptimeHours = Math.floor(uptimeMs / 3600000);
     const uptimeMinutes = Math.floor((uptimeMs % 3600000) / 60000);
 
-    const totalCache = serverStats.cacheHits + serverStats.cacheMisses;
-    const cacheRate = totalCache > 0 ? Math.round((serverStats.cacheHits / totalCache) * 100) + '%' : 'N/A';
+    const memUsage = process.memoryUsage();
+    const ramUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
 
     res.json({
         uptime: `${uptimeHours}h ${uptimeMinutes}m`,
+        ramUsed: `${ramUsedMB} Mo`,
         activeUsers: serverStats.activeIps.size,
         totalRequests: serverStats.totalRequests,
-        cacheRate: cacheRate,
-        epgCount: Object.keys(epgData).length,
+        totalChannels: totalChannels,
+        categoryCounts: categoryCounts,
         epgLastUpdate: lastUpdate,
-        totalChannels: totalChannels > 1 ? totalChannels : 0,
-        topChannels: sortedChannels,
         sourceReport: sourceReport
     });
 });
 
-// --- API DEBUG / TEST DE FLUX ---
+// --- API POUR RÉCUPÉRER TOUTES LES CHAÎNES / ÉVÉNEMENTS POUR LE DÉBUGGER ---
+app.get('/api/channels/list', async (req, res) => {
+    let sourcesParam = req.query.sources;
+    if (!sourcesParam) return res.json({ channels: [] });
+    let sourcesList = sourcesParam.split(',');
+    let channelsData = await getChannelsForSources(sourcesList);
+    
+    let list = channelsData.map(c => ({
+        id: c.id,
+        name: c.displayName,
+        category: c.categories.join(', '),
+        sourcesCount: c.sources.length
+    }));
+    res.json({ channels: list });
+});
+
+// --- API TEST DE FLUX ---
 app.get('/api/debug/test', async (req, res) => {
     let channelId = req.query.channelId;
     let sourcesParam = req.query.sources;
@@ -549,7 +566,7 @@ app.get('/api/debug/test', async (req, res) => {
     let channelsData = await getChannelsForSources(sourcesList);
     let channel = channelsData.find(c => c.id === channelId);
 
-    if (!channel) return res.json({ error: "Chaîne ou événement introuvable dans le cache" });
+    if (!channel) return res.json({ error: "Élément introuvable dans le cache" });
 
     let results = [];
     for (let source of channel.sources) {
@@ -561,7 +578,7 @@ app.get('/api/debug/test', async (req, res) => {
         } else {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
-                const streamRes = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 4000 });
+                const streamRes = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 5000 });
                 if (streamRes.data && streamRes.data.streams && streamRes.data.streams.length > 0) {
                     streamUrl = streamRes.data.streams[0].url;
                     info.title = streamRes.data.streams[0].title || streamRes.data.streams[0].name;
@@ -575,7 +592,7 @@ app.get('/api/debug/test', async (req, res) => {
 
         if (streamUrl) {
             try {
-                const headRes = await axios.get(streamUrl, { responseType: 'stream', timeout: 4000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+                const headRes = await axios.get(streamUrl, { responseType: 'stream', timeout: 5000, headers: { 'User-Agent': 'Mozilla/5.0' } });
                 if (headRes.data && typeof headRes.data.destroy === 'function') headRes.data.destroy();
                 info.status = 'OK (200)';
                 info.healthy = true;
@@ -602,59 +619,65 @@ app.get('/', async (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>HybridTV Dashboard & Debugger</title>
+        <title>HybridTV Dashboard & Debugger Pro</title>
         <style>
             :root { --bg: #141414; --card: #1f1f1f; --card-alt: #111; --primary: #e50914; --text: #fff; --text-muted: #bbb; --border: #333; }
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 40px 20px; margin: 0; }
-            .container { max-width: 750px; margin: 0 auto; background: var(--card); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; }
-            .header { padding: 30px; text-align: center; border-bottom: 1px solid var(--border); }
-            h1 { margin: 0 0 10px 0; font-size: 28px; }
-            .subtitle { font-size: 14px; color: var(--text-muted); margin: 0; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 30px 15px; margin: 0; }
+            .container { max-width: 800px; margin: 0 auto; background: var(--card); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; }
+            .header { padding: 25px; text-align: center; border-bottom: 1px solid var(--border); }
+            h1 { margin: 0 0 8px 0; font-size: 26px; }
+            .subtitle { font-size: 13px; color: var(--text-muted); margin: 0; }
             .tabs { display: flex; border-bottom: 1px solid var(--border); background: #1a1a1a; overflow-x: auto; }
-            .tab-btn { flex: 1; padding: 15px; background: none; border: none; color: var(--text-muted); font-size: 14px; font-weight: bold; cursor: pointer; transition: 0.2s; white-space: nowrap; }
+            .tab-btn { flex: 1; padding: 14px; background: none; border: none; color: var(--text-muted); font-size: 13px; font-weight: bold; cursor: pointer; transition: 0.2s; white-space: nowrap; }
             .tab-btn:hover { color: var(--text); background: #222; }
             .tab-btn.active { color: var(--text); border-bottom: 3px solid var(--primary); background: var(--card); }
-            .tab-content { display: none; padding: 30px; }
+            .tab-content { display: none; padding: 25px; }
             .tab-content.active { display: block; }
-            .section { background: var(--card-alt); padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid var(--border); }
-            .section-title { font-size: 14px; color: #ccc; font-weight: bold; margin-top: 0; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }
+            .section { background: var(--card-alt); padding: 18px; border-radius: 8px; margin-bottom: 18px; border: 1px solid var(--border); }
+            .section-title { font-size: 13px; color: #ccc; font-weight: bold; margin-top: 0; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
             .source-row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
             .source-num { font-size: 13px; font-weight: bold; color: var(--primary); min-width: 20px; text-align: center; }
             .source-row input { flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px; }
-            .btn { display: inline-block; background: var(--primary); color: #fff; padding: 12px 24px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; border: none; transition: 0.2s; text-align: center; width: 100%; box-sizing: border-box; }
+            .btn { display: inline-block; background: var(--primary); color: #fff; padding: 12px 20px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; border: none; transition: 0.2s; text-align: center; width: 100%; box-sizing: border-box; }
             .btn:hover { background: #f40612; }
             .btn-secondary { background: #333; margin-top: 10px; }
             .btn-secondary:hover { background: #444; }
-            .btn-small { background: #444; padding: 8px 10px; font-size: 12px; border-radius: 6px; cursor: pointer; color: #fff; border: none; }
+            .btn-small { background: #444; padding: 8px 12px; font-size: 12px; border-radius: 6px; cursor: pointer; color: #fff; border: none; }
             .btn-small:hover { background: #555; }
             .btn-danger { background: #800; padding: 8px 10px; border-radius: 6px; cursor: pointer; color: #fff; border: none; }
             .btn-danger:hover { background: #a00; }
-            .main-link { width: 100%; padding: 15px; margin-top: 15px; background: #111; color: #fff; border: 1px dashed #666; border-radius: 6px; text-align: center; font-size: 13px; box-sizing: border-box; }
+            .main-link { width: 100%; padding: 14px; margin-top: 12px; background: #111; color: #fff; border: 1px dashed #666; border-radius: 6px; text-align: center; font-size: 12px; box-sizing: border-box; }
             input[type="text"].export-box { width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #aaa; border-radius: 6px; font-size: 12px; box-sizing: border-box; }
-            .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
-            .metric-card { background: #222; padding: 15px; border-radius: 8px; border: 1px solid var(--border); text-align: center; }
-            .metric-value { font-size: 24px; font-weight: bold; color: var(--primary); margin: 10px 0 5px 0; }
-            .metric-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; }
+            .metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
+            .metric-card { background: #222; padding: 14px; border-radius: 8px; border: 1px solid var(--border); text-align: center; }
+            .metric-value { font-size: 20px; font-weight: bold; color: var(--primary); margin: 6px 0 4px 0; }
+            .metric-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; }
             ul.report-list { list-style: none; padding: 0; margin: 0; font-size: 13px; }
             ul.report-list li { padding: 8px 0; border-bottom: 1px solid #333; display: flex; justify-content: space-between; }
             ul.report-list li:last-child { border-bottom: none; }
             .status-ok { color: #4caf50; }
             .status-warn { color: #ff9800; }
             .status-err { color: #f44336; }
-            select { width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px; margin-bottom: 10px; }
-            pre { background: #111; padding: 12px; border-radius: 6px; font-size: 12px; overflow-x: auto; color: #00ff66; border: 1px solid #333; }
+            input[type="search"] { width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px; margin-bottom: 10px; box-sizing: border-box; }
+            .channel-table-container { max-height: 250px; overflow-y: auto; border: 1px solid #333; border-radius: 6px; margin-bottom: 12px; background: #111; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; }
+            th, td { padding: 8px 10px; border-bottom: 1px solid #222; }
+            th { background: #1a1a1a; color: #aaa; position: sticky; top: 0; }
+            tr:hover { background: #181818; cursor: pointer; }
+            tr.selected { background: #2c1618 !important; border-left: 3px solid var(--primary); }
+            pre { background: #111; padding: 12px; border-radius: 6px; font-size: 12px; overflow-x: auto; color: #00ff66; border: 1px solid #333; margin: 0; }
         </style>
     </head>
     <body>
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">Gestionnaire IPTV et Outil de Diagnostic (v1.2.10).</p>
+                <p class="subtitle">Gestionnaire IPTV et Diagnostic Avancé (v1.2.11).</p>
             </div>
             <div class="tabs">
                 <button class="tab-btn active" onclick="switchTab('config', this)">⚙️ Configurer</button>
-                <button class="tab-btn" onclick="switchTab('metrics', this)">📊 Métriques</button>
-                <button class="tab-btn" onclick="switchTab('debug', this)">🧪 Debug Flux</button>
+                <button class="tab-btn" onclick="switchTab('metrics', this)">📊 Métriques & RAM</button>
+                <button class="tab-btn" onclick="switchTab('debug', this)">🧪 Testeur Global</button>
             </div>
             <div id="config" class="tab-content active">
                 <div class="section">
@@ -674,27 +697,36 @@ app.get('/', async (req, res) => {
             <div id="metrics" class="tab-content">
                 <div class="metrics-grid">
                     <div class="metric-card"><div class="metric-label">Uptime</div><div class="metric-value" id="m-uptime">--</div></div>
-                    <div class="metric-card"><div class="metric-label">Utilisateurs Actifs</div><div class="metric-value" id="m-users">--</div></div>
-                    <div class="metric-card"><div class="metric-label">Requêtes Totales</div><div class="metric-value" id="m-req">--</div></div>
-                    <div class="metric-card"><div class="metric-label">Performance Cache</div><div class="metric-value" id="m-cache">--</div></div>
+                    <div class="metric-card"><div class="metric-label">Mémoire RAM</div><div class="metric-value" id="m-ram">--</div></div>
+                    <div class="metric-card"><div class="metric-label">Utilisateurs</div><div class="metric-value" id="m-users">--</div></div>
+                    <div class="metric-card"><div class="metric-label">Requêtes</div><div class="metric-value" id="m-req">--</div></div>
+                    <div class="metric-card"><div class="metric-label">Total Éléments</div><div class="metric-value" id="m-total">--</div></div>
+                    <div class="metric-card"><div class="metric-label">Événements Sport</div><div class="metric-value" id="m-events">--</div></div>
                 </div>
                 <div class="section">
-                    <h3 class="section-title">Rapport des Sources</h3>
+                    <h3 class="section-title">État des Sources Configurées</h3>
                     <ul class="report-list" id="sourceReportList"><li><i>Chargement...</i></li></ul>
                 </div>
             </div>
             <div id="debug" class="tab-content">
                 <div class="section">
-                    <h3 class="section-title">Testeur de Flux & Chaînes</h3>
-                    <p class="subtitle" style="margin-bottom: 12px; font-size: 12px;">Sélectionne une chaîne ou un événement chargé pour tester la validité des flux en temps réel.</p>
-                    <select id="debugChannelSelect">
-                        <option value="">-- Générez ou chargez des sources d'abord --</option>
-                    </select>
-                    <button type="button" onclick="testSelectedChannel()" class="btn btn-small">🔍 Tester la chaîne / l'événement</button>
+                    <h3 class="section-title">Rechercher une Chaîne ou un Événement</h3>
+                    <input type="search" id="channelSearch" placeholder="Tapez un nom d'équipe, de match ou de chaîne..." oninput="filterChannelTable()">
+                    <div class="channel-table-container">
+                        <table id="channelTable">
+                            <thead>
+                                <tr><th>Nom</th><th>Catégorie</th><th>Sources</th></tr>
+                            </thead>
+                            <tbody id="channelTableBody">
+                                <tr><td colspan="3" style="text-align: center; color: #777;">Chargement des flux en cours...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <button type="button" onclick="testSelectedChannel()" class="btn btn-small">🔍 Lancer le test des liens de cet élément</button>
                 </div>
                 <div class="section">
-                    <h3 class="section-title">Résultat du Diagnostic</h3>
-                    <pre id="debugOutput">Sélectionnez une chaîne et lancez le test...</pre>
+                    <h3 class="section-title">Résultat du Diagnostic des Flux</h3>
+                    <pre id="debugOutput">Sélectionnez un élément dans le tableau ci-dessus...</pre>
                 </div>
             </div>
         </div>
@@ -702,6 +734,8 @@ app.get('/', async (req, res) => {
             let sources = ${JSON.stringify(sourcesList)};
             let qualities = ['1080p', '720p', '4K', 'SD'];
             let languages = ['fr', 'en', 'es', 'other'];
+            let allChannelsData = [];
+            let selectedChannelId = null;
 
             function switchTab(tabId, btn) {
                 document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -709,7 +743,7 @@ app.get('/', async (req, res) => {
                 document.getElementById(tabId).classList.add('active');
                 btn.classList.add('active');
                 if(tabId === 'metrics') fetchMetrics();
-                if(tabId === 'debug') loadDebugChannels();
+                if(tabId === 'debug') loadDebugChannelsTable();
             }
 
             function renderSources() {
@@ -780,9 +814,11 @@ app.get('/', async (req, res) => {
                     let res = await fetch('/api/metrics');
                     let data = await res.json();
                     document.getElementById('m-uptime').innerText = data.uptime;
+                    document.getElementById('m-ram').innerText = data.ramUsed;
                     document.getElementById('m-users').innerText = data.activeUsers;
                     document.getElementById('m-req').innerText = data.totalRequests;
-                    document.getElementById('m-cache').innerText = data.cacheRate;
+                    document.getElementById('m-total').innerText = data.totalChannels;
+                    document.getElementById('m-events').innerText = data.categoryCounts.events || 0;
                     
                     let htmlList = '';
                     sources.forEach(src => {
@@ -790,55 +826,65 @@ app.get('/', async (req, res) => {
                         let cleanSrc = src.replace(/\\/manifest\\.json$/, '').trim(); 
                         let displaySrc = cleanSrc.length > 35 ? cleanSrc.substring(0, 32) + '...' : cleanSrc;
                         let r = data.sourceReport[cleanSrc];
-                        if (!r || r.status === 'fetching') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⏳ En attente (Chargement des flux...)</b></li>\`;
-                        else if (r.status === 'ok') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-ok">✅ \${r.count} flux/événements</b></li>\`;
-                        else if (r.status === 'empty') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⚠️ 0 flux</b></li>\`;
-                        else htmlList += \`<li><span>\${displaySrc}</span> <b class="status-err">❌ Hors Ligne</b></li>\`;
+                        if (!r || r.status === 'fetching') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⏳ Synchronisation en cours...</b></li>\`;
+                        else if (r.status === 'ok') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-ok">✅ \${r.count} éléments</b></li>\`;
+                        else if (r.status === 'empty') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⚠️ 0 élément trouvé</b></li>\`;
+                        else htmlList += \`<li><span>\${displaySrc}</span> <b class="status-err">❌ Erreur connexion</b></li>\`;
                     });
                     document.getElementById('sourceReportList').innerHTML = htmlList || '<li><i>Aucune source configurée</i></li>';
                 } catch(e) {}
             }
 
-            async function loadDebugChannels() {
+            async function loadDebugChannelsTable() {
                 saveInputs();
-                const select = document.getElementById('debugChannelSelect');
-                select.innerHTML = '<option value="">Chargement des chaînes...</option>';
+                const tbody = document.getElementById('channelTableBody');
+                tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #aaa;">Chargement complet des milliers de flux (veuillez patienter)...</td></tr>';
                 try {
-                    let token = document.getElementById('exportTokenBox').value;
-                    let res = await fetch('/' + token + '/catalog/tv/tnt.json');
-                    let data1 = await res.json();
-                    let resSport = await fetch('/' + token + '/catalog/tv/sports.json');
-                    let dataSport = await resSport.json();
-                    let resEvents = await fetch('/' + token + '/catalog/tv/events.json');
-                    let dataEvents = await resEvents.json();
-
-                    let allMetas = [...(data1.metas || []), ...(dataSport.metas || []), ...(dataEvents.metas || [])];
-                    if(allMetas.length === 0) {
-                        select.innerHTML = '<option value="">Aucune chaîne trouvée (attendez la fin du chargement)</option>';
-                        return;
-                    }
-                    select.innerHTML = '';
-                    allMetas.forEach(m => {
-                        let opt = document.createElement('option');
-                        opt.value = m.id;
-                        opt.innerText = m.name;
-                        select.appendChild(opt);
-                    });
+                    let validSources = sources.filter(s => s.length > 0).join(',');
+                    let res = await fetch(\`/api/channels/list?sources=\${encodeURIComponent(validSources)}\`);
+                    let data = await res.json();
+                    allChannelsData = data.channels || [];
+                    renderChannelTable(allChannelsData);
                 } catch(e) {
-                    select.innerHTML = '<option value="">Erreur de chargement</option>';
+                    tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #f44336;">Erreur de chargement des flux.</td></tr>';
                 }
             }
 
+            function renderChannelTable(items) {
+                const tbody = document.getElementById('channelTableBody');
+                if(items.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #777;">Aucun élément trouvé.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = '';
+                items.forEach(item => {
+                    const tr = document.createElement('tr');
+                    tr.onclick = () => selectChannel(item.id, tr);
+                    tr.innerHTML = \`<td>\${item.name}</td><td>\${item.category}</td><td>\${item.sourcesCount}</td>\`;
+                    tbody.appendChild(tr);
+                });
+            }
+
+            function filterChannelTable() {
+                const query = document.getElementById('channelSearch').value.toLowerCase();
+                const filtered = allChannelsData.filter(i => i.name.toLowerCase().includes(query) || i.category.toLowerCase().includes(query));
+                renderChannelTable(filtered);
+            }
+
+            function selectChannel(id, trElement) {
+                document.querySelectorAll('#channelTableBody tr').forEach(tr => tr.classList.remove('selected'));
+                trElement.classList.add('selected');
+                selectedChannelId = id;
+            }
+
             async function testSelectedChannel() {
-                const channelId = document.getElementById('debugChannelSelect').value;
-                if (!channelId) return alert("Sélectionnez une chaîne !");
+                if (!selectedChannelId) return alert("Sélectionnez d'abord un élément dans le tableau !");
                 const output = document.getElementById('debugOutput');
-                output.innerText = "Diagnostic en cours...";
+                output.innerText = "Test des liens et des serveurs en cours...";
                 
-                let token = document.getElementById('exportTokenBox').value;
                 let validSources = sources.filter(s => s.length > 0).join(',');
                 try {
-                    let res = await fetch(\`/api/debug/test?channelId=\${encodeURIComponent(channelId)}&sources=\${encodeURIComponent(validSources)}\`);
+                    let res = await fetch(\`/api/debug/test?channelId=\${encodeURIComponent(selectedChannelId)}&sources=\${encodeURIComponent(validSources)}\`);
                     let data = await res.json();
                     output.innerText = JSON.stringify(data, null, 2);
                 } catch(e) {
@@ -878,9 +924,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.2.10',
+        version: '1.2.11',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.10) with Stream Debugger.',
+        description: 'Meta-Addon IPTV (v1.2.11) with Advanced Table Debugger.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
