@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.5 (Smart Router & Native Web Scraping - "Streamed.su" Integration)
+ * Version: 1.2.5 (Smart Router & Native Web Scraping)
  * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing, HLS Proxy Relay.
  */
 
