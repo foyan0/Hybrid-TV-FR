@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.9 (Clean Multi-Source Orchestrator & Strict Event Routing)
+ * Version: 1.2.9-PRO (Strict Base + Custom Canal/Nick Rules, Manual Debugger & RAM Metrics)
  * Core Engine: Synchronous Health Check (6.5s), Smart Cache, Strict Category Separation, HLS Proxy Relay.
  */
 
@@ -112,11 +112,10 @@ function extractMatchEvent(rawName) {
     return null;
 }
 
-// --- CATALOGUE DES CHAÎNES LINÉAIRES (EXCLUSIVEMENT HORS EVENTS) ---
+// --- CATALOGUE DES CHAÎNES LINÉAIRES ---
 function getChannelData(rawName, catalogHint = '') {
     if (!rawName) return null;
     
-    // Si l'add-on source est explicitement orienté sports/events ou que le nom indique un match
     if (catalogHint === 'events' || catalogHint === 'sports') {
         let eventData = extractMatchEvent(rawName);
         if (eventData) return eventData;
@@ -207,7 +206,14 @@ function getChannelData(rawName, catalogHint = '') {
     if (c.includes('COMEDYCENTRAL')) return { id: 'hyb_aut_comedycentral', name: 'Comedy Central', categories: ['autres'], index: 11 };
     if (c.includes('COMEDIE') || c.includes('COMEDY')) return { id: 'hyb_canal_comedie', name: 'Comédie+', categories: ['canal', 'autres'], index: 10 };
 
+    // --- RÈGLES CANAL+ AVANCÉES ---
     if (c.includes('CANAL') || c.includes('CPLUS')) {
+        if (c.includes('JURA')) return { id: 'hyb_aut_canal_jura', name: 'Canal+ Jura', categories: ['autres'], index: 1002 };
+        if (c.includes('MOTOGP') || c.includes('MOTO')) return { id: 'hyb_sport_canal_motogp', name: 'Canal+ Moto GP', categories: ['canal', 'sports'], index: 95 };
+        if (c.includes('PREMIERLEAGUE') || c.includes('PREMIERELIGUE') || c.includes('PREMIERLIGUE')) return { id: 'hyb_sport_canal_pl', name: 'Canal+ Premier League', categories: ['canal', 'sports'], index: 96 };
+        if (c.includes('EMOTION')) return { id: 'hyb_cine_canal_emotion', name: 'Canal+ Émotion', categories: ['canal', 'cinema'], index: 16 };
+        if (c.includes('SAVOIR')) return { id: 'hyb_dec_canal_savoir', name: 'Canal Savoir', categories: ['decouverte'], index: 10 };
+        
         if (c.includes('ELLES') || c.includes('LCENTRE') || c.includes('CENTRE') || c === 'CANALL' || c.includes('REGIONAL') || c.includes('LOCAL') || c.includes('OUTREMER')) {
             return { id: 'hyb_aut_canal_elles', name: 'Canal+ Elles', categories: ['autres'], index: 1000 };
         }
@@ -279,6 +285,15 @@ function getChannelData(rawName, catalogHint = '') {
     if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
     if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
 
+    // --- RÈGLES NICKELODEON SÉPARÉES STRICTEMENT ---
+    if (c.includes('NICKELODEON') || c.match(/\bNICK\b/) || c === 'NICK') {
+        if (c.includes('JUNIOR') || c.includes('JR')) return { id: 'hyb_jeu_nick_jr', name: 'Nickelodeon Junior', categories: ['jeunesse'], index: 71 };
+        if (c.includes('TEEN')) return { id: 'hyb_jeu_nick_teen', name: 'Nickelodeon Teen', categories: ['jeunesse'], index: 72 };
+        if (c.includes('PLUS1') || c.includes('1H')) return { id: 'hyb_jeu_nick_plus1', name: 'Nickelodeon +1', categories: ['jeunesse'], index: 73 };
+        if (c.includes('TOON')) return { id: 'hyb_jeu_nicktoons', name: 'Nicktoons', categories: ['jeunesse'], index: 74 };
+        return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 70 };
+    }
+
     if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 150 };
     if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
     if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 3 };
@@ -287,7 +302,6 @@ function getChannelData(rawName, catalogHint = '') {
     if (c.includes('DISNEY')) return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 2 };
     if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 5 };
     if (c.includes('BOING')) return { id: 'hyb_jeu_boing', name: 'Boing', categories: ['jeunesse'], index: 6 };
-    if (c.includes('NICKELODEON') || c.includes('NICK')) return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 7 };
     if (c.includes('TIJI')) return { id: 'hyb_jeu_tiji', name: 'Tiji', categories: ['jeunesse'], index: 9 };
     if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 10 };
     if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 11 };
@@ -299,7 +313,7 @@ function getChannelData(rawName, catalogHint = '') {
     else if (c.includes('CINE') || c.includes('FILM') || c.includes('SERIE') || c.includes('ACTION') || c.includes('PARAMOUNT')) cat = 'cinema';
     else if (c.includes('INFO') || c.includes('NEWS') || c.includes('METEO')) cat = 'info';
     else if (c.includes('DOC') || c.includes('NATURE') || c.includes('HISTOIRE') || c.includes('CRIME') || c.includes('ANIMAUX') || c.includes('PLANET') || c.includes('CHASSE') || c.includes('SCIENC')) cat = 'decouverte';
-    else if (c.includes('KIDS') || c.includes('JUNIOR') || c.includes('TOON') || c.includes('NICKELODEON') || c.includes('DISNEY')) cat = 'jeunesse';
+    else if (c.includes('KIDS') || c.includes('JUNIOR') || c.includes('TOON') || c.includes('DISNEY')) cat = 'jeunesse';
     else if (c.includes('MUSIC') || c.includes('HIT') || c.includes('POP') || c.includes('ROCK') || c.includes('TRACE') || c.includes('MELODY') || c.includes('MTV') || c.includes('MCM')) cat = 'musique';
 
     let prettyName = rawName.replace(/\[.*?\]|\(.*?\)/g, '').replace(/\b(?:FHD|HD|SD|4K|1080P|720P)\b/gi, '').trim();
@@ -408,6 +422,7 @@ async function updateEPG() {
         if (Object.keys(tempEpgData).length > 10) {
             epgData = tempEpgData;
             lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
+            console.log(`[INFO] EPG mis à jour avec succès : ${Object.keys(epgData).length} chaînes liées.`);
         }
     } finally { isUpdatingEPG = false; }
 }
@@ -447,7 +462,7 @@ async function fetchCatalogFromSource(sourceInput) {
         return metas;
     }
 
-    // 2. ROUTEUR ADD-ON JSON CLASSIC (Qu'il s'agisse d'un add-on TV ou d'un add-on externe de sport/events)
+    // 2. ROUTEUR ADD-ON JSON CLASSIC
     if (cleanInput.includes('manifest.json')) {
         try {
             let cleanUrl = cleanInput;
@@ -456,7 +471,6 @@ async function fetchCatalogFromSource(sourceInput) {
             const manifestRes = await axios.get(cleanUrl, { timeout: 6000 });
             const catalogs = manifestRes.data.catalogs || [];
             
-            // Détection si l'add-on distant est orienté sport/événements
             const isEventAddon = cleanUrl.toLowerCase().includes('sport') || cleanUrl.toLowerCase().includes('live') || cleanUrl.toLowerCase().includes('event') || cleanUrl.toLowerCase().includes('match');
 
             const catalogPromises = catalogs.map(async (catalog) => {
@@ -485,7 +499,6 @@ async function fetchCatalogFromSource(sourceInput) {
                                 if (m && m.id && m.name && !seenIds.has(m.id)) {
                                     seenIds.add(m.id);
                                     let metaName = m.name;
-                                    // Si l'add-on source est un add-on d'événements externe, on force le tag live si absent
                                     if (isEventAddon && !metaName.includes('🔴') && !metaName.includes('[LIVE]')) {
                                         metaName = `🔴 ${metaName}`;
                                     }
@@ -671,7 +684,7 @@ app.get('/proxy/hls', async (req, res) => {
 });
 
 // ============================================================================
-// APP ROUTES & DASHBOARD
+// APP ROUTES, METRICS & MANUAL DEBUGGER
 // ============================================================================
 
 app.get('/api/metrics', (req, res) => {
@@ -703,9 +716,14 @@ app.get('/api/metrics', (req, res) => {
 
     const totalCache = serverStats.cacheHits + serverStats.cacheMisses;
     const cacheRate = totalCache > 0 ? Math.round((serverStats.cacheHits / totalCache) * 100) + '%' : 'N/A';
+    
+    // Ajout métrique RAM
+    const memUsage = process.memoryUsage();
+    const ramUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
 
     res.json({
         uptime: `${uptimeHours}h ${uptimeMinutes}m`,
+        ramUsed: `${ramUsedMB} Mo`,
         activeUsers: serverStats.activeIps.size,
         totalRequests: serverStats.totalRequests,
         cacheRate: cacheRate,
@@ -715,6 +733,54 @@ app.get('/api/metrics', (req, res) => {
         topChannels: sortedChannels,
         sourceReport: sourceReport
     });
+});
+
+// API du Testeur Manuel (Debug Flux original)
+app.get('/api/debug/test', async (req, res) => {
+    const query = req.query.query;
+    const sourcesParam = req.query.sources;
+    if (!query || !sourcesParam) return res.json({ error: "Paramètres manquants" });
+    
+    const sourcesList = sourcesParam.split(',');
+    const channelsData = await getChannelsForSources(sourcesList);
+    
+    let matchedChannels = channelsData.filter(c => c.displayName.toLowerCase().includes(query.toLowerCase()));
+    if (matchedChannels.length === 0) return res.json({ error: "Aucun flux trouvé pour ce mot-clé." });
+    
+    // Limitation aux 3 premiers résultats pour ne pas faire planter le serveur
+    matchedChannels = matchedChannels.slice(0, 3);
+    let results = [];
+
+    for (let channel of matchedChannels) {
+        let channelInfo = { channel: channel.displayName, streams: [] };
+        for (let source of channel.sources.slice(0, 5)) {
+            let streamUrl = '';
+            if (source.type === 'm3u') {
+                streamUrl = source.directUrl;
+            } else {
+                try {
+                    let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
+                    const streamRes = await axios.get(targetUrl, { timeout: 4000 });
+                    if (streamRes.data && streamRes.data.streams && streamRes.data.streams.length > 0) {
+                        streamUrl = streamRes.data.streams[0].url;
+                    }
+                } catch (e) {}
+            }
+            if (streamUrl) {
+                try {
+                    const headRes = await axios.get(streamUrl, { responseType: 'stream', timeout: 4000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+                    if (headRes.data && typeof headRes.data.destroy === 'function') headRes.data.destroy();
+                    channelInfo.streams.push({ url: streamUrl.substring(0, 40) + '...', status: '✅ Actif (200)' });
+                } catch (err) {
+                    channelInfo.streams.push({ url: streamUrl.substring(0, 40) + '...', status: `❌ Erreur (${err.response ? err.response.status : err.message})` });
+                }
+            } else {
+                channelInfo.streams.push({ status: '❌ Lien non résolu' });
+            }
+        }
+        results.push(channelInfo);
+    }
+    res.json({ results });
 });
 
 app.get('/', async (req, res) => {
@@ -772,11 +838,12 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.9).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.9-PRO).</p>
             </div>
             <div class="tabs">
                 <button class="tab-btn active" onclick="switchTab('config', this)">⚙️ Configurer</button>
                 <button class="tab-btn" onclick="switchTab('metrics', this)">📊 Métriques</button>
+                <button class="tab-btn" onclick="switchTab('debug', this)">🧪 Debug Flux</button>
             </div>
             <div id="config" class="tab-content active">
                 <div class="section">
@@ -805,13 +872,25 @@ app.get('/', async (req, res) => {
             <div id="metrics" class="tab-content">
                 <div class="metrics-grid">
                     <div class="metric-card"><div class="metric-label">Uptime</div><div class="metric-value" id="m-uptime">--</div></div>
+                    <div class="metric-card"><div class="metric-label">Mémoire RAM</div><div class="metric-value" id="m-ram">--</div></div>
                     <div class="metric-card"><div class="metric-label">Utilisateurs Actifs</div><div class="metric-value" id="m-users">--</div></div>
-                    <div class="metric-card"><div class="metric-label">Requêtes Totales</div><div class="metric-value" id="m-req">--</div></div>
                     <div class="metric-card"><div class="metric-label">Performance Cache</div><div class="metric-value" id="m-cache">--</div></div>
                 </div>
                 <div class="section">
                     <h3 class="section-title">Inventaire & Rapport Sources</h3>
                     <ul class="report-list" id="sourceReportList"><li><i>Chargement...</i></li></ul>
+                </div>
+            </div>
+            <div id="debug" class="tab-content">
+                <div class="section">
+                    <h3 class="section-title">Testeur de Flux (Manuel)</h3>
+                    <p class="subtitle" style="margin-bottom: 12px; font-size: 12px;">Tapez le nom d'une chaîne (ex: TF1, Moto) pour tester ses liens en direct.</p>
+                    <input type="text" id="debugInput" class="export-box" placeholder="Nom de la chaîne..." style="margin-bottom: 10px;">
+                    <button type="button" onclick="testFluxManuel()" class="btn btn-small">🔍 Tester la chaîne</button>
+                </div>
+                <div class="section">
+                    <h3 class="section-title">Résultat du Test</h3>
+                    <pre id="debugOutput" style="background: #111; padding: 12px; color: #00ff66; overflow-x: auto; font-size: 12px; border: 1px solid #333; border-radius: 6px;">En attente de recherche...</pre>
                 </div>
             </div>
         </div>
@@ -933,8 +1012,8 @@ app.get('/', async (req, res) => {
                     let res = await fetch('/api/metrics');
                     let data = await res.json();
                     document.getElementById('m-uptime').innerText = data.uptime;
+                    document.getElementById('m-ram').innerText = data.ramUsed;
                     document.getElementById('m-users').innerText = data.activeUsers;
-                    document.getElementById('m-req').innerText = data.totalRequests;
                     document.getElementById('m-cache').innerText = data.cacheRate;
                     
                     let htmlList = '';
@@ -950,6 +1029,27 @@ app.get('/', async (req, res) => {
                     });
                     document.getElementById('sourceReportList').innerHTML = htmlList || '<li><i>Aucune source configurée</i></li>';
                 } catch(e) {}
+            }
+
+            async function testFluxManuel() {
+                const query = document.getElementById('debugInput').value;
+                if (!query) return alert("Entrez le nom d'une chaîne !");
+                const output = document.getElementById('debugOutput');
+                output.innerText = "Recherche et test en cours (cela peut prendre quelques secondes)...";
+                saveInputs();
+                let validSources = sources.filter(s => s.length > 0).join(',');
+                
+                try {
+                    let res = await fetch(\`/api/debug/test?query=\${encodeURIComponent(query)}&sources=\${encodeURIComponent(validSources)}\`);
+                    let data = await res.json();
+                    if (data.error) {
+                        output.innerText = data.error;
+                    } else {
+                        output.innerText = JSON.stringify(data.results, null, 2);
+                    }
+                } catch(e) {
+                    output.innerText = "Erreur lors du test : " + e.message;
+                }
             }
 
             let savedSources = localStorage.getItem('hybrid_sources');
@@ -994,7 +1094,7 @@ app.get('/:config/manifest.json', (req, res) => {
         id: 'org.hybridtv.meta', 
         version: '1.2.9',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.9). Multi-Source Orchestration & Clean Event Routing.',
+        description: 'Meta-Addon IPTV (v1.2.9-PRO). Clean Event Routing & EPG.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
