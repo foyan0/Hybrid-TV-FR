@@ -1,5 +1,5 @@
 {
-  "name": "vavoo-addon",
+  "name": "hybridtv",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
@@ -9,5 +9,6 @@
     "axios": "^1.6.8",
     "cors": "^2.8.5",
     "express": "^4.19.2"
+    "cheerio": "^1.0.0"
   }
 }
