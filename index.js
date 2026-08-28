@@ -144,17 +144,24 @@ function getChannelData(rawName) {
 
     n = n.replace(/\+/g, 'PLUS');
 
-    if (n.includes('LIGUE 1') || n.includes('LIGUE1') || n.match(/\bL1\b/)) {
-        if (!n.includes('DAZN') && !n.includes('BEIN') && !n.includes('RMC')) {
-            let m = n.match(/(?:LIGUE\s*1|L1|LIGUE1)(?:.*?PLUS)?[^\d]*([1-9]|1[0-8])/i);
+let isLigue1 = n.includes('LIGUE 1') || n.includes('LIGUE1') || n.match(/\bL1\b/) || n.includes('LEAGUE 1') || n.includes('LEAGUE1');
+    if (isLigue1) {
+        let isDazn = n.includes('DAZN') || n.includes('DAZONE');
+        if (isDazn && n.includes('LIVE')) {
+            let m = n.match(/LIVE[^\d]*([1-9]|1[0-8])/i);
+            let num = m ? m[1] : '1';
+            return { id: 'hyb_sport_ligue1plus_' + num, name: num === '1' ? 'Ligue 1+' : 'Ligue 1+ ' + num, categories: ['sports'], index: 1 + parseInt(num, 10) };
+        }
+        if (!isDazn && !n.includes('BEIN') && !n.includes('RMC')) {
+            let m = n.match(/(?:LIGUE\s*1|LEAGUE\s*1|L1|LIGUE1|LEAGUE1)(?:.*?PLUS)?[^\d]*([1-9]|1[0-8])/i);
             let num = m ? m[1] : '1';
             return { id: 'hyb_sport_ligue1plus_' + num, name: num === '1' ? 'Ligue 1+' : 'Ligue 1+ ' + num, categories: ['sports'], index: 1 + parseInt(num, 10) };
         }
     }
     
-    if (n.includes('DAZN')) {
+    if (n.includes('DAZN') || n.includes('DAZONE')) {
         if (n.includes('RISE')) return { id: 'hyb_sport_dazn_rise', name: 'DAZN Rise', categories: ['sports'], index: 150 };
-        let m = n.match(/DAZN[^\d]*([1-9]|1[0-8])/i); let num = m ? m[1] : '1';
+        let m = n.match(/(?:DAZN|DAZONE)[^\d]*([1-9]|1[0-8])/i); let num = m ? m[1] : '1';
         return { id: 'hyb_sport_dazn_'+num, name: 'DAZN '+num, categories: ['sports'], index: 10 + parseInt(num, 10) };
     }
 
@@ -1278,11 +1285,11 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             if (isTargetMax !== nStream.includes('MAX')) penalty += 5000;
                         }
 
-                        if (channel.id.startsWith('hyb_sport_ligue1plus')) {
-                            let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
-                            let streamNumMatch = nStream.match(/(?:LIGUE1|L1)(?:PLUS)?(\d+)/i);
-                            if (streamNumMatch) { if (streamNumMatch[1] !== targetNum) penalty += 5000; } else if (targetNum !== '1') { penalty += 5000; }
-                        }
+                   if (channel.id.startsWith('hyb_sport_ligue1plus')) {
+        let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
+        let streamNumMatch = nStream.match(/(?:LIGUE1|LEAGUE1|L1)(?:PLUS|LIVE)?(\d+)/i);
+        if (streamNumMatch) { if (streamNumMatch[1] !== targetNum) penalty += 5000; } else if (targetNum !== '1') { penalty += 5000; }
+    }
 
                         if (channel.id.startsWith('hyb_sport_dazn') && !channel.id.includes('live') && !channel.id.includes('rise')) {
                             let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1';
