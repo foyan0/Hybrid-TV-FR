@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.9-FINAL (Custom Jeunesse Order, EPG Follow-up, Uncapped Network Limits)
+ * Version: 1.2.9-FINAL (Sequential Sync, Condensend EPG, Custom Category Order)
  * Core Engine: Synchronous Health Check (6.5s), Smart Cache, Strict Category Separation, HLS Proxy Relay.
  */
 
@@ -211,12 +211,14 @@ function getChannelData(rawName, catalogHint = '') {
         if (c.includes('MOTOGP') || c.includes('MOTO')) return { id: 'hyb_sport_canal_motogp', name: 'Canal+ Moto GP', categories: ['canal', 'sports'], index: 95 };
         if (c.includes('PREMIERLEAGUE') || c.includes('PREMIERELIGUE') || c.includes('PREMIERLIGUE')) return { id: 'hyb_sport_canal_pl', name: 'Canal+ Premier League', categories: ['canal', 'sports'], index: 96 };
         if (c.includes('EMOTION')) return { id: 'hyb_cine_canal_emotion', name: 'Canal+ Émotion', categories: ['canal', 'cinema'], index: 16 };
-        if (c.includes('SAVOIR')) return { id: 'hyb_dec_canal_savoir', name: 'Canal Savoir', categories: ['decouverte'], index: 10 };
+        
+        // Canal Savoir relégué à la fin de Découverte
+        if (c.includes('SAVOIR')) return { id: 'hyb_dec_canal_savoir', name: 'Canal Savoir', categories: ['decouverte'], index: 999 };
         
         if (c.includes('ELLES') || c.includes('LCENTRE') || c.includes('CENTRE') || c === 'CANALL' || c.includes('REGIONAL') || c.includes('LOCAL') || c.includes('OUTREMER')) {
             return { id: 'hyb_aut_canal_elles', name: 'Canal+ Elles', categories: ['autres'], index: 1000 };
         }
-        if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 14 }; // Force index pour ordre
+        if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 114 }; 
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
         if (c.includes('LIVE')) {
             let m = c.match(/LIVE(\d+)/); let num = m ? m[1] : '1';
@@ -284,33 +286,32 @@ function getChannelData(rawName, catalogHint = '') {
     if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
     if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
 
-    // --- RÈGLES JEUNESSE STRICTES (Ordre Fixe Garanti) ---
+    // --- RÈGLES JEUNESSE STRICTEMENT ORDONNÉES ---
     if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 150 };
-    if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 110 };
-    if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 115 };
-    if (c.includes('DISNEY') && c.includes('PLUS1')) return { id: 'hyb_jeu_disney_plus1', name: 'Disney Channel +1', categories: ['jeunesse'], index: 101 };
+    if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 110 }; // 1. Cartoon Network
     
-    // SUITE EXACTE DEMANDÉE PAR L'UTILISATEUR
-    if (c.includes('DISNEY') && !c.includes('JUNIOR') && !c.includes('JR')) return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 10 }; 
+    if (c.includes('DISNEY') && c.includes('PLUS1')) return { id: 'hyb_jeu_disney_plus1', name: 'Disney Channel +1', categories: ['jeunesse'], index: 111 };
+    if (c.includes('DISNEY') && !c.includes('JUNIOR') && !c.includes('JR') && !c.includes('XD')) return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 111 }; // 2. Disney Channel
     
-    if (c.includes('NICKELODEON') || c.match(/\bNICK\b/) || c === 'NICK') {
-        if (c.includes('JUNIOR') || c.includes('JR') || c.includes('FRHD') || c.match(/JUNIOR\d/)) return { id: 'hyb_jeu_nick_jr', name: 'Nickelodeon Junior', categories: ['jeunesse'], index: 11 };
-        if (c.includes('TEEN')) return { id: 'hyb_jeu_nick_teen', name: 'Nickelodeon Teen', categories: ['jeunesse'], index: 12 };
-        if (c.includes('PLUS1') || c.includes('1H')) return { id: 'hyb_jeu_nick_plus1', name: 'Nickelodeon +1', categories: ['jeunesse'], index: 12 };
-        if (c.includes('TOON')) return { id: 'hyb_jeu_nicktoons', name: 'Nicktoons', categories: ['jeunesse'], index: 12 };
-        return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 13 };
+    if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 112 }; // 3. Disney XD
+    
+    if (c.includes('NICKELODEON') || c.match(/\bNICK\b/) || c === 'NICK') { // 4. Nickelodeon et variantes
+        if (c.includes('JUNIOR') || c.includes('JR') || c.includes('FRHD') || c.match(/JUNIOR\d/)) return { id: 'hyb_jeu_nick_jr', name: 'Nickelodeon Junior', categories: ['jeunesse'], index: 113 };
+        if (c.includes('TEEN')) return { id: 'hyb_jeu_nick_teen', name: 'Nickelodeon Teen', categories: ['jeunesse'], index: 113 };
+        if (c.includes('PLUS1') || c.includes('1H')) return { id: 'hyb_jeu_nick_plus1', name: 'Nickelodeon +1', categories: ['jeunesse'], index: 113 };
+        if (c.includes('TOON')) return { id: 'hyb_jeu_nicktoons', name: 'Nicktoons', categories: ['jeunesse'], index: 113 };
+        return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 113 };
     }
     
-    if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 14 };
-    if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 15 };
+    if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 114 }; // 5. Canal J
+    if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 115 }; // 6. Boomerang
+    if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 116 }; // 7. Game One
     
-    if (c.includes('DISNEYJR') || c.includes('DISNEYJUNIOR') || (c.includes('DISNEY') && c.includes('JR'))) return { id: 'hyb_jeu_disneyjr', name: 'Disney Junior', categories: ['jeunesse'], index: 16 };
-    // FIN SUITE EXACTE
-
+    // Le reste
+    if (c.includes('DISNEYJR') || c.includes('DISNEYJUNIOR') || (c.includes('DISNEY') && c.includes('JR'))) return { id: 'hyb_jeu_disneyjr', name: 'Disney Junior', categories: ['jeunesse'], index: 117 };
     if (c.includes('BOING')) return { id: 'hyb_jeu_boing', name: 'Boing', categories: ['jeunesse'], index: 120 };
     if (c.includes('TIJI')) return { id: 'hyb_jeu_tiji', name: 'Tiji', categories: ['jeunesse'], index: 121 };
     if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 122 };
-    if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 123 };
     if (c.includes('PIWI')) return { id: 'hyb_jeu_piwi', name: 'Piwi+', categories: ['jeunesse'], index: 124 };
 
     let cat = 'autres';
@@ -432,7 +433,7 @@ async function updateEPG() {
     } finally { isUpdatingEPG = false; }
 }
 
-// --- CATALOG ENGINE (NO LIMITS, 45s TIMEOUT) ---
+// --- CATALOG ENGINE (LIMITES RÉSEAU AUGMENTÉES ET SÉQUENTIEL) ---
 async function fetchCatalogFromSource(sourceInput, reportObj) {
     let metas = [];
     let cleanInput = sourceInput.trim();
@@ -493,7 +494,10 @@ async function fetchCatalogFromSource(sourceInput, reportObj) {
                 let hasMore = true; 
                 let skip = 0;
                 const maxSkip = 50000; 
-                const batchSize = 3;   
+                
+                // Moteur Séquentiel (batchSize = 1) pour ne pas saturer la RAM du Scraper AWS 
+                // et éviter le ban par TV Mio.
+                const batchSize = 1;   
                 let seenIds = new Set(); 
 
                 while (hasMore && skip < maxSkip) {
@@ -526,8 +530,12 @@ async function fetchCatalogFromSource(sourceInput, reportObj) {
                             });
                         }
                     }
+                    
                     if (addedInBatch === 0) hasMore = false; 
                     skip += (batchSize * 100);
+                    
+                    // Micro-pause pour protéger le serveur distant de la saturation
+                    await new Promise(r => setTimeout(r, 300));
                 }
                 return catMetas;
             });
@@ -734,7 +742,6 @@ app.get('/api/metrics', (req, res) => {
         });
     }
 
-    let epgPercentage = totalChannels > 0 ? Math.round((syncedChannels / totalChannels) * 100) : 0;
     let sortedChannels = Object.entries(serverStats.channelClicks)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 5)
@@ -759,7 +766,7 @@ app.get('/api/metrics', (req, res) => {
         epgCount: Object.keys(epgData).length,
         epgLastUpdate: lastUpdate,
         totalChannels: totalChannels > 1 ? totalChannels : 0,
-        syncedChannelsStr: `${syncedChannels} (${epgPercentage}%)`,
+        syncedChannelsStr: `${syncedChannels} chaînes couvertes`,
         topChannels: sortedChannels,
         sourceReport: sourceReport
     });
@@ -1068,9 +1075,9 @@ app.get('/', async (req, res) => {
                         let cleanSrc = src.replace(/\\/manifest\\.json$/, '').trim(); 
                         let displaySrc = cleanSrc.length > 35 ? cleanSrc.substring(0, 32) + '...' : cleanSrc;
                         let r = data.sourceReport[cleanSrc];
-                        if (!r || r.status === 'fetching') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⏳ En attente (Timeout possible 45s)</b></li>\`;
+                        if (!r || r.status === 'fetching') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⏳ En attente (Séquentiel)</b></li>\`;
                         else if (r.status === 'ok') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-ok">✅ \${r.count} flux</b></li>\`;
-                        else if (r.status === 'empty') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⚠️ 0 flux (\${r.error || 'Vide'})</b></li>\`;
+                        else if (r.status === 'empty') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⚠️ 0 flux (\${r.lastError || 'Vide'})</b></li>\`;
                         else htmlList += \`<li><span>\${displaySrc}</span> <b class="status-err">❌ Hors Ligne</b></li>\`;
                     });
                     document.getElementById('sourceReportList').innerHTML = htmlList || '<li><i>Aucune source configurée</i></li>';
@@ -1151,7 +1158,7 @@ app.get('/:config/manifest.json', (req, res) => {
         id: 'org.hybridtv.meta', 
         version: '1.2.9-FINAL',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.9-FINAL). Dynamic Scraper Handling.',
+        description: 'Meta-Addon IPTV (v1.2.9-FINAL). Sequential fetching & custom order.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1195,7 +1202,7 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
     
     let descriptionText = `▶ Diffusion en cours sur ${channel.displayName}...`;
     
-    // --- NOUVELLE LOGIQUE EPG "À SUIVRE" ---
+    // --- LOGIQUE EPG "À SUIVRE" CONDENSÉE ---
     if (Object.keys(epgData).length > 0) {
         const epgList = epgData[channel.id]; 
         if (epgList && epgList.length > 0) {
@@ -1206,15 +1213,13 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
             if (currentIndex !== -1) {
                 const currentProg = epgList[currentIndex];
                 const sTime = formatTime(currentProg.start);
-                const eTime = formatTime(currentProg.stop);
-                descriptionText = `🔴 EN DIRECT (${sTime} - ${eTime}) : ${currentProg.title}`;
+                descriptionText = `🔴 EN DIRECT : [${sTime}] ${currentProg.title}`;
 
                 let following = epgList.slice(currentIndex + 1, currentIndex + 4);
                 if (following.length > 0) {
-                    descriptionText += `\n\n⏭️ À SUIVRE :`;
-                    following.forEach(p => {
-                        descriptionText += `\n• ${formatTime(p.start)} : ${p.title}`;
-                    });
+                    descriptionText += ` | ⏭️ À SUIVRE : `;
+                    let followTexts = following.map(p => `[${formatTime(p.start)}] ${p.title}`);
+                    descriptionText += followTexts.join(' | ');
                 }
             }
         }
