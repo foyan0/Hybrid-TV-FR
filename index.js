@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.0 (Integrated CORS Proxy & Multi-Language Prioritization)
+ * Version: 1.2.1 (Integrated CORS Proxy, Multi-Language & Dashboard UI Fix)
  * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing, HLS Proxy Relay.
  */
 
@@ -876,7 +876,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.0).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.1).</p>
             </div>
 
             <div class="tabs">
@@ -1150,7 +1150,7 @@ app.get('/', async (req, res) => {
                     let htmlList = '';
                     sources.forEach(src => {
                         if (!src) return;
-                        let cleanSrc = src.replace(/\/manifest\.json$/, '').trim();
+                        let cleanSrc = src.replace(/\\/manifest\\.json$/, '').trim(); 
                         let displaySrc = cleanSrc.length > 35 ? cleanSrc.substring(0, 32) + '...' : cleanSrc;
                         let r = data.sourceReport[cleanSrc];
                         
@@ -1232,9 +1232,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.2.0',
+        version: '1.2.1',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.0). Smart Prioritization & Integrated CORS Proxy Relay.',
+        description: 'Meta-Addon IPTV (v1.2.1). Smart Prioritization & Integrated CORS Proxy Relay.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
