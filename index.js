@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.9-FINAL (Sequential Sync, Condensend EPG, Custom Category Order)
+ * Version: 1.2.9-STABLE (Unlocked EPG, Sequential Sync, Strict Math Order)
  * Core Engine: Synchronous Health Check (6.5s), Smart Cache, Strict Category Separation, HLS Proxy Relay.
  */
 
@@ -212,13 +212,16 @@ function getChannelData(rawName, catalogHint = '') {
         if (c.includes('PREMIERLEAGUE') || c.includes('PREMIERELIGUE') || c.includes('PREMIERLIGUE')) return { id: 'hyb_sport_canal_pl', name: 'Canal+ Premier League', categories: ['canal', 'sports'], index: 96 };
         if (c.includes('EMOTION')) return { id: 'hyb_cine_canal_emotion', name: 'Canal+ Émotion', categories: ['canal', 'cinema'], index: 16 };
         
-        // Canal Savoir relégué à la fin de Découverte
+        // Canal Savoir relégué
         if (c.includes('SAVOIR')) return { id: 'hyb_dec_canal_savoir', name: 'Canal Savoir', categories: ['decouverte'], index: 999 };
         
         if (c.includes('ELLES') || c.includes('LCENTRE') || c.includes('CENTRE') || c === 'CANALL' || c.includes('REGIONAL') || c.includes('LOCAL') || c.includes('OUTREMER')) {
             return { id: 'hyb_aut_canal_elles', name: 'Canal+ Elles', categories: ['autres'], index: 1000 };
         }
-        if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 114 }; 
+        
+        // PIÈGE CANAL J CONTOURNÉ AVEC NUMÉRO MATHÉMATIQUE SÉQUENTIEL JEUNESSE
+        if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 115 }; 
+        
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
         if (c.includes('LIVE')) {
             let m = c.match(/LIVE(\d+)/); let num = m ? m[1] : '1';
@@ -286,29 +289,28 @@ function getChannelData(rawName, catalogHint = '') {
     if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
     if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
 
-    // --- RÈGLES JEUNESSE STRICTEMENT ORDONNÉES ---
+    // --- RÈGLES JEUNESSE STRICTEMENT SÉQUENTIELLES ---
     if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 150 };
-    if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 110 }; // 1. Cartoon Network
+    if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 110 };
     
     if (c.includes('DISNEY') && c.includes('PLUS1')) return { id: 'hyb_jeu_disney_plus1', name: 'Disney Channel +1', categories: ['jeunesse'], index: 111 };
-    if (c.includes('DISNEY') && !c.includes('JUNIOR') && !c.includes('JR') && !c.includes('XD')) return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 111 }; // 2. Disney Channel
+    if (c.includes('DISNEY') && !c.includes('JUNIOR') && !c.includes('JR') && !c.includes('XD')) return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 111 };
     
-    if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 112 }; // 3. Disney XD
+    if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 112 };
     
-    if (c.includes('NICKELODEON') || c.match(/\bNICK\b/) || c === 'NICK') { // 4. Nickelodeon et variantes
+    if (c.includes('NICKELODEON') || c.match(/\bNICK\b/) || c === 'NICK') {
         if (c.includes('JUNIOR') || c.includes('JR') || c.includes('FRHD') || c.match(/JUNIOR\d/)) return { id: 'hyb_jeu_nick_jr', name: 'Nickelodeon Junior', categories: ['jeunesse'], index: 113 };
-        if (c.includes('TEEN')) return { id: 'hyb_jeu_nick_teen', name: 'Nickelodeon Teen', categories: ['jeunesse'], index: 113 };
-        if (c.includes('PLUS1') || c.includes('1H')) return { id: 'hyb_jeu_nick_plus1', name: 'Nickelodeon +1', categories: ['jeunesse'], index: 113 };
-        if (c.includes('TOON')) return { id: 'hyb_jeu_nicktoons', name: 'Nicktoons', categories: ['jeunesse'], index: 113 };
-        return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 113 };
+        if (c.includes('TEEN')) return { id: 'hyb_jeu_nick_teen', name: 'Nickelodeon Teen', categories: ['jeunesse'], index: 114 };
+        if (c.includes('PLUS1') || c.includes('1H')) return { id: 'hyb_jeu_nick_plus1', name: 'Nickelodeon +1', categories: ['jeunesse'], index: 114 };
+        if (c.includes('TOON')) return { id: 'hyb_jeu_nicktoons', name: 'Nicktoons', categories: ['jeunesse'], index: 114 };
+        return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 114 };
     }
     
-    if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 114 }; // 5. Canal J
-    if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 115 }; // 6. Boomerang
-    if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 116 }; // 7. Game One
+    if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 115 };
+    if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 116 };
+    if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 117 };
     
-    // Le reste
-    if (c.includes('DISNEYJR') || c.includes('DISNEYJUNIOR') || (c.includes('DISNEY') && c.includes('JR'))) return { id: 'hyb_jeu_disneyjr', name: 'Disney Junior', categories: ['jeunesse'], index: 117 };
+    if (c.includes('DISNEYJR') || c.includes('DISNEYJUNIOR') || (c.includes('DISNEY') && c.includes('JR'))) return { id: 'hyb_jeu_disneyjr', name: 'Disney Junior', categories: ['jeunesse'], index: 118 };
     if (c.includes('BOING')) return { id: 'hyb_jeu_boing', name: 'Boing', categories: ['jeunesse'], index: 120 };
     if (c.includes('TIJI')) return { id: 'hyb_jeu_tiji', name: 'Tiji', categories: ['jeunesse'], index: 121 };
     if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 122 };
@@ -423,7 +425,7 @@ async function updateEPG() {
                     if (!tempEpgData[channelId]) tempEpgData[channelId] = [];
                     tempEpgData[channelId] = tempEpgData[channelId].concat(parsedEpg[channelId]);
                 }
-                if (Object.keys(tempEpgData).length > 100) break;
+                // Suppression du "break" castrateur. Le script lit TOUT jusqu'au bout.
             } catch (err) {}
         }
         if (Object.keys(tempEpgData).length > 10) {
@@ -433,7 +435,7 @@ async function updateEPG() {
     } finally { isUpdatingEPG = false; }
 }
 
-// --- CATALOG ENGINE (LIMITES RÉSEAU AUGMENTÉES ET SÉQUENTIEL) ---
+// --- CATALOG ENGINE (REQUÊTES SÉQUENTIELLES POUR PROTÉGER LE SCRAPER) ---
 async function fetchCatalogFromSource(sourceInput, reportObj) {
     let metas = [];
     let cleanInput = sourceInput.trim();
@@ -495,8 +497,7 @@ async function fetchCatalogFromSource(sourceInput, reportObj) {
                 let skip = 0;
                 const maxSkip = 50000; 
                 
-                // Moteur Séquentiel (batchSize = 1) pour ne pas saturer la RAM du Scraper AWS 
-                // et éviter le ban par TV Mio.
+                // Moteur Séquentiel pour Playwright (batchSize = 1)
                 const batchSize = 1;   
                 let seenIds = new Set(); 
 
@@ -534,7 +535,7 @@ async function fetchCatalogFromSource(sourceInput, reportObj) {
                     if (addedInBatch === 0) hasMore = false; 
                     skip += (batchSize * 100);
                     
-                    // Micro-pause pour protéger le serveur distant de la saturation
+                    // Micro-pause de 300ms pour préserver l'AWS Scraper
                     await new Promise(r => setTimeout(r, 300));
                 }
                 return catMetas;
@@ -766,7 +767,7 @@ app.get('/api/metrics', (req, res) => {
         epgCount: Object.keys(epgData).length,
         epgLastUpdate: lastUpdate,
         totalChannels: totalChannels > 1 ? totalChannels : 0,
-        syncedChannelsStr: `${syncedChannels} chaînes couvertes`,
+        syncedChannelsStr: `${syncedChannels}`,
         topChannels: sortedChannels,
         sourceReport: sourceReport
     });
@@ -881,7 +882,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.9-FINAL).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.9-STABLE).</p>
             </div>
             <div class="tabs">
                 <button class="tab-btn active" onclick="switchTab('config', this)">⚙️ Configurer</button>
@@ -1156,9 +1157,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.2.9-FINAL',
+        version: '1.2.9-STABLE',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.9-FINAL). Sequential fetching & custom order.',
+        description: 'Meta-Addon IPTV (v1.2.9-STABLE). Unlocked EPG & Sequential.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
