@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.6 (Targeted Site Router & FencingTV Live Scraper)
- * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing, Targeted Scraping.
+ * Version: 1.2.7 (Universal Live Match Scraper & Optimized Stream Timeout)
+ * Core Engine: Synchronous Health Check (6.5s), Smart Cache, Universal Web Match Detection, HLS Proxy Relay.
  */
 
 const express = require('express');
@@ -79,34 +79,25 @@ function extractMatchEvent(rawName) {
     let isMatch = false;
     let eventName = '';
 
-    if (s.includes('MATCH TIME') || s.includes('MATCHTIME')) {
-        let cleanName = s.replace(/^(?:FR|BE|CH|VIP|LIVE|DIRECT|EVENT|MATCH|LIGUE\s*1|DAZN|BEIN|RMC|CANAL\+?|MULTI|MULTIPLEX)\s*[:|-|\|]*\s*/gi, '')
+    if (s.includes('MATCH TIME') || s.includes('MATCHTIME') || s.includes('[LIVE]') || s.includes('🔴')) {
+        let cleanName = s.replace(/^(?:FR|BE|CH|VIP|LIVE|DIRECT|EVENT|MATCH|LIGUE\s*1|DAZN|BEIN|RMC|CANAL\+?|MULTI|MULTIPLEX|\[LIVE\]|🔴)\s*[:|-|\|]*\s*/gi, '')
                          .replace(/\d{1,2}[hH:]\d{2}/g, '')
                          .replace(/\b(?:FHD|HD|SD|4K|1080P|720P|MATCH\s*TIME|MATCHTIME)\b/gi, '')
                          .replace(/[^A-Z0-9\s-]/g, '').trim();
-        if (cleanName.length < 3) cleanName = "Événement Sportif";
-        return { id: 'hyb_ev_' + toSyncId(cleanName), name: '🔴 ' + cleanName, categories: ['events'], index: 5, customPoster: EVENT_POSTER };
+        if (cleanName.length < 3) cleanName = "Événement En Direct";
+        return { id: 'hyb_ev_' + toSyncId(cleanName), name: '🔴 ' + cleanName, categories: ['events', 'sports'], index: 5, customPoster: EVENT_POSTER };
     }
 
-    let vsMatch = s.match(/([A-Z0-9\s]{3,20})\s+(?:VS\.?|CONTRE|\bV\b|\bVERSUS\b)\s+([A-Z0-9\s]{3,20})/i);
+    let vsMatch = s.match(/([A-Z0-9\s]{3,20})\s+(?:VS\.?|CONTRE|\bV\b|\bVERSUS\b|-)\s+([A-Z0-9\s]{3,20})/i);
     if (vsMatch) {
         isMatch = true; 
         eventName = `${vsMatch[1].trim()} vs ${vsMatch[2].trim()}`;
-    } else if (/(?:LIGUE\s*1|UCL|LDC|EURO|PREMIER LEAGUE|MATCH|EVENT).+?\b([A-Z][A-Z0-9\s]{2,20})\s*[-/]\s*([A-Z][A-Z0-9\s]{2,20})\b/i.test(s)) {
-        let dashMatch = s.match(/\b([A-Z][A-Z0-9\s]{2,20})\s*[-/]\s*([A-Z][A-Z0-9\s]{2,20})\b/i);
-        if (dashMatch) {
-            let inv = ['CANAL', 'CINE', 'SPORT', 'BEIN', 'RMC', 'EUROSPORT', 'TF1', 'FRANCE', 'M6', 'DAZN', '1080P', '720P', 'UHD', '4K', 'FHD', 'HD', 'SD', 'PLUS'];
-            if (!inv.includes(dashMatch[1].trim()) && !inv.includes(dashMatch[2].trim())) {
-                isMatch = true; 
-                eventName = `${dashMatch[1].trim()} vs ${dashMatch[2].trim()}`;
-            }
-        }
     }
 
     if (isMatch) {
         const cleanTeam = (str) => {
-            return str.replace(/^(?:FR|BE|CH|VIP|1080P|720P|4K|HD|SD|LIVE|DIRECT|EVENT|MATCH|LIGUE\s*1|DAZN|BEIN|RMC|CANAL\+?|MULTI)\s*[:|-|\|]*/gi, '')
-                      .replace(/\b(?:FHD|HD|SD|4K|1080P|720P|LIVE|DIRECT|RAW)\b/gi, '')
+            return str.replace(/^(?:FR|BE|CH|VIP|1080P|720P|4K|HD|SD|LIVE|DIRECT|EVENT|MATCH)\s*[:|-|\|]*/gi, '')
+                      .replace(/\b(?:FHD|HD|SD|4K|1080P|720P|LIVE|DIRECT)\b/gi, '')
                       .replace(/[^A-Z0-9\s]/g, '').trim();
         };
         let parts = eventName.split(' vs ');
@@ -115,12 +106,8 @@ function extractMatchEvent(rawName) {
 
         if (cleanT1.length >= 2 && cleanT2.length >= 2 && cleanT1 !== cleanT2) {
             let canonicalKey = [toSyncId(cleanT1), toSyncId(cleanT2)].sort().join('_');
-            return { id: 'hyb_ev_' + canonicalKey, name: `⚽ ${cleanT1} vs ${cleanT2}`, categories: ['events'], index: 5, customPoster: EVENT_POSTER };
+            return { id: 'hyb_ev_' + canonicalKey, name: `⚽ ${cleanT1} vs ${cleanT2}`, categories: ['events', 'sports'], index: 5, customPoster: EVENT_POSTER };
         }
-    }
-
-    if (s.includes('MULTIPLEX') && !s.includes('CANAL')) {
-        return { id: 'hyb_ev_multi', name: '🔴 MULTIPLEX EN DIRECT', categories: ['events'], index: 1, customPoster: EVENT_POSTER };
     }
     return null;
 }
@@ -330,10 +317,10 @@ function formatTime(timestamp) {
 }
 
 // ============================================================================
-// SCRAPER CIBLÉ : FENCINGTV.COM (UNIQUEMENT LES DIRECTS)
+// UNIVERSAL LIVE MATCH SCRAPER (Détection intelligente de matchs en direct sur n'importe quel site)
 // ============================================================================
 
-async function scrapeFencingTV(baseUrl) {
+async function scrapeUniversalLiveWebsite(baseUrl) {
     let metas = [];
     try {
         const response = await axios.get(baseUrl, {
@@ -342,30 +329,33 @@ async function scrapeFencingTV(baseUrl) {
         });
 
         const $ = cheerio.load(response.data);
-        
-        // Recherche ciblée des blocs de match ou de vidéo sur FencingTV
-        // On cherche un conteneur qui possède une indication de direct (pastille rouge, classe live, ou texte 'LIVE' / 'DIRECT')
-        $('*').each((i, el) => {
+        let seenIds = new Set();
+
+        // Parcourt les éléments textuels/liens pour détecter les matchs en direct (pastille live / vs / direct)
+        $('a, div, article, li').each((i, el) => {
             const text = $(el).text().toUpperCase();
-            const hasLiveIndicator = text.includes('LIVE') || text.includes('DIRECT') || $(el).hasClass('live') || $(el).hasClass('badge-danger') || $(el).find('.live').length > 0;
             
-            if (hasLiveIndicator) {
-                // On cherche un lien cliquable proche ou à l'intérieur
+            // Critères stricts de détection d'un direct sportif : Doit contenir un indicateur de live ET une structure de match (vs, -, ou confrontation)
+            const isLiveNow = text.includes('LIVE') || text.includes('DIRECT') || text.includes('EN COURS') || $(el).find('.live, .badge-live, .red-dot').length > 0;
+            const hasMatchStructure = text.includes(' VS ') || text.includes(' - ') || text.includes(' CONTRE ');
+
+            if (isLiveNow && hasMatchStructure) {
                 const anchor = $(el).is('a') ? $(el) : $(el).find('a').first();
                 const link = anchor.attr('href');
-                
+
                 if (link && !link.includes('#') && !link.includes('javascript')) {
-                    const eventTitle = anchor.text().trim() || $(el).find('h3, h4, span').first().text().trim();
-                    
-                    if (eventTitle && eventTitle.length > 3 && eventTitle.toUpperCase() !== 'LIVE' && eventTitle.toUpperCase() !== 'DIRECT') {
+                    let matchTitle = anchor.text().trim() || $(el).find('h3, h4, span').first().text().trim();
+                    matchTitle = matchTitle.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+
+                    if (matchTitle && matchTitle.length > 5 && !matchTitle.toUpperCase().startsWith('LIVE')) {
                         let fullMatchUrl = link.startsWith('http') ? link : urlModule.resolve(baseUrl, link);
                         let metaId = Buffer.from(fullMatchUrl).toString('base64');
-                        
-                        // Évite les doublons
-                        if (!metas.some(m => m.id === metaId)) {
+
+                        if (!seenIds.has(metaId)) {
+                            seenIds.add(metaId);
                             metas.push({
                                 id: metaId,
-                                name: `🤺 [LIVE] ${eventTitle}`,
+                                name: `🔴 ${matchTitle}`,
                                 poster: EVENT_POSTER,
                                 _isDirectStream: false,
                                 _isWebScraped: true,
@@ -378,13 +368,13 @@ async function scrapeFencingTV(baseUrl) {
             }
         });
     } catch (e) {
-        console.error("[SCRAPER ERR] FencingTV :", e.message);
+        console.error("[SCRAPER ERR] Universal Live Match :", e.message);
     }
     return metas;
 }
 
-// Extracteur de flux M3U8 pour FencingTV
-async function extractFencingTVStreamUrl(scrapedUrl) {
+// Extracteur universel de flux M3U8 pour les sites scrappés
+async function extractUniversalStreamUrl(scrapedUrl) {
     try {
         const response = await axios.get(scrapedUrl, {
             headers: { 'User-Agent': 'Mozilla/5.0' },
@@ -394,21 +384,30 @@ async function extractFencingTVStreamUrl(scrapedUrl) {
         
         let streamUrl = null;
         
-        // Cherche le flux direct .m3u8 dans la page du match
+        // 1. Balise source HTML5
         $('source').each((i, el) => {
             let src = $(el).attr('src');
             if (src && src.includes('.m3u8')) streamUrl = src;
         });
 
+        // 2. Recherche par Regex dans les scripts JS de la page
         if (!streamUrl) {
             const htmlStr = response.data;
             const match = htmlStr.match(/(https?:\/\/[^\s"'<>]+\.m3u8[^\s"'<>]*)/);
             if (match) streamUrl = match[1];
         }
+
+        // 3. Iframe de lecteur externe
+        if (!streamUrl) {
+            $('iframe').each((i, el) => {
+                let src = $(el).attr('src');
+                if (src && !src.includes('ads') && !src.includes('tracker')) streamUrl = src;
+            });
+        }
         
         return streamUrl;
     } catch (e) {
-        console.error("Erreur Extraction FencingTV :", e.message);
+        console.error("Erreur Extraction Flux Universel :", e.message);
         return null;
     }
 }
@@ -499,18 +498,13 @@ async function updateEPG() {
     } finally { isUpdatingEPG = false; }
 }
 
-// --- CATALOG ENGINE (ROUTEUR DE SITES CIBLÉS) ---
+// --- CATALOG ENGINE (ROUTEUR INTELLIGENT UNIVERSEL) ---
 async function fetchCatalogFromSource(sourceInput) {
     let metas = [];
     let cleanInput = sourceInput.trim();
     if (!cleanInput) return metas;
 
-    // ROUTEUR 1 : FencingTV (Ciblé spécifiquement)
-    if (cleanInput.includes('fencingtv.com')) {
-        return await scrapeFencingTV(cleanInput);
-    }
-
-    // ROUTEUR 2 : M3U Classic
+    // 1. ROUTEUR M3U CLASSIC
     if (cleanInput.endsWith('.m3u') || cleanInput.endsWith('.m3u8') || cleanInput.includes('get.php') || cleanInput.includes('/live/')) {
         try {
             const res = await axios.get(cleanInput, { timeout: 10000 });
@@ -539,7 +533,7 @@ async function fetchCatalogFromSource(sourceInput) {
         return metas;
     }
 
-    // ROUTEUR 3 : Add-on JSON Classic
+    // 2. ROUTEUR ADD-ON JSON CLASSIC
     if (cleanInput.includes('manifest.json')) {
         try {
             let cleanUrl = cleanInput;
@@ -591,6 +585,11 @@ async function fetchCatalogFromSource(sourceInput) {
             });
             return metas;
         } catch (err) { return metas; }
+    }
+
+    // 3. ROUTEUR SITE WEB UNIVERSEL (Scrape tout site web de sport/direct passé en source)
+    if (cleanInput.startsWith('http')) {
+        return await scrapeUniversalLiveWebsite(cleanInput);
     }
 
     return metas;
@@ -824,7 +823,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                 const r = await axios.get(source.directUrl, { 
                     responseType: 'stream',
                     headers: { 'User-Agent': 'Mozilla/5.0' }, 
-                    timeout: 3500
+                    timeout: 4500
                 });
                 if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
                 testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
@@ -837,7 +836,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
             }
             inspectionResults.push(testRes);
         } else if (source.type === 'scraped') {
-            inspectionResults.push({ source: source.providerBase, type: 'fencingtv_scrape', url: source.scrapedUrl, status: 'Résolution dynamique au clic' });
+            inspectionResults.push({ source: source.providerBase, type: 'universal_scrape', url: source.scrapedUrl, status: 'Résolution dynamique au clic' });
         } else {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
@@ -852,7 +851,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                                 const sRes = await axios.get(s.url, { 
                                     responseType: 'stream',
                                     headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase }, 
-                                    timeout: 3500
+                                    timeout: 4500
                                 });
                                 if(sRes.data && typeof sRes.data.destroy === 'function') sRes.data.destroy();
                                 streamTest.health = `✅ En ligne (HTTP ${sRes.status})`;
@@ -943,7 +942,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.6).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.7).</p>
             </div>
 
             <div class="tabs">
@@ -954,8 +953,8 @@ app.get('/', async (req, res) => {
 
             <div id="config" class="tab-content active">
                 <div class="section">
-                    <h3 class="section-title">Sources (Add-ons, M3U ou FencingTV)</h3>
-                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Collez l'URL de votre add-on, M3U, ou de fencingtv.com pour scanner les directs.</p>
+                    <h3 class="section-title">Sources (Add-ons, M3U ou Sites Web de Live)</h3>
+                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Collez l'URL de votre add-on, M3U, ou de tout site web de sport pour détecter automatiquement les matchs en direct.</p>
                     <div id="sourcesContainer"></div>
                     <button type="button" onclick="addSourceField()" class="btn btn-small" style="margin-top: 10px;">+ Ajouter une source</button>
                 </div>
@@ -1079,7 +1078,7 @@ app.get('/', async (req, res) => {
                     div.className = 'source-row';
                     div.innerHTML = \`
                         <span class="source-num">#\${index + 1}</span>
-                        <input type="text" id="src_\${index}" value="\${src}" placeholder="URL manifest.json, M3U ou FencingTV">
+                        <input type="text" id="src_\${index}" value="\${src}" placeholder="URL manifest.json, M3U ou Site Web Live">
                         \${index > 0 ? '<button type="button" onclick="moveSource(' + index + ', -1)" class="btn-small">▲</button>' : '<div style="width: 28px;"></div>'}
                         \${index < sources.length - 1 ? '<button type="button" onclick="moveSource(' + index + ', 1)" class="btn-small">▼</button>' : '<div style="width: 28px;"></div>'}
                         \${sources.length > 1 ? '<button type="button" onclick="removeSource(' + index + ')" class="btn-danger">✕</button>' : ''}
@@ -1300,9 +1299,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.2.6',
+        version: '1.2.7',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.6). Targeted FencingTV Live Scraper & Proxy.',
+        description: 'Meta-Addon IPTV (v1.2.7). Universal Match Scraper & Optimized Timeout (6.5s).',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1420,9 +1419,9 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                 }];
             }
             
-            // RESOLUTION FENCINGTV SCRAPER
+            // RESOLUTION WEB SCRAPER UNIVERSEL
             if (source.type === 'scraped') {
-                let resolvedUrl = await extractFencingTVStreamUrl(source.scrapedUrl);
+                let resolvedUrl = await extractUniversalStreamUrl(source.scrapedUrl);
                 if (!resolvedUrl) return [];
                 
                 if (resolvedUrl.includes('.m3u8')) {
@@ -1431,8 +1430,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
                 return [{
                     url: resolvedUrl,
-                    name: `▶ Flux Live FencingTV`,
-                    title: source.originalName || "Direct Escrime",
+                    name: `▶ Flux Live Direct`,
+                    title: source.originalName || "Événement en direct",
                     _score: 3000,
                     _originalTitle: source.originalName,
                     behaviorHints: { proxyHeaders: { request: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase } } }
@@ -1590,7 +1589,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             refDomain = uObj.origin + "/";
                         } catch(e){}
 
-                        // Relay via Proxy HLS si le flux n'est pas direct
                         if (outStream.url && (outStream.url.includes('.m3u8') || outStream.url.includes('vavoo'))) {
                             outStream.url = `${serverHost}/proxy/hls?url=${encodeURIComponent(outStream.url)}&referer=${encodeURIComponent(refDomain)}`;
                         }
@@ -1612,19 +1610,17 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
 
-        // --- TRI INITIAL PAR SCORE ---
         allStreams.sort((a, b) => b._score - a._score);
-        
         let limitedStreams = allStreams.slice(0, 25);
 
-        // --- SCANNER SYNCHRONE DE LIENS MORTS ---
+        // --- SCANNER SYNCHRONE DE LIENS MORTS (TIMOUT ÉLEVÉ À 6500ms POUR LES LIVES) ---
         if (limitedStreams.length > 0) {
             await Promise.all(limitedStreams.map(async (s) => {
                 if (!s.url) return;
                 try {
                     const r = await axios.get(s.url, {
                         responseType: 'stream',
-                        timeout: 3500,
+                        timeout: 6500, // Timeout augmenté à 6.5s pour les flux en direct
                         headers: {
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                         }
