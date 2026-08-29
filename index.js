@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.3.0 (Top 10 Live Sports, Dynamic Toggles, 5m Background Scanner, Search Enabled)
+ * Version: 1.3.1 (Anti-Bot Immunity, Real-Time Nuvio Scanner, Smart Toggles)
  * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing.
  */
 
@@ -92,17 +92,18 @@ async function runLiveSportsScanner() {
     try {
         for (let cleanUrl of activeNuvioSources) {
             try {
-                // Timeout à 15s pour laisser le MatchAggregator de Nuvio travailler
-                let manifestRes = await axios.get(cleanUrl + '/manifest.json', { timeout: 15000 });
+                // Timeout très large (30s) pour Nuvio
+                let manifestRes = await axios.get(cleanUrl + '/manifest.json', { timeout: 30000 });
                 let catalogs = manifestRes.data.catalogs || [];
                 
                 for (let catalog of catalogs) {
+                    // Suppression de la limitation au type 'tv' (accepte 'sport', 'other', etc.)
                     let hasMore = true;
                     let skip = 0;
                     while (hasMore && skip < 5000) { 
                         try {
                             let url = skip > 0 ? `${cleanUrl}/catalog/${catalog.type}/${encodeURIComponent(catalog.id)}/skip=${skip}.json` : `${cleanUrl}/catalog/${catalog.type}/${encodeURIComponent(catalog.id)}.json`;
-                            let res = await axios.get(url, { timeout: 15000 });
+                            let res = await axios.get(url, { timeout: 30000 });
                             
                             if (res.data && res.data.metas && res.data.metas.length > 0) {
                                 res.data.metas.forEach(m => {
@@ -138,6 +139,15 @@ async function runLiveSportsScanner() {
                                     });
                                 });
                                 skip += res.data.metas.length;
+                                
+                                // Mise à jour progressive du cache en temps réel pour le Dashboard
+                                let seenProgressive = new Set();
+                                liveSportsCache = tempSports.filter(s => {
+                                    if (seenProgressive.has(s.id)) return false;
+                                    seenProgressive.add(s.id);
+                                    return true;
+                                });
+
                                 // Pacing 500ms anti-crash
                                 await new Promise(r => setTimeout(r, 500)); 
                             } else {
@@ -151,19 +161,6 @@ async function runLiveSportsScanner() {
             } catch (e) {
                 // Ignore et passe à la source suivante
             }
-        }
-        
-        // Déduplication locale légère (Nuvio l'a déjà fait en grande partie)
-        let uniqueSports = [];
-        let seen = new Set();
-        for (let s of tempSports) {
-            if (!seen.has(s.id)) {
-                seen.add(s.id);
-                uniqueSports.push(s);
-            }
-        }
-        if (uniqueSports.length > 0) {
-            liveSportsCache = uniqueSports;
         }
     } finally {
         isScanningSports = false;
@@ -769,8 +766,11 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                 if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
                 testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
             } catch(e) {
-                if(e.response && (e.response.status === 401 || e.response.status === 403)) {
-                    testRes.httpStatus = `❌ Erreur: HTTP ${e.response.status} (Accès Refusé / Token Expiré)`;
+                // EXCEPTION CLOUDFLARE POUR LE DEBUGGEUR
+                if(e.response && [403, 503, 520, 521, 522, 523, 524, 525].includes(e.response.status)) {
+                    testRes.httpStatus = `✅ Protégé (HTTP ${e.response.status} - Accepté par défaut)`;
+                } else if(e.response && e.response.status === 401) {
+                    testRes.httpStatus = `❌ Erreur: HTTP 401 (Token Expiré)`;
                 } else {
                     testRes.httpStatus = `❌ Erreur: ${e.response ? 'HTTP ' + e.response.status : e.message}`;
                 }
@@ -779,7 +779,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
         } else {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
-                // Timeout à 15s pour laisser Nuvio agréger les flux
+                // Timeout à 15s pour Nuvio
                 let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 15000 }); 
                 
                 let streamsTested = [];
@@ -796,8 +796,11 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                                 if(sRes.data && typeof sRes.data.destroy === 'function') sRes.data.destroy();
                                 streamTest.health = `✅ En ligne (HTTP ${sRes.status})`;
                             } catch (err) {
-                                if(err.response && (err.response.status === 401 || err.response.status === 403)) {
-                                    streamTest.health = `❌ Échec: HTTP ${err.response.status} (Accès Refusé / Token Expiré)`;
+                                // EXCEPTION CLOUDFLARE POUR LE DEBUGGEUR
+                                if(err.response && [403, 503, 520, 521, 522, 523, 524, 525].includes(err.response.status)) {
+                                    streamTest.health = `✅ Protégé (HTTP ${err.response.status} - Accepté par défaut)`;
+                                } else if(err.response && err.response.status === 401) {
+                                    streamTest.health = `❌ Échec: HTTP 401 (Token Expiré)`;
                                 } else {
                                     streamTest.health = `❌ Échec: ${err.response ? 'HTTP ' + err.response.status : err.message}`;
                                 }
@@ -902,7 +905,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.3.0).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.3.1).</p>
             </div>
 
             <div class="tabs">
@@ -1281,9 +1284,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.3.0',
+        version: '1.3.1',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.3.0). Synchronous Health Check, Dynamic Categories & Background Scanner.',
+        description: 'Meta-Addon IPTV (v1.3.1). Synchronous Health Check, Dynamic Categories & Background Scanner.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: finalCatalogs,
@@ -1601,21 +1604,28 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         r.data.destroy();
                     }
                 } catch (err) {
-                    s._score -= 100000; 
-                    
-                    if (err.response) {
+                    // EXCEPTION POUR CLOUDFLARE ET PROTECTIONS ANTI-BOT (Faux Positifs)
+                    if (err.response && [403, 503, 520, 521, 522, 523, 524, 525].includes(err.response.status)) {
                         let status = err.response.status;
-                        let msg = "Erreur";
-                        if (status === 403 || status === 401) msg = "Accès Refusé / Token Expiré";
-                        else if (status === 404) msg = "Flux Introuvable";
-                        else if (status === 512 || status === 502) msg = "Serveur Injoignable";
-                        else if (status >= 500) msg = "Serveur Planté";
-                        
-                        s.title = `❌ HS (${status} - ${msg})\n` + s.title;
-                    } else if (err.code === 'ENOTFOUND') {
-                        s.title = `❌ HS (Domaine Mort)\n` + s.title;
+                        s.title = `🛡️ Protégé (HTTP ${status})\n` + s.title;
+                        // Pas de pénalité de score appliquée.
                     } else {
-                        s.title = `❌ HS (${err.message})\n` + s.title;
+                        s._score -= 100000; 
+                        
+                        if (err.response) {
+                            let status = err.response.status;
+                            let msg = "Erreur";
+                            if (status === 401) msg = "Token Expiré";
+                            else if (status === 404) msg = "Flux Introuvable";
+                            else if (status === 512 || status === 502) msg = "Serveur Injoignable";
+                            else if (status >= 500) msg = "Serveur Planté";
+                            
+                            s.title = `❌ HS (${status} - ${msg})\n` + s.title;
+                        } else if (err.code === 'ENOTFOUND') {
+                            s.title = `❌ HS (Domaine Mort)\n` + s.title;
+                        } else {
+                            s.title = `❌ HS (${err.message})\n` + s.title;
+                        }
                     }
                 }
             }));
