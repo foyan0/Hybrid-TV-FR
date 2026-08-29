@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.4.0
+ * Version: 1.4.1 
  */
 
 const express = require('express');
@@ -59,17 +59,19 @@ const BLACKLIST = [
 
 function parseConfig(encodedConfig) {
     try {
-        if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], qualities: ['1080p', '720p', '4K', 'SD'] };
+        if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], liveSportSource: '', qualities: ['1080p', '720p', '4K', 'SD'] };
         const jsonStr = Buffer.from(encodedConfig, 'base64').toString('utf8');
         let parsed = JSON.parse(jsonStr);
         if (!parsed.qualities || !Array.isArray(parsed.qualities)) parsed.qualities = ['1080p', '720p', '4K', 'SD'];
+        if (!parsed.sources) parsed.sources = [];
+        if (!parsed.liveSportSource) parsed.liveSportSource = '';
         return parsed;
     } catch (e) {
-        return { sources: [], qualities: ['1080p', '720p', '4K', 'SD'] };
+        return { sources: [], liveSportSource: '', qualities: ['1080p', '720p', '4K', 'SD'] };
     }
 }
 
-// --- LIVE SPORTS BACKGROUND SCANNER (NUVIO INTEGRATION) ---
+// --- LIVE SPORTS BACKGROUND SCANNER ---
 let liveSportsCache = [];
 let isScanningSports = false;
 let activeNuvioSources = new Set();
@@ -304,7 +306,6 @@ function getChannelData(rawName) {
     if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
     if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
 
-    // --- CLASSEMENT JEUNESSE ORDONNÉ (1 à 11) ---
     if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 150 };
     if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
     if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 3 };
@@ -320,7 +321,7 @@ function getChannelData(rawName) {
     }
     
     if (c.includes('GULLI')) return { id: 'hyb_jeu_gulli', name: 'Gulli', categories: ['jeunesse', 'tnt'], index: 5 };
-    if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Can J', categories: ['jeunesse', 'canal'], index: 6 };
+    if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 6 };
     if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 7 };
     if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 8 };
     if (c.includes('BOING')) return { id: 'hyb_jeu_boing', name: 'Boing', categories: ['jeunesse'], index: 10 };
@@ -558,8 +559,11 @@ async function fetchCatalogFromSource(sourceInput) {
 }
 
 // --- SYNC ORCHESTRATOR ---
-async function getChannelsForSources(sourcesList) {
-    const cacheKey = sourcesList.join('|');
+async function getChannelsForSources(config) {
+    let sourcesList = config.sources || [];
+    let lsInput = config.liveSportSource ? config.liveSportSource.trim() : '';
+
+    const cacheKey = sourcesList.join('|') + '|' + lsInput;
 
     if (!channelsCache[cacheKey]) {
         channelsCache[cacheKey] = { status: 'idle', data: [], sourceReport: {}, timestamp: 0 };
@@ -585,22 +589,36 @@ async function getChannelsForSources(sourcesList) {
             let tempChannelsMap = {};
             let sourceReport = {};
 
+            // --- VÉRIFICATION INTELLIGENTE DU LIVE SPORT ADD-ON ---
+            if (lsInput) {
+                let cleanLs = lsInput.replace(/\/manifest\.json$/, '').trim();
+                if (!activeNuvioSources.has(cleanLs)) {
+                    try {
+                        let mRes = await axios.get(cleanLs + '/manifest.json', { timeout: 8000 });
+                        let mName = (mRes.data.name || '').toLowerCase();
+                        if (mName.includes('live sport')) {
+                            activeNuvioSources.add(cleanLs);
+                            if (liveSportsCache.length === 0 && !isScanningSports) {
+                                runLiveSportsScanner(); 
+                            }
+                            sourceReport[cleanLs] = { count: liveSportsCache.length, status: `✅ Validé (${liveSportsCache.length} events)`, isLiveSport: true };
+                        } else {
+                            sourceReport[cleanLs] = { count: 0, status: `❌ Rejeté (Nom officiel: ${mRes.data.name})`, isLiveSport: true };
+                        }
+                    } catch(e) {
+                        sourceReport[cleanLs] = { count: 0, status: `❌ Injoignable`, isLiveSport: true };
+                    }
+                } else {
+                    sourceReport[cleanLs] = { count: liveSportsCache.length, status: `✅ Validé (${liveSportsCache.length} events)`, isLiveSport: true };
+                }
+            }
+
+            // --- SYNCHRONISATION DES LISTES STANDARDS (M3U / Autres Addons) ---
             for (let i = 0; i < sourcesList.length; i++) {
                 const sourceInput = sourcesList[i].trim();
                 if (!sourceInput) continue;
                 
                 let cleanUrl = sourceInput.replace(/\/manifest\.json$/, '').trim();
-                
-                // --- INTERCEPTION NUVIO (LIVE SPORT) ---
-                if (sourceInput.includes('700') || sourceInput.includes('nuvio') || sourceInput.includes('live-sport')) {
-                    activeNuvioSources.add(cleanUrl);
-                    sourceReport[cleanUrl] = { count: liveSportsCache.length, status: `✅ Live Sport Actif (${liveSportsCache.length} matchs)` };
-                    if (liveSportsCache.length === 0 && !isScanningSports) {
-                        runLiveSportsScanner(); 
-                    }
-                    continue; 
-                }
-
                 sourceReport[cleanUrl] = { count: 0, status: 'fetching' };
 
                 try {
@@ -669,14 +687,14 @@ app.get('/api/debug/livesport', (req, res) => {
         return res.json({ 
             isScanning: true,
             total_events: liveSportsCache.length, 
-            message: "⏳ Scan silencieux de Nuvio en cours... Veuillez patienter." 
+            message: "⏳ Scan silencieux de l'add-on en cours... Veuillez patienter." 
         });
     }
     const report = liveSportsCache.map(c => `▶ ${c.name} [Cat: ${c.categories[0].replace('live_', '')}]`);
     res.json({ 
         isScanning: false,
         total_events: liveSportsCache.length, 
-        matches: report.length > 0 ? report : ["Aucun événement live scrapé pour le moment."] 
+        matches: report.length > 0 ? report : ["Aucun événement live scrapé pour le moment. Avez-vous renseigné le bon lien dans l'encart Live Sport ?"] 
     });
 });
 
@@ -805,7 +823,8 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
 
 app.get('/', async (req, res) => {
     let parsedConf = parseConfig(req.query.config);
-    let sourcesList = req.query.sources ? req.query.sources.split(',') : ['', ''];
+    let sourcesList = parsedConf.sources || ['', ''];
+    let liveSportSource = parsedConf.liveSportSource || '';
     let defaultQualities = "['1080p', '720p', '4K', 'SD']";
 
     const html = `
@@ -869,7 +888,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.4.0).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.4.1).</p>
             </div>
 
             <div class="tabs">
@@ -879,9 +898,17 @@ app.get('/', async (req, res) => {
             </div>
 
             <div id="config" class="tab-content active">
+                
+                <!-- ENCART DÉDIÉ LIVE SPORT -->
+                <div class="section" style="border-color: #e50914;">
+                    <h3 class="section-title" style="color: #e50914;">🔴 Add-on Live Sport</h3>
+                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Collez ici le lien de votre add-on de sport (avec le jeton). S'il s'appelle officiellement "Live Sport", il sera activé avec Fast-Track et recherche croisée.</p>
+                    <input type="text" id="ls_source" value="${liveSportSource}" placeholder="URL manifest.json de l'add-on Sport..." class="export-box" style="background:#222; border:1px solid #e50914; color:#fff;" oninput="saveInputs()">
+                </div>
+
                 <div class="section">
-                    <h3 class="section-title">Sources (Add-ons ou M3U)</h3>
-                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Collez ici vos liens M3U ou vos liens d'add-ons (ex: Nuvio avec le jeton de personnalisation).</p>
+                    <h3 class="section-title">Sources (M3U / Add-ons TV)</h3>
+                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Collez ici vos autres listes M3U ou vos add-ons IPTV classiques.</p>
                     <div id="sourcesContainer"></div>
                     <button type="button" onclick="addSourceField()" class="btn btn-small" style="margin-top: 10px;">+ Ajouter une source</button>
                 </div>
@@ -1065,12 +1092,19 @@ app.get('/', async (req, res) => {
             function saveInputs() {
                 sources.forEach((_, index) => { const el = document.getElementById('src_' + index); if (el) sources[index] = el.value.trim(); });
                 localStorage.setItem('hybrid_sources', JSON.stringify(sources));
+
+                let lsEl = document.getElementById('ls_source');
+                if (lsEl) localStorage.setItem('hybrid_ls_source', lsEl.value.trim());
+
                 updateExportToken();
             }
 
             function updateExportToken() {
                 const validSources = sources.filter(s => s.length > 0);
-                const configObj = { sources: validSources, qualities: qualities }; 
+                let lsEl = document.getElementById('ls_source');
+                let lsVal = lsEl ? lsEl.value.trim() : '';
+
+                const configObj = { sources: validSources, liveSportSource: lsVal, qualities: qualities }; 
                 const tokenBox = document.getElementById('exportTokenBox');
                 if (tokenBox) tokenBox.value = btoa(JSON.stringify(configObj));
             }
@@ -1084,6 +1118,11 @@ app.get('/', async (req, res) => {
                     if (config.sources && Array.isArray(config.sources)) {
                         sources = config.sources; if (sources.length === 0) sources = ['', ''];
                         if (config.qualities) { qualities = config.qualities; localStorage.setItem('hybrid_qualities', JSON.stringify(qualities)); }
+                        if (config.liveSportSource) { 
+                            let lsEl = document.getElementById('ls_source');
+                            if(lsEl) lsEl.value = config.liveSportSource;
+                            localStorage.setItem('hybrid_ls_source', config.liveSportSource);
+                        }
                         renderSources(); renderQualities(); alert("Configuration importée avec succès !");
                     } else alert("Code invalide.");
                 } catch(e) { alert("Erreur : Ce code est corrompu."); }
@@ -1091,8 +1130,6 @@ app.get('/', async (req, res) => {
 
             function generateLink() {
                 saveInputs();
-                const validSources = sources.filter(s => s.length > 0);
-                if (validSources.length === 0) return alert("Veuillez entrer au moins un lien de source !");
                 const token = document.getElementById('exportTokenBox').value;
                 const linkField = document.getElementById("manifestLink");
                 if (linkField) linkField.value = window.location.protocol + "//" + window.location.host + "/" + token + "/manifest.json";
@@ -1120,7 +1157,11 @@ app.get('/', async (req, res) => {
                     document.getElementById('m-epg').innerText = data.epgCount;
                     
                     let htmlList = '';
-                    sources.forEach(src => {
+                    let allSources = [...sources];
+                    let lsEl = document.getElementById('ls_source');
+                    if (lsEl && lsEl.value.trim()) allSources.unshift(lsEl.value.trim());
+
+                    allSources.forEach(src => {
                         if (!src) return;
                         let cleanSrc = src.replace(/\\/manifest\\.json$/, '').trim();
                         let displaySrc = cleanSrc.length > 35 ? cleanSrc.substring(0, 32) + '...' : cleanSrc;
@@ -1128,13 +1169,14 @@ app.get('/', async (req, res) => {
                         
                         if (!r || r.status === 'fetching') {
                             htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⏳ En attente</b></li>\`;
+                        } else if (r.isLiveSport) {
+                            htmlList += \`<li><span>\${displaySrc}</span> <b>\${r.status}</b></li>\`;
                         } else if (r.status === 'ok') {
                             htmlList += \`<li><span>\${displaySrc}</span> <b class="status-ok">✅ \${r.count} flux</b></li>\`;
                         } else if (r.status === 'empty') {
                             htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⚠️ 0 flux</b></li>\`;
                         } else {
-                            let isOk = r.status.includes('Live Sport');
-                            htmlList += \`<li><span>\${displaySrc}</span> <b class="\${isOk ? 'status-ok' : 'status-err'}">\${isOk ? r.status : '❌ Hors Ligne'}</b></li>\`;
+                            htmlList += \`<li><span>\${displaySrc}</span> <b class="status-err">❌ Hors Ligne</b></li>\`;
                         }
                     });
                     const sourceReportList = document.getElementById('sourceReportList');
@@ -1157,6 +1199,12 @@ app.get('/', async (req, res) => {
                 try { qualities = JSON.parse(savedQualities); } catch(e){}
             }
 
+            let savedLs = localStorage.getItem('hybrid_ls_source');
+            if (savedLs && !${req.query.config ? 'true' : 'false'}) {
+                let lsEl = document.getElementById('ls_source');
+                if(lsEl) lsEl.value = savedLs;
+            }
+
             renderSources();
             renderQualities();
             setInterval(() => { if(document.getElementById('metrics').classList.contains('active')) fetchMetrics(); }, 5000);
@@ -1176,7 +1224,7 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
 
     let finalCatalogs = [
-        // Bouquets VIP
+        // Bouquets VIP Sport
         { type: 'tv', id: 'live_teams', name: '⭐ Équipes Préférées (Live)' },
         { type: 'tv', id: 'live_top', name: '🔥 Top Événements' },
         // Bouquets Classiques
@@ -1187,7 +1235,7 @@ app.get('/:config/manifest.json', (req, res) => {
         { type: 'tv', id: 'cinema', name: '🍿 Cinéma & Séries' },
         { type: 'tv', id: 'musique', name: '🎵 Musique' },
         { type: 'tv', id: 'canal', name: '🎟️ Bouquet Canal' },
-        // Bouquets Sportifs Nuvio
+        // Bouquets Sportifs
         { type: 'tv', id: 'live_football', name: '⚽ Live: Football' },
         { type: 'tv', id: 'live_basket', name: '🏀 Live: Basketball' },
         { type: 'tv', id: 'live_tennis', name: '🎾 Live: Tennis' },
@@ -1208,9 +1256,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.4.0',
+        version: '1.4.1',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.4.0). VIP Catalogs, EPG Cross-Search & Fast-Track Resolver.',
+        description: 'Meta-Addon IPTV (v1.4.1). Smart Live Sport Validation, EPG Cross-Search & Fast-Track.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: finalCatalogs,
@@ -1220,9 +1268,7 @@ app.get('/:config/manifest.json', (req, res) => {
 
 app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], async (req, res) => {
     const config = parseConfig(req.params.config);
-    if (!config.sources || config.sources.length === 0) return res.json({ metas: [] });
-    
-    let channelsData = await getChannelsForSources(config.sources);
+    let channelsData = await getChannelsForSources(config);
     
     res.setHeader('Cache-Control', 'max-age=14400, public'); 
     const requestedCatalog = req.params.id; 
@@ -1245,7 +1291,7 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
         const now = Date.now();
         let q = searchQuery.toLowerCase();
 
-        // 1. Recherche dans les noms de chaînes et les matchs Nuvio
+        // 1. Recherche dans les noms de chaînes et les matchs Nuvio en cache
         let matchesByName = allChannels.filter(ch => {
             const name = ch.displayName || ch.name || '';
             return name.toLowerCase().includes(q);
@@ -1257,10 +1303,8 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
             let epgList = epgData[channelId];
             let currentProg = epgList.find(p => now >= p.start && now <= p.stop);
             
-            // Si le programme en cours contient le mot clé (ex: "OL")
             if (currentProg && currentProg.title.toLowerCase().includes(q)) {
                 let ch = channelsData.find(c => c.id === channelId);
-                // Si on a trouvé la chaîne, et qu'elle n'est pas déjà dans les résultats
                 if (ch && !matchesByName.some(m => m.id === ch.id)) {
                     matchesByEPG.push({
                         id: ch.id,
@@ -1280,7 +1324,7 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
         filteredChannels = allMatches;
 
     } else {
-        // Affichage standard du catalogue
+        // Affichage standard
         filteredChannels = allChannels.filter(ch => ch.categories && ch.categories.includes(requestedCatalog)).map(ch => ({
             id: ch.id, type: 'tv', name: ch.displayName || ch.name, poster: ch.poster, posterShape: 'square'
         }));
@@ -1292,9 +1336,7 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
 
 app.get('/:config/meta/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
-    if (!config.sources || config.sources.length === 0) return res.json({ meta: {} });
-    
-    let channelsData = await getChannelsForSources(config.sources);
+    let channelsData = await getChannelsForSources(config);
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate'); 
     
     let channel = channelsData.find(c => c.id === req.params.id) || liveSportsCache.find(c => c.id === req.params.id);
@@ -1341,22 +1383,20 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
 
 app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
-    if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
     
-    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-    const clientUserAgent = req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
-
     serverStats.channelClicks[req.params.id] = (serverStats.channelClicks[req.params.id] || 0) + 1;
 
-    const cacheKey = req.params.id + '|' + config.sources.join(',');
+    let sourcesList = config.sources || [];
+    let lsInput = config.liveSportSource ? config.liveSportSource.trim() : '';
+    const cacheKey = req.params.id + '|' + sourcesList.join(',') + '|' + lsInput;
+    
     if (streamCache.has(cacheKey)) {
         serverStats.cacheHits++;
         return res.json({ streams: streamCache.get(cacheKey) });
     }
     serverStats.cacheMisses++;
 
-    let channelsData = await getChannelsForSources(config.sources);
-    
+    let channelsData = await getChannelsForSources(config);
     res.setHeader('Cache-Control', 'max-age=45, public'); 
 
     let channel = channelsData.find(c => c.id === req.params.id);
@@ -1366,7 +1406,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             channel = {
                 id: liveSportChannel.id,
                 displayName: liveSportChannel.name,
-                sources: [{ type: 'addon', metaId: liveSportChannel.id, providerBase: liveSportChannel._providerBase, sourceIndex: 0, originalName: liveSportChannel.name }]
+                sources: [{ type: 'addon', metaId: liveSportChannel.id, providerBase: liveSportChannel._providerBase, sourceIndex: 0, originalName: liveSportChannel.name, isLiveSport: true }]
             };
         }
     }
@@ -1487,7 +1527,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         let outStream = { ...s };
 
                         // LE FAST-TRACK NUVIO
-                        outStream._skipHealthCheck = true; 
+                        outStream._skipHealthCheck = !!source.isLiveSport; 
 
                         if (outStream.url) {
                             let rawUrl = outStream.url.trim();
@@ -1548,7 +1588,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             await Promise.all(limitedStreams.map(async (s) => {
                 if (!s.url) return;
                 
-                // Si le flux est marqué Fast-Track (ex: Nuvio), on ne le teste pas.
+                // Fast-Track actif : On ne teste pas le lien si c'est du Live Sport
                 if (s._skipHealthCheck) return; 
 
                 try {
