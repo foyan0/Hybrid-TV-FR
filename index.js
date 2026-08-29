@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.3.0 (Top 10 Live Sports, Dynamic Toggles, 5m Background Scanner)
+ * Version: 1.3.0 (Top 10 Live Sports, Dynamic Toggles, 5m Background Scanner, Search Enabled)
  * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing.
  */
 
@@ -59,7 +59,7 @@ const BLACKLIST = [
     'TEST', 'MIRROR', 'BACKUPCHANNEL', 'BOXOFFICE1', 'BOXOFFICE2', 'CANALPLAY', 'AFRIQUE', 'DEUTSCH', 'GERMAN'
 ];
 
-// NOUVEAU: Les 11 Catégories Sportives (Top 10 + Autres)
+// Les 11 Catégories Sportives (Top 10 + Autres)
 const defaultSportsList = [
     'live_football', 'live_basket', 'live_tennis', 'live_rugby', 
     'live_us', 'live_meca', 'live_combat', 'live_cyclisme', 
@@ -92,27 +92,26 @@ async function runLiveSportsScanner() {
     try {
         for (let cleanUrl of activeNuvioSources) {
             try {
-                let manifestRes = await axios.get(cleanUrl + '/manifest.json', { timeout: 6000 });
+                // Timeout à 15s pour laisser le MatchAggregator de Nuvio travailler
+                let manifestRes = await axios.get(cleanUrl + '/manifest.json', { timeout: 15000 });
                 let catalogs = manifestRes.data.catalogs || [];
                 
                 for (let catalog of catalogs) {
-                    if (catalog.type !== 'tv') continue;
-                    
                     let hasMore = true;
                     let skip = 0;
                     while (hasMore && skip < 5000) { 
                         try {
                             let url = skip > 0 ? `${cleanUrl}/catalog/${catalog.type}/${encodeURIComponent(catalog.id)}/skip=${skip}.json` : `${cleanUrl}/catalog/${catalog.type}/${encodeURIComponent(catalog.id)}.json`;
-                            let res = await axios.get(url, { timeout: 6000 });
+                            let res = await axios.get(url, { timeout: 15000 });
                             
                             if (res.data && res.data.metas && res.data.metas.length > 0) {
                                 res.data.metas.forEach(m => {
                                     let up = (m.name || '').toUpperCase();
                                     
-                                    // Micro-Blacklist de sécurité (Équipes réserves / Jeunes)
+                                    // Micro-Blacklist de sécurité
                                     if (up.includes('U19') || up.includes('U21') || up.includes('RESERVE') || up.includes('WOMEN') || up.includes('YOUTH')) return;
                                     
-                                    // Routage Mots-Clés Ultra-Précis (Top 10 + 1)
+                                    // Routage Mots-Clés Ultra-Précis
                                     let cat = 'live_autres';
                                     
                                     if (up.match(/\b(BASKET|BASKETBALL|NBA|EUROLEAGUE|FIBA)\b/)) cat = 'live_basket';
@@ -139,7 +138,7 @@ async function runLiveSportsScanner() {
                                     });
                                 });
                                 skip += res.data.metas.length;
-                                // Pacing 500ms anti-crash pour préserver Nuvio
+                                // Pacing 500ms anti-crash
                                 await new Promise(r => setTimeout(r, 500)); 
                             } else {
                                 hasMore = false;
@@ -154,7 +153,7 @@ async function runLiveSportsScanner() {
             }
         }
         
-        // Déduplication finale par ID
+        // Déduplication locale légère (Nuvio l'a déjà fait en grande partie)
         let uniqueSports = [];
         let seen = new Set();
         for (let s of tempSports) {
@@ -610,7 +609,7 @@ async function getChannelsForSources(sourcesList) {
                 let cleanUrl = sourceInput.replace(/\/manifest\.json$/, '').trim();
                 
                 // --- INTERCEPTION NUVIO (LIVE SPORT) ---
-                if (sourceInput.includes('7001') || sourceInput.includes('nuvio') || sourceInput.includes('live-sport')) {
+                if (sourceInput.includes('700') || sourceInput.includes('nuvio') || sourceInput.includes('live-sport')) {
                     activeNuvioSources.add(cleanUrl);
                     sourceReport[cleanUrl] = { count: liveSportsCache.length, status: `✅ Live Sport Actif (${liveSportsCache.length} matchs)` };
                     if (liveSportsCache.length === 0 && !isScanningSports) {
@@ -683,10 +682,18 @@ async function getChannelsForSources(sourcesList) {
 // ============================================================================
 
 app.get('/api/debug/livesport', (req, res) => {
+    if (isScanningSports) {
+        return res.json({ 
+            isScanning: true,
+            total_events: liveSportsCache.length, 
+            message: "⏳ Scan silencieux de Nuvio en cours... Veuillez patienter." 
+        });
+    }
     const report = liveSportsCache.map(c => `▶ ${c.name} [Cat: ${c.categories[0].replace('live_', '')}]`);
     res.json({ 
+        isScanning: false,
         total_events: liveSportsCache.length, 
-        matches: report.length > 0 ? report : ["Scan de fond en cours ou aucun événement live scrapé pour le moment."] 
+        matches: report.length > 0 ? report : ["Aucun événement live scrapé pour le moment."] 
     });
 });
 
@@ -772,6 +779,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
         } else {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
+                // Timeout à 15s pour laisser Nuvio agréger les flux
                 let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 15000 }); 
                 
                 let streamsTested = [];
@@ -859,10 +867,10 @@ app.get('/', async (req, res) => {
             .source-num { font-size: 13px; font-weight: bold; color: var(--primary); min-width: 20px; text-align: center; }
             .source-row input { flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px; }
             
-            .sports-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-            .sport-toggle { display: flex; align-items: center; gap: 10px; background: #222; padding: 10px; border-radius: 6px; border: 1px solid #444; font-size: 13px; cursor: pointer; transition: 0.2s; }
-            .sport-toggle:hover { background: #333; }
-            .sport-toggle input { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
+            .sports-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+            .sport-toggle { display: inline-block; padding: 8px 15px; border-radius: 20px; background: #333; color: #fff; cursor: pointer; border: 2px solid transparent; user-select: none; font-size: 13px; font-weight: bold; transition: 0.3s; }
+            .sport-toggle:hover { background: #444; }
+            .sport-toggle.active { background: var(--primary); border-color: #ff4b55; }
 
             .btn { display: inline-block; background: var(--primary); color: #fff; padding: 12px 24px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; border: none; transition: 0.2s; text-align: center; width: 100%; box-sizing: border-box; }
             .btn:hover { background: #f40612; }
@@ -1020,11 +1028,15 @@ app.get('/', async (req, res) => {
             }
 
             async function checkLiveSport() {
-                document.getElementById('debugOutput').innerText = "Analyse des matchs scrapés en cours...";
+                document.getElementById('debugOutput').innerText = "Interrogation de l'API en cours...";
                 try {
                     let res = await fetch('/api/debug/livesport');
                     let data = await res.json();
-                    document.getElementById('debugOutput').innerText = JSON.stringify(data, null, 2);
+                    if (data.isScanning) {
+                        document.getElementById('debugOutput').innerText = data.message + "\\n\\nMatchs mis en cache jusqu'à présent : " + data.total_events;
+                    } else {
+                        document.getElementById('debugOutput').innerText = JSON.stringify(data, null, 2);
+                    }
                 } catch(e) {
                     document.getElementById('debugOutput').innerText = "Erreur : " + e.message;
                 }
@@ -1075,23 +1087,22 @@ app.get('/', async (req, res) => {
                 sportsList.forEach(s => {
                     const isChecked = selectedSports.includes(s.id);
                     container.innerHTML += \`
-                        <label class="sport-toggle">
-                            <input type="checkbox" value="\${s.id}" \${isChecked ? 'checked' : ''} onchange="toggleSport(this)">
+                        <div class="sport-toggle \${isChecked ? 'active' : ''}" onclick="toggleSport('\${s.id}')">
                             \${s.label}
-                        </label>
+                        </div>
                     \`;
                 });
                 updateExportToken();
             }
 
-            function toggleSport(checkbox) {
-                if (checkbox.checked) {
-                    if (!selectedSports.includes(checkbox.value)) selectedSports.push(checkbox.value);
+            function toggleSport(sportId) {
+                if (selectedSports.includes(sportId)) {
+                    selectedSports = selectedSports.filter(id => id !== sportId);
                 } else {
-                    selectedSports = selectedSports.filter(id => id !== checkbox.value);
+                    selectedSports.push(sportId);
                 }
                 localStorage.setItem('hybrid_sports', JSON.stringify(selectedSports));
-                updateExportToken();
+                renderSports();
             }
 
             function moveSource(index, direction) {
@@ -1423,9 +1434,10 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
 
+                // Timeout à 15s pour laisser Nuvio agréger les flux
                 const streamRes = await axios.get(targetUrl, {
                     headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }, 
-                    timeout: 15000 // 15 secondes pour laisser Nuvio agréger les flux
+                    timeout: 15000 
                 });
                 
                 if (streamRes.data && streamRes.data.streams) {
