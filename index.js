@@ -97,7 +97,7 @@ async function runLiveSportsScanner() {
                 let catalogs = manifestRes.data.catalogs || [];
                 
                 for (let catalog of catalogs) {
-                    // Suppression de la limitation au type 'tv' (accepte 'sport', 'other', etc.)
+                    // On ne bloque plus sur catalog.type !== 'tv' pour accepter les types "sports"
                     let hasMore = true;
                     let skip = 0;
                     while (hasMore && skip < 5000) { 
@@ -779,7 +779,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
         } else {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
-                // Timeout à 15s pour Nuvio
+                // Timeout étendu pour Nuvio
                 let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 15000 }); 
                 
                 let streamsTested = [];
@@ -1437,7 +1437,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
 
-                // Timeout à 15s pour laisser Nuvio agréger les flux
+                // Timeout étendu pour Nuvio
                 const streamRes = await axios.get(targetUrl, {
                     headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }, 
                     timeout: 15000 
