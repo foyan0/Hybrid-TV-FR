@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.2.0 (Optimized 45s Cache, Nuvio Background Scanner, Stremio Search)
+ * Version: 1.3.0 (Top 10 Live Sports, Dynamic Toggles, 5m Background Scanner)
  * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing.
  */
 
@@ -59,17 +59,23 @@ const BLACKLIST = [
     'TEST', 'MIRROR', 'BACKUPCHANNEL', 'BOXOFFICE1', 'BOXOFFICE2', 'CANALPLAY', 'AFRIQUE', 'DEUTSCH', 'GERMAN'
 ];
 
+// NOUVEAU: Les 11 Catégories Sportives (Top 10 + Autres)
+const defaultSportsList = [
+    'live_football', 'live_basket', 'live_tennis', 'live_rugby', 
+    'live_us', 'live_meca', 'live_combat', 'live_cyclisme', 
+    'live_batte', 'live_hockey', 'live_autres'
+];
+
 function parseConfig(encodedConfig) {
     try {
-        if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], qualities: ['1080p', '720p', '4K', 'SD'] };
+        if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], qualities: ['1080p', '720p', '4K', 'SD'], sports: defaultSportsList };
         const jsonStr = Buffer.from(encodedConfig, 'base64').toString('utf8');
         let parsed = JSON.parse(jsonStr);
-        if (!parsed.qualities || !Array.isArray(parsed.qualities)) {
-            parsed.qualities = ['1080p', '720p', '4K', 'SD'];
-        }
+        if (!parsed.qualities || !Array.isArray(parsed.qualities)) parsed.qualities = ['1080p', '720p', '4K', 'SD'];
+        if (!parsed.sports || !Array.isArray(parsed.sports)) parsed.sports = defaultSportsList;
         return parsed;
     } catch (e) {
-        return { sources: [], qualities: ['1080p', '720p', '4K', 'SD'] };
+        return { sources: [], qualities: ['1080p', '720p', '4K', 'SD'], sports: defaultSportsList };
     }
 }
 
@@ -94,7 +100,7 @@ async function runLiveSportsScanner() {
                     
                     let hasMore = true;
                     let skip = 0;
-                    while (hasMore && skip < 5000) { // Sécurité anti boucle infinie
+                    while (hasMore && skip < 5000) { 
                         try {
                             let url = skip > 0 ? `${cleanUrl}/catalog/${catalog.type}/${encodeURIComponent(catalog.id)}/skip=${skip}.json` : `${cleanUrl}/catalog/${catalog.type}/${encodeURIComponent(catalog.id)}.json`;
                             let res = await axios.get(url, { timeout: 6000 });
@@ -103,14 +109,22 @@ async function runLiveSportsScanner() {
                                 res.data.metas.forEach(m => {
                                     let up = (m.name || '').toUpperCase();
                                     
-                                    // Micro-Blacklist: on vire uniquement l'injouable/inutile
+                                    // Micro-Blacklist de sécurité (Équipes réserves / Jeunes)
                                     if (up.includes('U19') || up.includes('U21') || up.includes('RESERVE') || up.includes('WOMEN') || up.includes('YOUTH')) return;
                                     
-                                    // Routage Mots-Clés avec filet de sécurité
+                                    // Routage Mots-Clés Ultra-Précis (Top 10 + 1)
                                     let cat = 'live_autres';
-                                    if (up.match(/\b(FC|LIGUE|PREMIER|CHAMPIONS|VS|MATCH|CUP|FOOTBALL|SOCCER)\b/)) cat = 'live_football';
-                                    else if (up.match(/\b(F1|FORMULE 1|MOTO|GRAND PRIX|RALLY|NASCAR)\b/)) cat = 'live_meca';
-                                    else if (up.match(/\b(UFC|MMA|BOXE|WWE)\b/)) cat = 'live_combat';
+                                    
+                                    if (up.match(/\b(BASKET|BASKETBALL|NBA|EUROLEAGUE|FIBA)\b/)) cat = 'live_basket';
+                                    else if (up.match(/\b(TENNIS|ATP|WTA|WIMBLEDON|ROLAND|US OPEN|OPEN)\b/)) cat = 'live_tennis';
+                                    else if (up.match(/\b(RUGBY|TOP 14|TOP14|NATIONS|CHAMPIONS CUP)\b/)) cat = 'live_rugby';
+                                    else if (up.match(/\b(NFL|FOOTBALL AMÉRICAIN|AMERICAN FOOTBALL|SUPER BOWL)\b/)) cat = 'live_us';
+                                    else if (up.match(/\b(F1|FORMULE 1|MOTO|GRAND PRIX|RALLY|NASCAR|INDYCAR)\b/)) cat = 'live_meca';
+                                    else if (up.match(/\b(UFC|MMA|BOXE|BOXING|WWE|WRESTLING|FIGHT)\b/)) cat = 'live_combat';
+                                    else if (up.match(/\b(CYCLISME|CYCLING|TOUR DE|GIRO|VUELTA)\b/)) cat = 'live_cyclisme';
+                                    else if (up.match(/\b(BASEBALL|MLB|CRICKET|IPL|T20)\b/)) cat = 'live_batte';
+                                    else if (up.match(/\b(HOCKEY|NHL|ICE HOCKEY)\b/)) cat = 'live_hockey';
+                                    else if (up.match(/\b(FC|LIGUE|PREMIER|CHAMPIONS|VS|MATCH|CUP|FOOTBALL|SOCCER|SERIE A|LALIGA|BUNDESLIGA)\b/)) cat = 'live_football';
 
                                     tempSports.push({
                                         id: m.id,
@@ -125,7 +139,7 @@ async function runLiveSportsScanner() {
                                     });
                                 });
                                 skip += res.data.metas.length;
-                                // Pacing 500ms anti-crash
+                                // Pacing 500ms anti-crash pour préserver Nuvio
                                 await new Promise(r => setTimeout(r, 500)); 
                             } else {
                                 hasMore = false;
@@ -159,66 +173,9 @@ async function runLiveSportsScanner() {
 // Exécute silencieusement toutes les 5 minutes
 setInterval(runLiveSportsScanner, 300 * 1000); 
 
-// --- ORIGINAL LIVE EVENTS PARSER ---
-function extractMatchEvent(rawName) {
-    if (!rawName) return null;
-    let s = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    s = s.replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
-
-    let isMatch = false;
-    let eventName = '';
-
-    if (s.includes('MATCH TIME') || s.includes('MATCHTIME')) {
-        let cleanName = s.replace(/^(?:FR|BE|CH|VIP|LIVE|DIRECT|EVENT|MATCH|LIGUE\s*1|DAZN|BEIN|RMC|CANAL\+?|MULTI|MULTIPLEX)\s*[:|-|\|]*\s*/gi, '')
-                 .replace(/\d{1,2}[hH:]\d{2}/g, '')
-                 .replace(/\b(?:FHD|HD|SD|4K|1080P|720P|MATCH\s*TIME|MATCHTIME)\b/gi, '')
-                 .replace(/[^A-Z0-9\s-]/g, '').trim();
-        if (cleanName.length < 3) cleanName = "Événement Sportif";
-        return { id: 'hyb_ev_' + toSyncId(cleanName), name: '🔴 ' + cleanName, categories: ['events'], index: 5, customPoster: EVENT_POSTER };
-    }
-
-    let vsMatch = s.match(/([A-Z0-9\s]{3,20})\s+(?:VS\.?|CONTRE|\bV\b|\bVERSUS\b)\s+([A-Z0-9\s]{3,20})/i);
-    if (vsMatch) {
-        isMatch = true; 
-        eventName = `${vsMatch[1].trim()} vs ${vsMatch[2].trim()}`;
-    } else if (/(?:LIGUE\s*1|UCL|LDC|EURO|PREMIER LEAGUE|MATCH|EVENT).+?\b([A-Z][A-Z0-9\s]{2,20})\s*[-/]\s*([A-Z][A-Z0-9\s]{2,20})\b/i.test(s)) {
-        let dashMatch = s.match(/\b([A-Z][A-Z0-9\s]{2,20})\s*[-/]\s*([A-Z][A-Z0-9\s]{2,20})\b/i);
-        if (dashMatch) {
-            let inv = ['CANAL', 'CINE', 'SPORT', 'BEIN', 'RMC', 'EUROSPORT', 'TF1', 'FRANCE', 'M6', 'DAZN', '1080P', '720P', 'UHD', '4K', 'FHD', 'HD', 'SD', 'PLUS'];
-            if (!inv.includes(dashMatch[1].trim()) && !inv.includes(dashMatch[2].trim())) {
-                isMatch = true; 
-                eventName = `${dashMatch[1].trim()} vs ${dashMatch[2].trim()}`;
-            }
-        }
-    }
-
-    if (isMatch) {
-        const cleanTeam = (str) => {
-            return str.replace(/^(?:FR|BE|CH|VIP|1080P|720P|4K|HD|SD|LIVE|DIRECT|EVENT|MATCH|LIGUE\s*1|DAZN|BEIN|RMC|CANAL\+?|MULTI)\s*[:|-|\|]*/gi, '')
-                      .replace(/\b(?:FHD|HD|SD|4K|1080P|720P|LIVE|DIRECT|RAW)\b/gi, '')
-                      .replace(/[^A-Z0-9\s]/g, '').trim();
-        };
-        let parts = eventName.split(' vs ');
-        let cleanT1 = cleanTeam(parts[0]);
-        let cleanT2 = cleanTeam(parts[1]);
-
-        if (cleanT1.length >= 2 && cleanT2.length >= 2 && cleanT1 !== cleanT2) {
-            let canonicalKey = [toSyncId(cleanT1), toSyncId(cleanT2)].sort().join('_');
-            return { id: 'hyb_ev_' + canonicalKey, name: `⚽ ${cleanT1} vs ${cleanT2}`, categories: ['events'], index: 5, customPoster: EVENT_POSTER };
-        }
-    }
-
-    if (s.includes('MULTIPLEX') && !s.includes('CANAL')) {
-        return { id: 'hyb_ev_multi', name: '🔴 MULTIPLEX EN DIRECT', categories: ['events'], index: 1, customPoster: EVENT_POSTER };
-    }
-    return null;
-}
-
 // --- ORIGINAL SEMANTIC ROUTING ---
 function getChannelData(rawName) {
     if (!rawName) return null;
-    let eventData = extractMatchEvent(rawName);
-    if (eventData) return eventData;
 
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     n = n.replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
@@ -277,7 +234,6 @@ function getChannelData(rawName) {
             return { id: 'hyb_aut_canal_elles', name: 'Canal+ Elles', categories: ['autres'], index: 1000 };
         }
 
-        if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 6 };
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
         
         if (c.includes('LIVE')) {
@@ -429,11 +385,6 @@ function getChannelData(rawName) {
     let prettyName = rawName.replace(/\[.*?\]|\(.*?\)/g, '').replace(/\b(?:FHD|HD|SD|4K|1080P|720P)\b/gi, '').trim();
     prettyName = prettyName.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.substr(1).toLowerCase());
     return { id: 'hyb_id_' + c, name: prettyName, categories: [cat], index: idx };
-}
-
-function toSyncId(rawName) {
-    if (!rawName) return '';
-    return rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, ''); 
 }
 
 function parseXmltvDate(str) {
@@ -661,11 +612,11 @@ async function getChannelsForSources(sourcesList) {
                 // --- INTERCEPTION NUVIO (LIVE SPORT) ---
                 if (sourceInput.includes('7001') || sourceInput.includes('nuvio') || sourceInput.includes('live-sport')) {
                     activeNuvioSources.add(cleanUrl);
-                    sourceReport[cleanUrl] = { count: liveSportsCache.length, status: 'ok (Live Sport Actif)' };
+                    sourceReport[cleanUrl] = { count: liveSportsCache.length, status: `✅ Live Sport Actif (${liveSportsCache.length} matchs)` };
                     if (liveSportsCache.length === 0 && !isScanningSports) {
-                        runLiveSportsScanner(); // Déclenche le scan de fond
+                        runLiveSportsScanner(); 
                     }
-                    continue; // Skip le scanner M3U lourd pour ne pas surcharger
+                    continue; 
                 }
 
                 sourceReport[cleanUrl] = { count: 0, status: 'fetching' };
@@ -732,7 +683,7 @@ async function getChannelsForSources(sourcesList) {
 // ============================================================================
 
 app.get('/api/debug/livesport', (req, res) => {
-    const report = liveSportsCache.map(c => `▶ ${c.name} [Cat: ${c.categories[0]}]`);
+    const report = liveSportsCache.map(c => `▶ ${c.name} [Cat: ${c.categories[0].replace('live_', '')}]`);
     res.json({ 
         total_events: liveSportsCache.length, 
         matches: report.length > 0 ? report : ["Scan de fond en cours ou aucun événement live scrapé pour le moment."] 
@@ -769,7 +720,6 @@ app.get('/api/metrics', (req, res) => {
     const totalCache = serverStats.cacheHits + serverStats.cacheMisses;
     const cacheRate = totalCache > 0 ? Math.round((serverStats.cacheHits / totalCache) * 100) + '%' : 'N/A';
     
-    // Consommation de RAM
     const memUsage = process.memoryUsage();
     const ramUsed = Math.round(memUsage.rss / 1024 / 1024) + ' MB';
 
@@ -822,7 +772,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
         } else {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
-                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 5000 }); 
+                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 15000 }); 
                 
                 let streamsTested = [];
                 if (r.data && r.data.streams) {
@@ -860,9 +810,23 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
 });
 
 app.get('/', async (req, res) => {
-    let sourcesParam = req.query.sources;
-    let sourcesList = sourcesParam ? sourcesParam.split(',') : ['', ''];
+    let parsedConf = parseConfig(req.query.config);
+    let sourcesList = req.query.sources ? req.query.sources.split(',') : ['', ''];
     let defaultQualities = "['1080p', '720p', '4K', 'SD']";
+
+    const defaultSportsRender = [
+        { id: 'live_football', label: '⚽ Football' },
+        { id: 'live_basket', label: '🏀 Basketball' },
+        { id: 'live_tennis', label: '🎾 Tennis' },
+        { id: 'live_rugby', label: '🏉 Rugby' },
+        { id: 'live_us', label: '🏈 Football US' },
+        { id: 'live_meca', label: '🏎️ Sports Mécaniques' },
+        { id: 'live_combat', label: '🥊 Sports de Combat' },
+        { id: 'live_cyclisme', label: '🚴 Cyclisme' },
+        { id: 'live_batte', label: '⚾ Baseball / Cricket' },
+        { id: 'live_hockey', label: '🏒 Hockey sur Glace' },
+        { id: 'live_autres', label: '🏅 Autres Sports' }
+    ];
 
     const html = `
     <!DOCTYPE html>
@@ -895,6 +859,11 @@ app.get('/', async (req, res) => {
             .source-num { font-size: 13px; font-weight: bold; color: var(--primary); min-width: 20px; text-align: center; }
             .source-row input { flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px; }
             
+            .sports-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+            .sport-toggle { display: flex; align-items: center; gap: 10px; background: #222; padding: 10px; border-radius: 6px; border: 1px solid #444; font-size: 13px; cursor: pointer; transition: 0.2s; }
+            .sport-toggle:hover { background: #333; }
+            .sport-toggle input { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
+
             .btn { display: inline-block; background: var(--primary); color: #fff; padding: 12px 24px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; border: none; transition: 0.2s; text-align: center; width: 100%; box-sizing: border-box; }
             .btn:hover { background: #f40612; }
             .btn-secondary { background: #333; margin-top: 10px; }
@@ -925,7 +894,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.2.0).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.3.0).</p>
             </div>
 
             <div class="tabs">
@@ -945,6 +914,12 @@ app.get('/', async (req, res) => {
                     <h3 class="section-title">Priorité de Qualité</h3>
                     <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Ajustez l'ordre. Le format placé en haut sera lancé en priorité.</p>
                     <div id="qualityList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                </div>
+
+                <div class="section">
+                    <h3 class="section-title">Sports Préférés (Live)</h3>
+                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Sélectionnez les catégories à afficher dans Stremio.</p>
+                    <div class="sports-grid" id="sportsContainer"></div>
                 </div>
 
                 <div class="section">
@@ -976,7 +951,7 @@ app.get('/', async (req, res) => {
                         <div class="metric-label">Performance Cache</div>
                         <div class="metric-value" id="m-cache">--</div>
                     </div>
-                    <div class="metric-card">
+                    <div class="metric-card" style="grid-column: span 2;">
                         <div class="metric-label">RAM Serveur</div>
                         <div class="metric-value" id="m-ram">--</div>
                     </div>
@@ -1019,6 +994,9 @@ app.get('/', async (req, res) => {
         <script>
             let sources = ${JSON.stringify(sourcesList)};
             let qualities = ${defaultQualities};
+            
+            const sportsList = ${JSON.stringify(defaultSportsRender)};
+            let selectedSports = ${JSON.stringify(parsedConf.sports || defaultSportsList)};
 
             function switchTab(tabId, btn) {
                 document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -1090,6 +1068,32 @@ app.get('/', async (req, res) => {
                 updateExportToken();
             }
 
+            function renderSports() {
+                const container = document.getElementById('sportsContainer');
+                if (!container) return;
+                container.innerHTML = '';
+                sportsList.forEach(s => {
+                    const isChecked = selectedSports.includes(s.id);
+                    container.innerHTML += \`
+                        <label class="sport-toggle">
+                            <input type="checkbox" value="\${s.id}" \${isChecked ? 'checked' : ''} onchange="toggleSport(this)">
+                            \${s.label}
+                        </label>
+                    \`;
+                });
+                updateExportToken();
+            }
+
+            function toggleSport(checkbox) {
+                if (checkbox.checked) {
+                    if (!selectedSports.includes(checkbox.value)) selectedSports.push(checkbox.value);
+                } else {
+                    selectedSports = selectedSports.filter(id => id !== checkbox.value);
+                }
+                localStorage.setItem('hybrid_sports', JSON.stringify(selectedSports));
+                updateExportToken();
+            }
+
             function moveSource(index, direction) {
                 saveInputs();
                 const newIndex = index + direction;
@@ -1121,7 +1125,7 @@ app.get('/', async (req, res) => {
 
             function updateExportToken() {
                 const validSources = sources.filter(s => s.length > 0);
-                const configObj = { sources: validSources, qualities: qualities }; 
+                const configObj = { sources: validSources, qualities: qualities, sports: selectedSports }; 
                 const tokenBox = document.getElementById('exportTokenBox');
                 if (tokenBox) tokenBox.value = btoa(JSON.stringify(configObj));
             }
@@ -1135,7 +1139,8 @@ app.get('/', async (req, res) => {
                     if (config.sources && Array.isArray(config.sources)) {
                         sources = config.sources; if (sources.length === 0) sources = ['', ''];
                         if (config.qualities) { qualities = config.qualities; localStorage.setItem('hybrid_qualities', JSON.stringify(qualities)); }
-                        renderSources(); renderQualities(); alert("Configuration importée avec succès !");
+                        if (config.sports) { selectedSports = config.sports; localStorage.setItem('hybrid_sports', JSON.stringify(selectedSports)); }
+                        renderSources(); renderQualities(); renderSports(); alert("Configuration importée avec succès !");
                     } else alert("Code invalide.");
                 } catch(e) { alert("Erreur : Ce code est corrompu."); }
             }
@@ -1195,25 +1200,21 @@ app.get('/', async (req, res) => {
             }
 
             let savedSources = localStorage.getItem('hybrid_sources');
-            if (savedSources && !${sourcesParam ? 'true' : 'false'}) sources = JSON.parse(savedSources);
+            if (savedSources && !${req.query.config ? 'true' : 'false'}) sources = JSON.parse(savedSources);
             
             let savedQualities = localStorage.getItem('hybrid_qualities');
-            if (savedQualities) {
+            if (savedQualities && !${req.query.config ? 'true' : 'false'}) {
                 try { qualities = JSON.parse(savedQualities); } catch(e){}
             }
 
-            let startConfig = {};
-            try {
-                let pathParts = window.location.pathname.split('/');
-                if (pathParts[1] && pathParts[1] !== '') {
-                    if (pathParts[1] !== 'configure') {
-                        startConfig = JSON.parse(atob(pathParts[1]));
-                    }
-                }
-            } catch(e) {}
+            let savedSports = localStorage.getItem('hybrid_sports');
+            if (savedSports && !${req.query.config ? 'true' : 'false'}) {
+                try { selectedSports = JSON.parse(savedSports); } catch(e){}
+            }
 
             renderSources();
             renderQualities();
+            renderSports();
             setInterval(() => { if(document.getElementById('metrics').classList.contains('active')) fetchMetrics(); }, 5000);
         </script>
     </body>
@@ -1223,7 +1224,7 @@ app.get('/', async (req, res) => {
 });
 
 app.get('/:config/configure', (req, res) => {
-    res.redirect('/' + req.params.config);
+    res.redirect('/?config=' + req.params.config);
 });
 
 // --- MANIFEST BUILDER ---
@@ -1231,6 +1232,7 @@ app.get('/:config/manifest.json', (req, res) => {
     const config = parseConfig(req.params.config);
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
 
+    // Les catalogues de base qui ne bougent pas
     let baseCatalogs = [
         { type: 'tv', id: 'tnt', name: '📺 TNT' },
         { type: 'tv', id: 'info', name: '📰 Information' },
@@ -1239,26 +1241,41 @@ app.get('/:config/manifest.json', (req, res) => {
         { type: 'tv', id: 'cinema', name: '🍿 Cinéma & Séries' },
         { type: 'tv', id: 'musique', name: '🎵 Musique' },
         { type: 'tv', id: 'canal', name: '🎟️ Bouquet Canal' },
-        { type: 'tv', id: 'sports', name: '⚽ Sports' },
-        { type: 'tv', id: 'events', name: '🔴 Événements & Lives' },
-        { type: 'tv', id: 'autres', name: '📂 Autres' },
+        { type: 'tv', id: 'sports', name: '⚽ Sports TV' },
+        { type: 'tv', id: 'autres', name: '📂 Autres TV' }
+    ];
+
+    // Les catalogues dynamiques Live Sport
+    let liveCatalogs = [
         { type: 'tv', id: 'live_football', name: '⚽ Live: Football' },
+        { type: 'tv', id: 'live_basket', name: '🏀 Live: Basketball' },
+        { type: 'tv', id: 'live_tennis', name: '🎾 Live: Tennis' },
+        { type: 'tv', id: 'live_rugby', name: '🏉 Live: Rugby' },
+        { type: 'tv', id: 'live_us', name: '🏈 Live: Football US' },
         { type: 'tv', id: 'live_meca', name: '🏎️ Live: Sports Méca' },
         { type: 'tv', id: 'live_combat', name: '🥊 Live: Combats' },
+        { type: 'tv', id: 'live_cyclisme', name: '🚴 Live: Cyclisme' },
+        { type: 'tv', id: 'live_batte', name: '⚾ Live: Baseball / Cricket' },
+        { type: 'tv', id: 'live_hockey', name: '🏒 Live: Hockey' },
         { type: 'tv', id: 'live_autres', name: '🏅 Live: Autres Sports' }
     ];
 
+    // On ne garde que les sports choisis par l'utilisateur dans le dashboard
+    let filteredLiveCatalogs = liveCatalogs.filter(cat => config.sports && config.sports.includes(cat.id));
+    
+    let finalCatalogs = baseCatalogs.concat(filteredLiveCatalogs);
+
     // Rend tous les catalogues recherchables dans Stremio
-    baseCatalogs.forEach(c => c.extra = [{ name: "search", isRequired: false }, { name: "skip", isRequired: false }]);
+    finalCatalogs.forEach(c => c.extra = [{ name: "search", isRequired: false }, { name: "skip", isRequired: false }]);
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.2.0',
+        version: '1.3.0',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.2.0). Synchronous Health Check, 45s Cache & Background Live Scanner.',
+        description: 'Meta-Addon IPTV (v1.3.0). Synchronous Health Check, Dynamic Categories & Background Scanner.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
-        catalogs: baseCatalogs,
+        catalogs: finalCatalogs,
         behaviorHints: { configurable: true, configurationRequired: false }
     });
 });
@@ -1293,8 +1310,6 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
             return name.toLowerCase().includes(searchQuery);
         });
     } else {
-        const validCatalogs = ['tnt', 'info', 'jeunesse', 'decouverte', 'cinema', 'musique', 'canal', 'sports', 'events', 'autres', 'live_football', 'live_meca', 'live_combat', 'live_autres'];
-        if (!validCatalogs.includes(requestedCatalog)) return res.json({ metas: [] });
         filteredChannels = allChannels.filter(ch => ch.categories && ch.categories.includes(requestedCatalog));
     }
     
@@ -1410,7 +1425,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
                 const streamRes = await axios.get(targetUrl, {
                     headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }, 
-                    timeout: 5000 // 5000ms validé
+                    timeout: 15000 // 15 secondes pour laisser Nuvio agréger les flux
                 });
                 
                 if (streamRes.data && streamRes.data.streams) {
@@ -1564,7 +1579,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                 try {
                     const r = await axios.get(s.url, {
                         responseType: 'stream',
-                        timeout: 5000, // 5000ms validé
+                        timeout: 5000, 
                         headers: {
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                             ...(s.behaviorHints && s.behaviorHints.proxyHeaders && s.behaviorHints.proxyHeaders.request ? s.behaviorHints.proxyHeaders.request : {})
