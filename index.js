@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.3.1 (Anti-Bot Immunity, Real-Time Nuvio Scanner, Smart Toggles)
+ * Version: 1.3.2 (Native Nuvio Catalog Mapping, No Regex Guessing)
  * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing.
  */
 
@@ -92,12 +92,25 @@ async function runLiveSportsScanner() {
     try {
         for (let cleanUrl of activeNuvioSources) {
             try {
-                // Timeout très large (30s) pour Nuvio
                 let manifestRes = await axios.get(cleanUrl + '/manifest.json', { timeout: 30000 });
                 let catalogs = manifestRes.data.catalogs || [];
                 
                 for (let catalog of catalogs) {
-                    // On ne bloque plus sur catalog.type !== 'tv' pour accepter les types "sports"
+                    // MAPPING NATIF : On analyse le nom du catalogue Nuvio, PAS le nom du match
+                    let catName = (catalog.name || catalog.id || '').toUpperCase();
+                    let mappedCat = 'live_autres';
+
+                    if (catName.includes('FOOTBALL') || catName.includes('SOCCER')) mappedCat = 'live_football';
+                    else if (catName.includes('BASKET')) mappedCat = 'live_basket';
+                    else if (catName.includes('TENNIS')) mappedCat = 'live_tennis';
+                    else if (catName.includes('RUGBY')) mappedCat = 'live_rugby';
+                    else if (catName.includes('NFL') || catName.includes('AMERICAN FOOTBALL')) mappedCat = 'live_us';
+                    else if (catName.includes('MOTORSPORT') || catName.includes('RACING') || catName.includes('F1')) mappedCat = 'live_meca';
+                    else if (catName.includes('FIGHT') || catName.includes('BOXING') || catName.includes('UFC') || catName.includes('WWE') || catName.includes('COMBAT')) mappedCat = 'live_combat';
+                    else if (catName.includes('CYCL')) mappedCat = 'live_cyclisme';
+                    else if (catName.includes('CRICKET') || catName.includes('BASEBALL') || catName.includes('MLB')) mappedCat = 'live_batte';
+                    else if (catName.includes('HOCKEY')) mappedCat = 'live_hockey';
+
                     let hasMore = true;
                     let skip = 0;
                     while (hasMore && skip < 5000) { 
@@ -109,23 +122,9 @@ async function runLiveSportsScanner() {
                                 res.data.metas.forEach(m => {
                                     let up = (m.name || '').toUpperCase();
                                     
-                                    // Micro-Blacklist de sécurité
+                                    // Micro-Blacklist de sécurité pour purger l'interface
                                     if (up.includes('U19') || up.includes('U21') || up.includes('RESERVE') || up.includes('WOMEN') || up.includes('YOUTH')) return;
                                     
-                                    // Routage Mots-Clés Ultra-Précis
-                                    let cat = 'live_autres';
-                                    
-                                    if (up.match(/\b(BASKET|BASKETBALL|NBA|EUROLEAGUE|FIBA)\b/)) cat = 'live_basket';
-                                    else if (up.match(/\b(TENNIS|ATP|WTA|WIMBLEDON|ROLAND|US OPEN|OPEN)\b/)) cat = 'live_tennis';
-                                    else if (up.match(/\b(RUGBY|TOP 14|TOP14|NATIONS|CHAMPIONS CUP)\b/)) cat = 'live_rugby';
-                                    else if (up.match(/\b(NFL|FOOTBALL AMÉRICAIN|AMERICAN FOOTBALL|SUPER BOWL)\b/)) cat = 'live_us';
-                                    else if (up.match(/\b(F1|FORMULE 1|MOTO|GRAND PRIX|RALLY|NASCAR|INDYCAR)\b/)) cat = 'live_meca';
-                                    else if (up.match(/\b(UFC|MMA|BOXE|BOXING|WWE|WRESTLING|FIGHT)\b/)) cat = 'live_combat';
-                                    else if (up.match(/\b(CYCLISME|CYCLING|TOUR DE|GIRO|VUELTA)\b/)) cat = 'live_cyclisme';
-                                    else if (up.match(/\b(BASEBALL|MLB|CRICKET|IPL|T20)\b/)) cat = 'live_batte';
-                                    else if (up.match(/\b(HOCKEY|NHL|ICE HOCKEY)\b/)) cat = 'live_hockey';
-                                    else if (up.match(/\b(FC|LIGUE|PREMIER|CHAMPIONS|VS|MATCH|CUP|FOOTBALL|SOCCER|SERIE A|LALIGA|BUNDESLIGA)\b/)) cat = 'live_football';
-
                                     tempSports.push({
                                         id: m.id,
                                         type: 'tv',
@@ -133,14 +132,13 @@ async function runLiveSportsScanner() {
                                         displayName: m.name,
                                         poster: m.poster || EVENT_POSTER,
                                         posterShape: 'square',
-                                        categories: [cat],
+                                        categories: [mappedCat], // On assigne le dossier natif de Nuvio
                                         _providerBase: cleanUrl,
                                         _isDirectStream: false
                                     });
                                 });
                                 skip += res.data.metas.length;
                                 
-                                // Mise à jour progressive du cache en temps réel pour le Dashboard
                                 let seenProgressive = new Set();
                                 liveSportsCache = tempSports.filter(s => {
                                     if (seenProgressive.has(s.id)) return false;
@@ -148,7 +146,6 @@ async function runLiveSportsScanner() {
                                     return true;
                                 });
 
-                                // Pacing 500ms anti-crash
                                 await new Promise(r => setTimeout(r, 500)); 
                             } else {
                                 hasMore = false;
@@ -766,7 +763,6 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                 if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
                 testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
             } catch(e) {
-                // EXCEPTION CLOUDFLARE POUR LE DEBUGGEUR
                 if(e.response && [403, 503, 520, 521, 522, 523, 524, 525].includes(e.response.status)) {
                     testRes.httpStatus = `✅ Protégé (HTTP ${e.response.status} - Accepté par défaut)`;
                 } else if(e.response && e.response.status === 401) {
@@ -779,7 +775,6 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
         } else {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
-                // Timeout étendu pour Nuvio
                 let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 15000 }); 
                 
                 let streamsTested = [];
@@ -796,7 +791,6 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                                 if(sRes.data && typeof sRes.data.destroy === 'function') sRes.data.destroy();
                                 streamTest.health = `✅ En ligne (HTTP ${sRes.status})`;
                             } catch (err) {
-                                // EXCEPTION CLOUDFLARE POUR LE DEBUGGEUR
                                 if(err.response && [403, 503, 520, 521, 522, 523, 524, 525].includes(err.response.status)) {
                                     streamTest.health = `✅ Protégé (HTTP ${err.response.status} - Accepté par défaut)`;
                                 } else if(err.response && err.response.status === 401) {
@@ -905,7 +899,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.3.1).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.3.2).</p>
             </div>
 
             <div class="tabs">
@@ -1284,9 +1278,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.3.1',
+        version: '1.3.2',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.3.1). Synchronous Health Check, Dynamic Categories & Background Scanner.',
+        description: 'Meta-Addon IPTV (v1.3.2). Synchronous Health Check, Dynamic Categories & Background Scanner.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: finalCatalogs,
@@ -1437,7 +1431,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
 
-                // Timeout étendu pour Nuvio
                 const streamRes = await axios.get(targetUrl, {
                     headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }, 
                     timeout: 15000 
