@@ -1,6 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.3.2 (Native Nuvio Catalog Mapping, No Regex Guessing)
+ * Version: 1.3.3 (Fast-Track Resolver, Native Catalog Mapping, Anti-Bot)
  * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing.
  */
 
@@ -132,7 +132,7 @@ async function runLiveSportsScanner() {
                                         displayName: m.name,
                                         poster: m.poster || EVENT_POSTER,
                                         posterShape: 'square',
-                                        categories: [mappedCat], // On assigne le dossier natif de Nuvio
+                                        categories: [mappedCat], 
                                         _providerBase: cleanUrl,
                                         _isDirectStream: false
                                     });
@@ -899,7 +899,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.3.2).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.3.3).</p>
             </div>
 
             <div class="tabs">
@@ -1278,9 +1278,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.3.2',
+        version: '1.3.3',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.3.2). Synchronous Health Check, Dynamic Categories & Background Scanner.',
+        description: 'Meta-Addon IPTV (v1.3.3). Fast-Track Resolver, Dynamic Categories & Background Scanner.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: finalCatalogs,
@@ -1526,6 +1526,9 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
                         let outStream = { ...s };
 
+                        // NOUVEAU : On marque ce flux pour le "Fast-Track"
+                        outStream._skipHealthCheck = true; 
+
                         if (outStream.url) {
                             let rawUrl = outStream.url.trim();
                             if (rawUrl.startsWith('//')) {
@@ -1584,6 +1587,13 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         if (limitedStreams.length > 0) {
             await Promise.all(limitedStreams.map(async (s) => {
                 if (!s.url) return;
+                
+                // --- FAST-TRACK NUVIO ---
+                // Si le flux provient de l'addon Nuvio, on zappe le test pour laisser le resolver interne travailler
+                if (s._skipHealthCheck) {
+                    return; 
+                }
+
                 try {
                     const r = await axios.get(s.url, {
                         responseType: 'stream',
@@ -1597,7 +1607,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         r.data.destroy();
                     }
                 } catch (err) {
-                    // EXCEPTION POUR CLOUDFLARE ET PROTECTIONS ANTI-BOT (Faux Positifs)
+                    // EXCEPTION POUR CLOUDFLARE ET PROTECTIONS ANTI-BOT (Faux Positifs M3U)
                     if (err.response && [403, 503, 520, 521, 522, 523, 524, 525].includes(err.response.status)) {
                         let status = err.response.status;
                         s.title = `🛡️ Protégé (HTTP ${status})\n` + s.title;
@@ -1630,6 +1640,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         const finalStreams = limitedStreams.map((s) => {
             let streamObj = { ...s };
             delete streamObj._score; 
+            delete streamObj._skipHealthCheck; // On efface la trace du Fast-Track pour Stremio
             return streamObj;
         });
         
