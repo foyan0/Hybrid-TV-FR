@@ -1,6 +1,6 @@
 /**
- * HybridTV - IPTV Meta-Addon
- * Version: 1.1.2
+ * HybridTV
+ * Version: 1.0.0
  */
 
 const express = require('express');
