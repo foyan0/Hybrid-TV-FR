@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.5.1 (Restoration Edition - Debug Flux & Original Bouquets + Live Sport Passthrough)
- * Core Engine: Synchronous Health Check (TV Only), Fast-Track Sport, Cross-Search.
+ * Version: 1.5.2 (RAM Circuit Breaker & Persistence Fix)
+ * Core Engine: Synchronous Health Check, RAM Manager, Pure Passthrough.
  */
 
 const express = require('express');
@@ -19,6 +19,8 @@ let lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' }
 let epgData = {}; 
 let channelsCache = {}; 
 let streamCache = new Map(); 
+
+let currentRamMode = 'eco'; // Mode par défaut pour protéger le serveur
 
 const serverStats = {
     startTime: Date.now(),
@@ -42,7 +44,6 @@ app.use((req, res, next) => {
     next();
 });
 
-// Nettoyage des vieilles IPs en tâche de fond
 setInterval(() => {
     const now = Date.now();
     for (let [key, time] of serverStats.activeIps.entries()) {
@@ -61,17 +62,27 @@ const BLACKLIST = [
 
 function parseConfig(encodedConfig) {
     try {
-        if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], liveSport: '', qualities: ['1080p', '720p', '4K', 'SD'] };
+        if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], liveSport: '', ram: 'eco', qualities: ['1080p', '720p', '4K', 'SD'] };
         const jsonStr = Buffer.from(encodedConfig, 'base64').toString('utf8');
         let parsed = JSON.parse(jsonStr);
-        if (!parsed.qualities || !Array.isArray(parsed.qualities)) {
-            parsed.qualities = ['1080p', '720p', '4K', 'SD'];
-        }
+        if (!parsed.qualities || !Array.isArray(parsed.qualities)) parsed.qualities = ['1080p', '720p', '4K', 'SD'];
         if (typeof parsed.liveSport !== 'string') parsed.liveSport = '';
+        if (!parsed.ram) parsed.ram = 'eco';
         return parsed;
     } catch (e) {
-        return { sources: [], liveSport: '', qualities: ['1080p', '720p', '4K', 'SD'] };
+        return { sources: [], liveSport: '', ram: 'eco', qualities: ['1080p', '720p', '4K', 'SD'] };
     }
+}
+
+// --- GESTIONNAIRE DE RAM (CIRCUIT BREAKER) ---
+function getRamLimits() {
+    let limits = { sportPages: 3, epgDays: 2, maxRamMB: 350 }; // Éco (Render 512Mo)
+    if (currentRamMode === 'standard') {
+        limits = { sportPages: 10, epgDays: 4, maxRamMB: 800 }; // Standard (VPS 1Go)
+    } else if (currentRamMode === 'pro') {
+        limits = { sportPages: 500, epgDays: 7, maxRamMB: 5000 }; // Illimité
+    }
+    return limits;
 }
 
 // --- LIVE SPORTS BACKGROUND SCANNER (PURE PASSTHROUGH) ---
@@ -84,7 +95,9 @@ async function runLiveSportsScanner() {
     if (isScanningSports || activeNuvioSources.size === 0) return;
     isScanningSports = true;
     
+    const limits = getRamLimits();
     let tempSports = [];
+    
     try {
         for (let cleanUrl of activeNuvioSources) {
             try {
@@ -98,7 +111,14 @@ async function runLiveSportsScanner() {
                     let hasMore = true;
                     let skip = 0;
                     
-                    while (hasMore && skip < 5000) { 
+                    while (hasMore && skip < (limits.sportPages * 100)) { 
+                        // CIRCUIT BREAKER RAM
+                        const memMB = process.memoryUsage().rss / 1024 / 1024;
+                        if (memMB > limits.maxRamMB) {
+                            console.warn(`[RAM LIMIT] Arrêt du scan Live Sport (${Math.round(memMB)}MB > ${limits.maxRamMB}MB)`);
+                            hasMore = false; break;
+                        }
+
                         try {
                             let url = skip > 0 ? `${cleanUrl}/catalog/${catalog.type}/${encodeURIComponent(catId)}/skip=${skip}.json` : `${cleanUrl}/catalog/${catalog.type}/${encodeURIComponent(catId)}.json`;
                             let res = await axios.get(url, { timeout: 30000 });
@@ -436,6 +456,9 @@ function formatTime(timestamp) {
 async function fetchAndParseEPG(url, isGz) {
     return new Promise(async (resolve, reject) => {
         try {
+            const limits = getRamLimits();
+            const limitDateMs = Date.now() + (limits.epgDays * 24 * 60 * 60 * 1000);
+
             const response = await axios.get(url, { responseType: 'stream', timeout: 60000, headers: { 'User-Agent': 'Mozilla/5.0' } });
             let stream = response.data;
             if (isGz) { const unzip = zlib.createGunzip(); stream = stream.pipe(unzip); }
@@ -471,13 +494,17 @@ async function fetchAndParseEPG(url, isGz) {
                     const titleM = progBlock.match(/<title[^>]*>([^<]+)<\/title>/);
                     
                     if (startM && stopM && chanM && titleM) {
-                        const syncId = localChannels[chanM[1]];
-                        if (syncId) {
-                            if (!localEpg[syncId]) localEpg[syncId] = [];
-                            localEpg[syncId].push({
-                                start: parseXmltvDate(startM[1]), stop: parseXmltvDate(stopM[1]),
-                                title: titleM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").replace(/&quot;/g, '"').trim()
-                            });
+                        const startMs = parseXmltvDate(startM[1]);
+                        // LIMITATION RAM : Coupe selon les jours
+                        if (startMs <= limitDateMs) {
+                            const syncId = localChannels[chanM[1]];
+                            if (syncId) {
+                                if (!localEpg[syncId]) localEpg[syncId] = [];
+                                localEpg[syncId].push({
+                                    start: startMs, stop: parseXmltvDate(stopM[1]),
+                                    title: titleM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").replace(/&quot;/g, '"').trim()
+                                });
+                            }
                         }
                     }
                     inProgramme = false; progBlock = '';
@@ -720,7 +747,6 @@ async function getChannelsForSources(sourcesList, liveSportUrl) {
 // ============================================================================
 
 app.get('/api/debug/livesport', (req, res) => {
-    // Affiche désormais les résultats de la passerelle Live Sport dédiée
     if (isScanningSports) {
         return res.json({ 
             isScanning: true,
@@ -771,7 +797,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
         } else {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
-                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 5000 }); 
+                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 5000 });
                 
                 let streamsTested = [];
                 if (r.data && r.data.streams) {
@@ -847,6 +873,7 @@ app.get('/api/metrics', (req, res) => {
         totalRequests: serverStats.totalRequests,
         cacheRate: cacheRate,
         ramUsage: ramUsed,
+        ramLimitMode: currentRamMode,
         epgCount: Object.keys(epgData).length,
         epgLastUpdate: lastUpdate,
         totalChannels: totalChannels > 1 ? totalChannels : 0,
@@ -859,6 +886,7 @@ app.get('/', async (req, res) => {
     let parsedConf = parseConfig(req.query.config);
     let sourcesList = req.query.sources ? req.query.sources.split(',') : ['', ''];
     let defaultQualities = "['1080p', '720p', '4K', 'SD']";
+    let configParamActive = req.query.config ? true : false;
 
     const html = `
     <!DOCTYPE html>
@@ -891,6 +919,8 @@ app.get('/', async (req, res) => {
             .source-num { font-size: 13px; font-weight: bold; color: var(--primary); min-width: 20px; text-align: center; }
             .source-row input { flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px; }
 
+            select { width:100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; box-sizing: border-box; }
+            
             .btn { display: inline-block; background: var(--primary); color: #fff; padding: 12px 24px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; border: none; transition: 0.2s; text-align: center; width: 100%; box-sizing: border-box; }
             .btn:hover { background: #f40612; }
             .btn-secondary { background: #333; margin-top: 10px; }
@@ -921,7 +951,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">Version 1.5.1 (Restoration Edition) - Bouquets originaux et Debug Flux</p>
+                <p class="subtitle">Version 1.5.2 - RAM Circuit Breaker & Fix Sauvegarde</p>
             </div>
 
             <div class="tabs">
@@ -933,9 +963,17 @@ app.get('/', async (req, res) => {
             <div id="config" class="tab-content active">
 
                 <div class="section">
-                    <h3 class="section-title">Encart : Add-on Live Sport</h3>
-                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Collez ici le lien de votre Add-on Sport. Fast-Track et Recherche Croisée seront activés. Passthrough absolu des catégories (Top Match, Vos Équipes...).</p>
-                    <input type="text" id="liveSportBox" placeholder="URL Add-on Live Sport (ex: https://.../manifest.json)" style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; box-sizing: border-box;">
+                    <h3 class="section-title">💾 Limiteur de RAM (Coupe-circuit Serveur)</h3>
+                    <select id="ramModeSelect" onchange="updateExportToken()">
+                        <option value="eco">🟢 Mode Éco (512 Mo) - Spécial Serveur Gratuit (Render)</option>
+                        <option value="standard">🟡 Mode Standard (1 Go) - Serveur VPS Classique</option>
+                        <option value="pro">🚀 Mode Illimité - Serveur Pro Dédié</option>
+                    </select>
+                </div>
+
+                <div class="section">
+                    <h3 class="section-title">Addon Live Sport</h3>
+                    <input type="text" id="liveSportBox" placeholder="URL du manifest.json (Add-on Sport)" style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; box-sizing: border-box;" oninput="saveInputs()">
                 </div>
 
                 <div class="section">
@@ -967,19 +1005,11 @@ app.get('/', async (req, res) => {
                         <div class="metric-value" id="m-uptime">--</div>
                     </div>
                     <div class="metric-card">
-                        <div class="metric-label">Utilisateurs Actifs (5m)</div>
-                        <div class="metric-value" id="m-users">--</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">Requêtes Totales</div>
+                        <div class="metric-label">Requêtes</div>
                         <div class="metric-value" id="m-req">--</div>
                     </div>
-                    <div class="metric-card">
-                        <div class="metric-label">Performance Cache</div>
-                        <div class="metric-value" id="m-cache">--</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">RAM Serveur</div>
+                    <div class="metric-card" style="grid-column: span 2;">
+                        <div class="metric-label">RAM Serveur (Coupe-circuit actif)</div>
                         <div class="metric-value" id="m-ram">--</div>
                     </div>
                 </div>
@@ -995,19 +1025,11 @@ app.get('/', async (req, res) => {
                         <li><i>Chargement...</i></li>
                     </ul>
                 </div>
-                
-                <div class="section">
-                    <h3 class="section-title">Top 5 Chaînes (Session)</h3>
-                    <ul class="report-list" id="topChannelsList">
-                        <li><i>Aucune donnée</i></li>
-                    </ul>
-                </div>
             </div>
 
             <div id="debug" class="tab-content">
                 <div class="section">
                     <h3 class="section-title">🔍 Inspecteur & Testeur de Flux</h3>
-                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Tapez une chaîne (ex: "ligue", "bein", "tf1") pour tester la santé des liens en direct.</p>
                     <div style="display: flex; gap: 8px; margin-bottom: 15px;">
                         <input type="text" id="debugQuery" placeholder="Nom de la chaîne..." style="flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px;">
                         <button type="button" onclick="runDebug()" class="btn-small" style="padding: 10px 15px; font-weight: bold;">Tester les flux</button>
@@ -1021,9 +1043,20 @@ app.get('/', async (req, res) => {
         <script>
             let sources = ${JSON.stringify(sourcesList)};
             let qualities = ${defaultQualities};
-            let loadedLiveSport = \`${parsedConf.liveSport || ''}\`;
             
+            // Chargement initial depuis l'URL (si addon installé) ou fallback localStorage
+            let loadedLiveSport = \`${parsedConf.liveSport || ''}\`;
+            let loadedRam = \`${parsedConf.ram || 'eco'}\`;
+            let configParamActive = ${configParamActive};
+
+            let savedLiveSport = localStorage.getItem('hybrid_liveSport');
+            if (savedLiveSport && !configParamActive) loadedLiveSport = savedLiveSport;
+
+            let savedRam = localStorage.getItem('hybrid_ram');
+            if (savedRam && !configParamActive) loadedRam = savedRam;
+
             document.getElementById('liveSportBox').value = loadedLiveSport;
+            document.getElementById('ramModeSelect').value = loadedRam;
 
             function switchTab(tabId, btn) {
                 document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -1067,7 +1100,7 @@ app.get('/', async (req, res) => {
                     div.className = 'source-row';
                     div.innerHTML = \`
                         <span class="source-num">#\${index + 1}</span>
-                        <input type="text" id="src_\${index}" value="\${src}" placeholder="URL manifest.json ou .m3u">
+                        <input type="text" id="src_\${index}" value="\${src}" placeholder="URL manifest.json ou .m3u" oninput="saveInputs()">
                         \${index > 0 ? '<button type="button" onclick="moveSource(' + index + ', -1)" class="btn-small">▲</button>' : '<div style="width: 28px;"></div>'}
                         \${index < sources.length - 1 ? '<button type="button" onclick="moveSource(' + index + ', 1)" class="btn-small">▼</button>' : '<div style="width: 28px;"></div>'}
                         \${sources.length > 1 ? '<button type="button" onclick="removeSource(' + index + ')" class="btn-danger">✕</button>' : ''}
@@ -1121,13 +1154,21 @@ app.get('/', async (req, res) => {
             function saveInputs() {
                 sources.forEach((_, index) => { const el = document.getElementById('src_' + index); if (el) sources[index] = el.value.trim(); });
                 localStorage.setItem('hybrid_sources', JSON.stringify(sources));
+                
+                const lsBox = document.getElementById('liveSportBox').value.trim();
+                localStorage.setItem('hybrid_liveSport', lsBox);
+                
+                const ramBox = document.getElementById('ramModeSelect').value;
+                localStorage.setItem('hybrid_ram', ramBox);
+
                 updateExportToken();
             }
 
             function updateExportToken() {
                 const validSources = sources.filter(s => s.length > 0);
                 const lsUrl = document.getElementById('liveSportBox').value.trim();
-                const configObj = { sources: validSources, qualities: qualities, liveSport: lsUrl }; 
+                const ramMode = document.getElementById('ramModeSelect').value;
+                const configObj = { sources: validSources, qualities: qualities, liveSport: lsUrl, ram: ramMode }; 
                 const tokenBox = document.getElementById('exportTokenBox');
                 if (tokenBox) tokenBox.value = btoa(JSON.stringify(configObj));
             }
@@ -1141,7 +1182,8 @@ app.get('/', async (req, res) => {
                     if (config.sources && Array.isArray(config.sources)) {
                         sources = config.sources; if (sources.length === 0) sources = ['', ''];
                         if (config.qualities) { qualities = config.qualities; localStorage.setItem('hybrid_qualities', JSON.stringify(qualities)); }
-                        if (config.liveSport) { document.getElementById('liveSportBox').value = config.liveSport; }
+                        if (config.liveSport !== undefined) { document.getElementById('liveSportBox').value = config.liveSport; localStorage.setItem('hybrid_liveSport', config.liveSport); }
+                        if (config.ram) { document.getElementById('ramModeSelect').value = config.ram; localStorage.setItem('hybrid_ram', config.ram); }
                         renderSources(); renderQualities(); alert("Configuration importée avec succès !");
                     } else alert("Code invalide.");
                 } catch(e) { alert("Erreur : Ce code est corrompu."); }
@@ -1164,17 +1206,13 @@ app.get('/', async (req, res) => {
                 copyText.select(); document.execCommand("copy"); alert("Copié !");
             }
 
-            document.getElementById('liveSportBox').addEventListener('input', updateExportToken);
-
             async function fetchMetrics() {
                 try {
                     let res = await fetch('/api/metrics');
                     let data = await res.json();
                     
                     document.getElementById('m-uptime').innerText = data.uptime;
-                    document.getElementById('m-users').innerText = data.activeUsers;
                     document.getElementById('m-req').innerText = data.totalRequests;
-                    document.getElementById('m-cache').innerText = data.cacheRate;
                     document.getElementById('m-ram').innerText = data.ramUsage;
                     
                     document.getElementById('m-channels').innerText = data.totalChannels;
@@ -1201,20 +1239,14 @@ app.get('/', async (req, res) => {
                     const sourceReportList = document.getElementById('sourceReportList');
                     if (sourceReportList) sourceReportList.innerHTML = htmlList || '<li><i>Aucune source configurée</i></li>';
 
-                    let topHtml = '';
-                    data.topChannels.forEach(c => {
-                        topHtml += \`<li><span>\${c.id.replace(/_/g, ' ').toUpperCase()}</span> <b>\${c.count} vues</b></li>\`;
-                    });
-                    const topChannelsList = document.getElementById('topChannelsList');
-                    if (topChannelsList) topChannelsList.innerHTML = topHtml || '<li><i>Aucune donnée</i></li>';
                 } catch(e) {}
             }
 
             let savedSources = localStorage.getItem('hybrid_sources');
-            if (savedSources && !${req.query.config ? 'true' : 'false'}) sources = JSON.parse(savedSources);
+            if (savedSources && !configParamActive) sources = JSON.parse(savedSources);
             
             let savedQualities = localStorage.getItem('hybrid_qualities');
-            if (savedQualities && !${req.query.config ? 'true' : 'false'}) {
+            if (savedQualities && !configParamActive) {
                 try { qualities = JSON.parse(savedQualities); } catch(e){}
             }
 
@@ -1234,6 +1266,7 @@ app.get('/:config/configure', (req, res) => {
 // --- MANIFEST BUILDER ---
 app.get('/:config/manifest.json', (req, res) => {
     const config = parseConfig(req.params.config);
+    currentRamMode = config.ram || 'eco';
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
 
     // Catalogues TV de base (INTACTS)
@@ -1250,7 +1283,7 @@ app.get('/:config/manifest.json', (req, res) => {
         { type: 'tv', id: 'autres', name: '📂 Autres' }
     ];
 
-    // Passerelle Live Sport Dynamique (Ajoutée à la fin)
+    // Passerelle Live Sport Dynamique
     let liveCatalogs = [];
     if (config.liveSport) {
         let cleanUrl = config.liveSport.replace(/\/manifest\.json$/, '').trim();
@@ -1268,9 +1301,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.5.1',
+        version: '1.5.2',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV v1.5.1 (Restoration Edition).',
+        description: 'Meta-Addon IPTV v1.5.2 (Fix Persistance & RAM Circuit Breaker).',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: finalCatalogs,
@@ -1280,6 +1313,7 @@ app.get('/:config/manifest.json', (req, res) => {
 
 app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], async (req, res) => {
     const config = parseConfig(req.params.config);
+    currentRamMode = config.ram || 'eco';
     if ((!config.sources || config.sources.length === 0) && !config.liveSport) return res.json({ metas: [] });
     
     let channelsData = await getChannelsForSources(config.sources, config.liveSport);
@@ -1430,7 +1464,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                 if (streamRes.data && streamRes.data.streams) {
                     return streamRes.data.streams.map((s, idx) => {
                         
-                        // Si c'est du Live Sport pur, on ne touche à rien
                         if (isLiveSport) {
                             let outStream = { ...s };
                             outStream._score = 1000 - idx;
@@ -1441,7 +1474,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             return outStream;
                         }
 
-                        // Le système TV classique (Intact)
                         let qual = "SD";
                         let score = 0;
                         let rawName = s.name || '';
@@ -1566,7 +1598,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         allStreams.sort((a, b) => b._score - a._score);
         let limitedStreams = allStreams.slice(0, 15);
 
-        // --- HEALTH CHECK TV CONDITIONNEL ---
         if (limitedStreams.length > 0 && !isLiveSport) {
             await Promise.all(limitedStreams.map(async (s) => {
                 if (!s.url) return;
