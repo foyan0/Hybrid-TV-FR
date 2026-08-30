@@ -1,7 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.5.2 (RAM Circuit Breaker & Persistence Fix)
- * Core Engine: Synchronous Health Check, RAM Manager, Pure Passthrough.
+ * Version: 1.1.2 (Optimized 45s Cache + Anti-Bot Immunity)
+ * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing.
  */
 
 const express = require('express');
@@ -19,8 +19,6 @@ let lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' }
 let epgData = {}; 
 let channelsCache = {}; 
 let streamCache = new Map(); 
-
-let currentRamMode = 'eco'; // Mode par défaut pour protéger le serveur
 
 const serverStats = {
     startTime: Date.now(),
@@ -40,16 +38,14 @@ app.use((req, res, next) => {
             const cleanIp = ip.split(',')[0].trim();
             serverStats.activeIps.set(cleanIp, Date.now());
         }
+        
+        const now = Date.now();
+        for (let [key, time] of serverStats.activeIps.entries()) {
+            if (now - time > 5 * 60 * 1000) serverStats.activeIps.delete(key);
+        }
     }
     next();
 });
-
-setInterval(() => {
-    const now = Date.now();
-    for (let [key, time] of serverStats.activeIps.entries()) {
-        if (now - time > 5 * 60 * 1000) serverStats.activeIps.delete(key);
-    }
-}, 60000);
 
 // --- ASSETS & CONFIG ---
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
@@ -62,108 +58,19 @@ const BLACKLIST = [
 
 function parseConfig(encodedConfig) {
     try {
-        if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], liveSport: '', ram: 'eco', qualities: ['1080p', '720p', '4K', 'SD'] };
+        if (!encodedConfig || encodedConfig === 'manifest.json') return { sources: [], qualities: ['1080p', '720p', '4K', 'SD'] };
         const jsonStr = Buffer.from(encodedConfig, 'base64').toString('utf8');
         let parsed = JSON.parse(jsonStr);
-        if (!parsed.qualities || !Array.isArray(parsed.qualities)) parsed.qualities = ['1080p', '720p', '4K', 'SD'];
-        if (typeof parsed.liveSport !== 'string') parsed.liveSport = '';
-        if (!parsed.ram) parsed.ram = 'eco';
+        if (!parsed.qualities || !Array.isArray(parsed.qualities)) {
+            parsed.qualities = ['1080p', '720p', '4K', 'SD'];
+        }
         return parsed;
     } catch (e) {
-        return { sources: [], liveSport: '', ram: 'eco', qualities: ['1080p', '720p', '4K', 'SD'] };
+        return { sources: [], qualities: ['1080p', '720p', '4K', 'SD'] };
     }
 }
 
-// --- GESTIONNAIRE DE RAM (CIRCUIT BREAKER) ---
-function getRamLimits() {
-    let limits = { sportPages: 3, epgDays: 2, maxRamMB: 350 }; // Éco (Render 512Mo)
-    if (currentRamMode === 'standard') {
-        limits = { sportPages: 10, epgDays: 4, maxRamMB: 800 }; // Standard (VPS 1Go)
-    } else if (currentRamMode === 'pro') {
-        limits = { sportPages: 500, epgDays: 7, maxRamMB: 5000 }; // Illimité
-    }
-    return limits;
-}
-
-// --- LIVE SPORTS BACKGROUND SCANNER (PURE PASSTHROUGH) ---
-let liveSportsCache = [];
-let nuvioCatalogsCache = {}; 
-let isScanningSports = false;
-let activeNuvioSources = new Set();
-
-async function runLiveSportsScanner() {
-    if (isScanningSports || activeNuvioSources.size === 0) return;
-    isScanningSports = true;
-    
-    const limits = getRamLimits();
-    let tempSports = [];
-    
-    try {
-        for (let cleanUrl of activeNuvioSources) {
-            try {
-                let manifestRes = await axios.get(cleanUrl + '/manifest.json', { timeout: 30000 });
-                let rawCatalogs = manifestRes.data.catalogs || [];
-                
-                nuvioCatalogsCache[cleanUrl] = rawCatalogs;
-                
-                for (let catalog of rawCatalogs) {
-                    let catId = catalog.id;
-                    let hasMore = true;
-                    let skip = 0;
-                    
-                    while (hasMore && skip < (limits.sportPages * 100)) { 
-                        // CIRCUIT BREAKER RAM
-                        const memMB = process.memoryUsage().rss / 1024 / 1024;
-                        if (memMB > limits.maxRamMB) {
-                            console.warn(`[RAM LIMIT] Arrêt du scan Live Sport (${Math.round(memMB)}MB > ${limits.maxRamMB}MB)`);
-                            hasMore = false; break;
-                        }
-
-                        try {
-                            let url = skip > 0 ? `${cleanUrl}/catalog/${catalog.type}/${encodeURIComponent(catId)}/skip=${skip}.json` : `${cleanUrl}/catalog/${catalog.type}/${encodeURIComponent(catId)}.json`;
-                            let res = await axios.get(url, { timeout: 30000 });
-                            
-                            if (res.data && res.data.metas && res.data.metas.length > 0) {
-                                res.data.metas.forEach(m => {
-                                    tempSports.push({
-                                        id: m.id,
-                                        type: 'tv',
-                                        name: m.name,
-                                        displayName: m.name,
-                                        poster: m.poster || EVENT_POSTER,
-                                        posterShape: 'square',
-                                        categories: [catId], 
-                                        _providerBase: cleanUrl,
-                                        _isDirectStream: false
-                                    });
-                                });
-                                skip += res.data.metas.length;
-                                
-                                let seenProgressive = new Set();
-                                liveSportsCache = tempSports.filter(s => {
-                                    if (seenProgressive.has(s.id)) return false;
-                                    seenProgressive.add(s.id);
-                                    return true;
-                                });
-
-                                await new Promise(r => setTimeout(r, 400)); 
-                            } else {
-                                hasMore = false;
-                            }
-                        } catch (e) {
-                            hasMore = false;
-                        }
-                    }
-                }
-            } catch (e) {}
-        }
-    } finally {
-        isScanningSports = false;
-    }
-}
-setInterval(runLiveSportsScanner, 300 * 1000); 
-
-// --- ORIGINAL LIVE EVENTS PARSER (POUR M3U CLASSIQUE) ---
+// --- ORIGINAL LIVE EVENTS PARSER ---
 function extractMatchEvent(rawName) {
     if (!rawName) return null;
     let s = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -218,7 +125,7 @@ function extractMatchEvent(rawName) {
     return null;
 }
 
-// --- ORIGINAL SEMANTIC ROUTING (BOUQUETS INTACTS) ---
+// --- ORIGINAL SEMANTIC ROUTING ---
 function getChannelData(rawName) {
     if (!rawName) return null;
     let eventData = extractMatchEvent(rawName);
@@ -379,14 +286,7 @@ function getChannelData(rawName) {
     if (c.includes('DISNEY')) return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 2 };
     if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 5 };
     if (c.includes('BOING')) return { id: 'hyb_jeu_boing', name: 'Boing', categories: ['jeunesse'], index: 6 };
-    
-    if (c.includes('NICKELODEON') || c.includes('NICK')) {
-        if (c.includes('TEEN')) return { id: 'hyb_jeu_nick_teen', name: 'Nickelodeon Teen', categories: ['jeunesse'], index: 151 };
-        if (c.includes('JR') || c.includes('JUNIOR')) return { id: 'hyb_jeu_nick_jr', name: 'Nickelodeon Junior', categories: ['jeunesse'], index: 152 };
-        if (c.includes('PLUS1') || c.includes('1H')) return { id: 'hyb_jeu_nick_plus1', name: 'Nickelodeon +1', categories: ['jeunesse'], index: 153 };
-        return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 7 };
-    }
-    
+    if (c.includes('NICKELODEON') || c.includes('NICK')) return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 7 };
     if (c.includes('TIJI')) return { id: 'hyb_jeu_tiji', name: 'Tiji', categories: ['jeunesse'], index: 9 };
     if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 10 };
     if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 11 };
@@ -456,9 +356,6 @@ function formatTime(timestamp) {
 async function fetchAndParseEPG(url, isGz) {
     return new Promise(async (resolve, reject) => {
         try {
-            const limits = getRamLimits();
-            const limitDateMs = Date.now() + (limits.epgDays * 24 * 60 * 60 * 1000);
-
             const response = await axios.get(url, { responseType: 'stream', timeout: 60000, headers: { 'User-Agent': 'Mozilla/5.0' } });
             let stream = response.data;
             if (isGz) { const unzip = zlib.createGunzip(); stream = stream.pipe(unzip); }
@@ -494,17 +391,13 @@ async function fetchAndParseEPG(url, isGz) {
                     const titleM = progBlock.match(/<title[^>]*>([^<]+)<\/title>/);
                     
                     if (startM && stopM && chanM && titleM) {
-                        const startMs = parseXmltvDate(startM[1]);
-                        // LIMITATION RAM : Coupe selon les jours
-                        if (startMs <= limitDateMs) {
-                            const syncId = localChannels[chanM[1]];
-                            if (syncId) {
-                                if (!localEpg[syncId]) localEpg[syncId] = [];
-                                localEpg[syncId].push({
-                                    start: startMs, stop: parseXmltvDate(stopM[1]),
-                                    title: titleM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").replace(/&quot;/g, '"').trim()
-                                });
-                            }
+                        const syncId = localChannels[chanM[1]];
+                        if (syncId) {
+                            if (!localEpg[syncId]) localEpg[syncId] = [];
+                            localEpg[syncId].push({
+                                start: parseXmltvDate(startM[1]), stop: parseXmltvDate(stopM[1]),
+                                title: titleM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").replace(/&quot;/g, '"').trim()
+                            });
                         }
                     }
                     inProgramme = false; progBlock = '';
@@ -634,8 +527,8 @@ async function fetchCatalogFromSource(sourceInput) {
 }
 
 // --- SYNC ORCHESTRATOR ---
-async function getChannelsForSources(sourcesList, liveSportUrl) {
-    const cacheKey = sourcesList.join('|') + '|' + (liveSportUrl || '');
+async function getChannelsForSources(sourcesList) {
+    const cacheKey = sourcesList.join('|');
 
     if (!channelsCache[cacheKey]) {
         channelsCache[cacheKey] = { status: 'idle', data: [], sourceReport: {}, timestamp: 0 };
@@ -661,23 +554,6 @@ async function getChannelsForSources(sourcesList, liveSportUrl) {
             let tempChannelsMap = {};
             let sourceReport = {};
 
-            // 1. DEDICATED LIVE SPORT SOURCE
-            if (liveSportUrl && liveSportUrl.trim() !== '') {
-                let cleanSportUrl = liveSportUrl.replace(/\/manifest\.json$/, '').trim();
-                activeNuvioSources.add(cleanSportUrl);
-                
-                sourceReport['live_sport_addon'] = { 
-                    url: cleanSportUrl,
-                    count: liveSportsCache.length, 
-                    status: liveSportsCache.length > 0 ? `✅ Actif (${liveSportsCache.length} flux)` : `⏳ En attente de scan...` 
-                };
-                
-                if (liveSportsCache.length === 0 && !isScanningSports) {
-                    runLiveSportsScanner(); 
-                }
-            }
-
-            // 2. STANDARD TV SOURCES
             for (let i = 0; i < sourcesList.length; i++) {
                 const sourceInput = sourcesList[i].trim();
                 if (!sourceInput) continue;
@@ -746,94 +622,6 @@ async function getChannelsForSources(sourcesList, liveSportUrl) {
 // APP ROUTES & DASHBOARD
 // ============================================================================
 
-app.get('/api/debug/livesport', (req, res) => {
-    if (isScanningSports) {
-        return res.json({ 
-            isScanning: true,
-            total_events: liveSportsCache.length, 
-            message: "⏳ Scan silencieux de l'Add-on Sport en cours..." 
-        });
-    }
-    const report = liveSportsCache.map(c => `▶ ${c.name} [Cat: ${c.categories[0]}]`);
-    res.json({ 
-        isScanning: false,
-        total_events: liveSportsCache.length, 
-        matches: report.length > 0 ? report : ["Aucun événement live scrapé via la passerelle pour le moment."] 
-    });
-});
-
-app.get('/api/debug/inspect/:query', async (req, res) => {
-    let q = req.params.query.toLowerCase();
-    let latestCache = null;
-    let latestTime = 0;
-    for (const [key, val] of Object.entries(channelsCache)) {
-        if (val.timestamp > latestTime) { latestTime = val.timestamp; latestCache = val; }
-    }
-    if (!latestCache || !latestCache.data) return res.json({ error: "Cache vide. Ouvrez d'abord l'add-on dans Stremio." });
-
-    const channel = latestCache.data.find(c => c.id.toLowerCase().includes(q) || c.displayName.toLowerCase().includes(q));
-    if (!channel) return res.json({ error: `Chaîne "${q}" introuvable dans le cache actuel.` });
-
-    let inspectionResults = [];
-    for (const source of channel.sources) {
-        if (source.type === 'm3u') {
-            let testRes = { source: source.providerBase || 'M3U Local', type: 'm3u', url: source.directUrl };
-            try {
-                const r = await axios.get(source.directUrl, { 
-                    responseType: 'stream',
-                    headers: { 'User-Agent': 'Mozilla/5.0' }, 
-                    timeout: 5000 
-                });
-                if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
-                testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
-            } catch(e) {
-                if(e.response && (e.response.status === 401 || e.response.status === 403)) {
-                    testRes.httpStatus = `❌ Erreur: HTTP ${e.response.status} (Accès Refusé / Token Expiré)`;
-                } else {
-                    testRes.httpStatus = `❌ Erreur: ${e.response ? 'HTTP ' + e.response.status : e.message}`;
-                }
-            }
-            inspectionResults.push(testRes);
-        } else {
-            try {
-                let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
-                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 5000 });
-                
-                let streamsTested = [];
-                if (r.data && r.data.streams) {
-                    for (let s of r.data.streams) {
-                        let streamTest = { title: s.title || s.name, url: s.url };
-                        if (s.url) {
-                            try {
-                                const sRes = await axios.get(s.url, { 
-                                    responseType: 'stream',
-                                    headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase }, 
-                                    timeout: 5000 
-                                });
-                                if(sRes.data && typeof sRes.data.destroy === 'function') sRes.data.destroy();
-                                streamTest.health = `✅ En ligne (HTTP ${sRes.status})`;
-                            } catch (err) {
-                                if(err.response && (err.response.status === 401 || err.response.status === 403)) {
-                                    streamTest.health = `❌ Échec: HTTP ${err.response.status} (Accès Refusé / Token Expiré)`;
-                                } else {
-                                    streamTest.health = `❌ Échec: ${err.response ? 'HTTP ' + err.response.status : err.message}`;
-                                }
-                            }
-                        } else {
-                            streamTest.health = `⚠️ Pas d'URL directe`;
-                        }
-                        streamsTested.push(streamTest);
-                    }
-                }
-                inspectionResults.push({ provider: source.providerBase, metaId: source.metaId, streamsTested, rawResponse: r.data });
-            } catch(e) {
-                inspectionResults.push({ provider: source.providerBase, error: e.message });
-            }
-        }
-    }
-    res.json({ channelName: channel.displayName, channelId: channel.id, inspectionResults });
-});
-
 app.get('/api/metrics', (req, res) => {
     let totalChannels = 0;
     let sourceReport = {};
@@ -863,17 +651,12 @@ app.get('/api/metrics', (req, res) => {
 
     const totalCache = serverStats.cacheHits + serverStats.cacheMisses;
     const cacheRate = totalCache > 0 ? Math.round((serverStats.cacheHits / totalCache) * 100) + '%' : 'N/A';
-    
-    const memUsage = process.memoryUsage();
-    const ramUsed = Math.round(memUsage.rss / 1024 / 1024) + ' MB';
 
     res.json({
         uptime: `${uptimeHours}h ${uptimeMinutes}m`,
         activeUsers: serverStats.activeIps.size,
         totalRequests: serverStats.totalRequests,
         cacheRate: cacheRate,
-        ramUsage: ramUsed,
-        ramLimitMode: currentRamMode,
         epgCount: Object.keys(epgData).length,
         epgLastUpdate: lastUpdate,
         totalChannels: totalChannels > 1 ? totalChannels : 0,
@@ -882,11 +665,88 @@ app.get('/api/metrics', (req, res) => {
     });
 });
 
+app.get('/api/debug/inspect/:query', async (req, res) => {
+    let q = req.params.query.toLowerCase();
+    let latestCache = null;
+    let latestTime = 0;
+    for (const [key, val] of Object.entries(channelsCache)) {
+        if (val.timestamp > latestTime) { latestTime = val.timestamp; latestCache = val; }
+    }
+    if (!latestCache || !latestCache.data) return res.json({ error: "Cache vide. Ouvrez d'abord l'add-on dans Stremio." });
+
+    const channel = latestCache.data.find(c => c.id.toLowerCase().includes(q) || c.displayName.toLowerCase().includes(q));
+    if (!channel) return res.json({ error: `Chaîne "${q}" introuvable dans le cache actuel.` });
+
+    let inspectionResults = [];
+    for (const source of channel.sources) {
+        if (source.type === 'm3u') {
+            let testRes = { source: source.providerBase || 'M3U Local', type: 'm3u', url: source.directUrl };
+            try {
+                const r = await axios.get(source.directUrl, { 
+                    responseType: 'stream',
+                    headers: { 'User-Agent': 'Mozilla/5.0' }, 
+                    timeout: 3500
+                });
+                if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
+                testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
+            } catch(e) {
+                // MODIFICATION : Immunité Anti-Bot pour le Debug M3U
+                if(e.response && [403, 503, 520, 521, 522, 523, 524, 525].includes(e.response.status)) {
+                    testRes.httpStatus = `✅ Protégé (HTTP ${e.response.status} - Anti-bot)`;
+                } else if(e.response && (e.response.status === 401)) {
+                    testRes.httpStatus = `❌ Erreur: HTTP ${e.response.status} (Accès Refusé / Token Expiré)`;
+                } else {
+                    testRes.httpStatus = `❌ Erreur: ${e.response ? 'HTTP ' + e.response.status : e.message}`;
+                }
+            }
+            inspectionResults.push(testRes);
+        } else {
+            try {
+                let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
+                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 4000 });
+                
+                let streamsTested = [];
+                if (r.data && r.data.streams) {
+                    for (let s of r.data.streams) {
+                        let streamTest = { title: s.title || s.name, url: s.url };
+                        if (s.url) {
+                            try {
+                                const sRes = await axios.get(s.url, { 
+                                    responseType: 'stream',
+                                    headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase }, 
+                                    timeout: 3500
+                                });
+                                if(sRes.data && typeof sRes.data.destroy === 'function') sRes.data.destroy();
+                                streamTest.health = `✅ En ligne (HTTP ${sRes.status})`;
+                            } catch (err) {
+                                // MODIFICATION : Immunité Anti-Bot pour le Debug Add-on
+                                if(err.response && [403, 503, 520, 521, 522, 523, 524, 525].includes(err.response.status)) {
+                                    streamTest.health = `✅ Protégé (HTTP ${err.response.status} - Anti-bot)`;
+                                } else if(err.response && (err.response.status === 401)) {
+                                    streamTest.health = `❌ Échec: HTTP ${err.response.status} (Accès Refusé / Token Expiré)`;
+                                } else {
+                                    streamTest.health = `❌ Échec: ${err.response ? 'HTTP ' + err.response.status : err.message}`;
+                                }
+                            }
+                        } else {
+                            streamTest.health = `⚠️ Pas d'URL directe`;
+                        }
+                        streamsTested.push(streamTest);
+                    }
+                }
+                inspectionResults.push({ provider: source.providerBase, metaId: source.metaId, streamsTested, rawResponse: r.data });
+            } catch(e) {
+                inspectionResults.push({ provider: source.providerBase, error: e.message });
+            }
+        }
+    }
+    res.json({ channelName: channel.displayName, channelId: channel.id, inspectionResults });
+});
+
 app.get('/', async (req, res) => {
-    let parsedConf = parseConfig(req.query.config);
-    let sourcesList = req.query.sources ? req.query.sources.split(',') : ['', ''];
+    let sourcesParam = req.query.sources;
+    let sourcesList = sourcesParam ? sourcesParam.split(',') : ['', ''];
     let defaultQualities = "['1080p', '720p', '4K', 'SD']";
-    let configParamActive = req.query.config ? true : false;
 
     const html = `
     <!DOCTYPE html>
@@ -918,8 +778,6 @@ app.get('/', async (req, res) => {
             .source-row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
             .source-num { font-size: 13px; font-weight: bold; color: var(--primary); min-width: 20px; text-align: center; }
             .source-row input { flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px; }
-
-            select { width:100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; box-sizing: border-box; }
             
             .btn { display: inline-block; background: var(--primary); color: #fff; padding: 12px 24px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; border: none; transition: 0.2s; text-align: center; width: 100%; box-sizing: border-box; }
             .btn:hover { background: #f40612; }
@@ -951,7 +809,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">Version 1.5.2 - RAM Circuit Breaker & Fix Sauvegarde</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.1.2).</p>
             </div>
 
             <div class="tabs">
@@ -961,29 +819,15 @@ app.get('/', async (req, res) => {
             </div>
 
             <div id="config" class="tab-content active">
-
                 <div class="section">
-                    <h3 class="section-title">💾 Limiteur de RAM (Coupe-circuit Serveur)</h3>
-                    <select id="ramModeSelect" onchange="updateExportToken()">
-                        <option value="eco">🟢 Mode Éco (512 Mo) - Spécial Serveur Gratuit (Render)</option>
-                        <option value="standard">🟡 Mode Standard (1 Go) - Serveur VPS Classique</option>
-                        <option value="pro">🚀 Mode Illimité - Serveur Pro Dédié</option>
-                    </select>
-                </div>
-
-                <div class="section">
-                    <h3 class="section-title">Addon Live Sport</h3>
-                    <input type="text" id="liveSportBox" placeholder="URL du manifest.json (Add-on Sport)" style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; box-sizing: border-box;" oninput="saveInputs()">
-                </div>
-
-                <div class="section">
-                    <h3 class="section-title">Sources Classiques (TV / VOD)</h3>
+                    <h3 class="section-title">Sources (Add-ons ou M3U)</h3>
                     <div id="sourcesContainer"></div>
                     <button type="button" onclick="addSourceField()" class="btn btn-small" style="margin-top: 10px;">+ Ajouter une source</button>
                 </div>
 
                 <div class="section">
                     <h3 class="section-title">Priorité de Qualité</h3>
+                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Ajustez l'ordre. Le format placé en haut sera lancé en priorité.</p>
                     <div id="qualityList" style="display: flex; flex-direction: column; gap: 8px;"></div>
                 </div>
 
@@ -1005,12 +849,16 @@ app.get('/', async (req, res) => {
                         <div class="metric-value" id="m-uptime">--</div>
                     </div>
                     <div class="metric-card">
-                        <div class="metric-label">Requêtes</div>
+                        <div class="metric-label">Utilisateurs Actifs (5m)</div>
+                        <div class="metric-value" id="m-users">--</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Requêtes Totales</div>
                         <div class="metric-value" id="m-req">--</div>
                     </div>
-                    <div class="metric-card" style="grid-column: span 2;">
-                        <div class="metric-label">RAM Serveur (Coupe-circuit actif)</div>
-                        <div class="metric-value" id="m-ram">--</div>
+                    <div class="metric-card">
+                        <div class="metric-label">Performance Cache</div>
+                        <div class="metric-value" id="m-cache">--</div>
                     </div>
                 </div>
 
@@ -1025,15 +873,22 @@ app.get('/', async (req, res) => {
                         <li><i>Chargement...</i></li>
                     </ul>
                 </div>
+                
+                <div class="section">
+                    <h3 class="section-title">Top 5 Chaînes (Session)</h3>
+                    <ul class="report-list" id="topChannelsList">
+                        <li><i>Aucune donnée</i></li>
+                    </ul>
+                </div>
             </div>
 
             <div id="debug" class="tab-content">
                 <div class="section">
                     <h3 class="section-title">🔍 Inspecteur & Testeur de Flux</h3>
+                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Tapez une chaîne (ex: "ligue", "bein", "tf1") pour tester la santé des liens en direct.</p>
                     <div style="display: flex; gap: 8px; margin-bottom: 15px;">
                         <input type="text" id="debugQuery" placeholder="Nom de la chaîne..." style="flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px;">
                         <button type="button" onclick="runDebug()" class="btn-small" style="padding: 10px 15px; font-weight: bold;">Tester les flux</button>
-                        <button type="button" onclick="checkLiveSport()" class="btn-small" style="padding: 10px 15px; font-weight: bold; margin-left: 10px; background: #e50914;">Scan Live Sport</button>
                     </div>
                     <pre id="debugOutput" style="background: #111; padding: 12px; border-radius: 6px; font-size: 11px; color: #00ffcc; max-height: 400px; overflow-y: auto; text-align: left; white-space: pre-wrap; word-break: break-all;">En attente de test...</pre>
                 </div>
@@ -1043,26 +898,12 @@ app.get('/', async (req, res) => {
         <script>
             let sources = ${JSON.stringify(sourcesList)};
             let qualities = ${defaultQualities};
-            
-            // Chargement initial depuis l'URL (si addon installé) ou fallback localStorage
-            let loadedLiveSport = \`${parsedConf.liveSport || ''}\`;
-            let loadedRam = \`${parsedConf.ram || 'eco'}\`;
-            let configParamActive = ${configParamActive};
-
-            let savedLiveSport = localStorage.getItem('hybrid_liveSport');
-            if (savedLiveSport && !configParamActive) loadedLiveSport = savedLiveSport;
-
-            let savedRam = localStorage.getItem('hybrid_ram');
-            if (savedRam && !configParamActive) loadedRam = savedRam;
-
-            document.getElementById('liveSportBox').value = loadedLiveSport;
-            document.getElementById('ramModeSelect').value = loadedRam;
 
             function switchTab(tabId, btn) {
                 document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
                 document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
                 document.getElementById(tabId).classList.add('active');
-                if(btn) btn.classList.add('active');
+                btn.classList.add('active');
                 if(tabId === 'metrics') fetchMetrics();
             }
 
@@ -1079,28 +920,17 @@ app.get('/', async (req, res) => {
                 }
             }
 
-            async function checkLiveSport() {
-                document.getElementById('debugOutput').innerText = "Analyse des matchs scrapés en cours...";
-                try {
-                    let res = await fetch('/api/debug/livesport');
-                    let data = await res.json();
-                    document.getElementById('debugOutput').innerText = JSON.stringify(data, null, 2);
-                } catch(e) {
-                    document.getElementById('debugOutput').innerText = "Erreur : " + e.message;
-                }
-            }
-
             function renderSources() {
                 const container = document.getElementById('sourcesContainer');
                 if (!container) return;
                 container.innerHTML = '';
                 sources.forEach((src, index) => {
-                    if (index >= 8) return; 
+                    if (index >= 5) return;
                     const div = document.createElement('div');
                     div.className = 'source-row';
                     div.innerHTML = \`
                         <span class="source-num">#\${index + 1}</span>
-                        <input type="text" id="src_\${index}" value="\${src}" placeholder="URL manifest.json ou .m3u" oninput="saveInputs()">
+                        <input type="text" id="src_\${index}" value="\${src}" placeholder="URL manifest.json ou .m3u">
                         \${index > 0 ? '<button type="button" onclick="moveSource(' + index + ', -1)" class="btn-small">▲</button>' : '<div style="width: 28px;"></div>'}
                         \${index < sources.length - 1 ? '<button type="button" onclick="moveSource(' + index + ', 1)" class="btn-small">▼</button>' : '<div style="width: 28px;"></div>'}
                         \${sources.length > 1 ? '<button type="button" onclick="removeSource(' + index + ')" class="btn-danger">✕</button>' : ''}
@@ -1148,27 +978,18 @@ app.get('/', async (req, res) => {
                 renderQualities();
             }
 
-            function addSourceField() { if (sources.length < 8) { saveInputs(); sources.push(''); renderSources(); } }
+            function addSourceField() { if (sources.length < 5) { saveInputs(); sources.push(''); renderSources(); } }
             function removeSource(index) { saveInputs(); sources.splice(index, 1); renderSources(); }
             
             function saveInputs() {
                 sources.forEach((_, index) => { const el = document.getElementById('src_' + index); if (el) sources[index] = el.value.trim(); });
                 localStorage.setItem('hybrid_sources', JSON.stringify(sources));
-                
-                const lsBox = document.getElementById('liveSportBox').value.trim();
-                localStorage.setItem('hybrid_liveSport', lsBox);
-                
-                const ramBox = document.getElementById('ramModeSelect').value;
-                localStorage.setItem('hybrid_ram', ramBox);
-
                 updateExportToken();
             }
 
             function updateExportToken() {
                 const validSources = sources.filter(s => s.length > 0);
-                const lsUrl = document.getElementById('liveSportBox').value.trim();
-                const ramMode = document.getElementById('ramModeSelect').value;
-                const configObj = { sources: validSources, qualities: qualities, liveSport: lsUrl, ram: ramMode }; 
+                const configObj = { sources: validSources, qualities: qualities }; 
                 const tokenBox = document.getElementById('exportTokenBox');
                 if (tokenBox) tokenBox.value = btoa(JSON.stringify(configObj));
             }
@@ -1182,8 +1003,6 @@ app.get('/', async (req, res) => {
                     if (config.sources && Array.isArray(config.sources)) {
                         sources = config.sources; if (sources.length === 0) sources = ['', ''];
                         if (config.qualities) { qualities = config.qualities; localStorage.setItem('hybrid_qualities', JSON.stringify(qualities)); }
-                        if (config.liveSport !== undefined) { document.getElementById('liveSportBox').value = config.liveSport; localStorage.setItem('hybrid_liveSport', config.liveSport); }
-                        if (config.ram) { document.getElementById('ramModeSelect').value = config.ram; localStorage.setItem('hybrid_ram', config.ram); }
                         renderSources(); renderQualities(); alert("Configuration importée avec succès !");
                     } else alert("Code invalide.");
                 } catch(e) { alert("Erreur : Ce code est corrompu."); }
@@ -1192,8 +1011,7 @@ app.get('/', async (req, res) => {
             function generateLink() {
                 saveInputs();
                 const validSources = sources.filter(s => s.length > 0);
-                const ls = document.getElementById('liveSportBox').value.trim();
-                if (validSources.length === 0 && !ls) return alert("Veuillez entrer au moins une source !");
+                if (validSources.length === 0) return alert("Veuillez entrer au moins un lien de source !");
                 const token = document.getElementById('exportTokenBox').value;
                 const linkField = document.getElementById("manifestLink");
                 if (linkField) linkField.value = window.location.protocol + "//" + window.location.host + "/" + token + "/manifest.json";
@@ -1212,19 +1030,14 @@ app.get('/', async (req, res) => {
                     let data = await res.json();
                     
                     document.getElementById('m-uptime').innerText = data.uptime;
+                    document.getElementById('m-users').innerText = data.activeUsers;
                     document.getElementById('m-req').innerText = data.totalRequests;
-                    document.getElementById('m-ram').innerText = data.ramUsage;
+                    document.getElementById('m-cache').innerText = data.cacheRate;
                     
                     document.getElementById('m-channels').innerText = data.totalChannels;
                     document.getElementById('m-epg').innerText = data.epgCount;
                     
                     let htmlList = '';
-                    
-                    if (data.sourceReport['live_sport_addon']) {
-                        let ls = data.sourceReport['live_sport_addon'];
-                        htmlList += \`<li style="background: #2a1111; padding: 10px; border-radius: 5px;"><span><strong>⚽ Live Sport</strong></span> <b class="\${ls.count > 0 ? 'status-ok' : 'status-warn'}">\${ls.status}</b></li>\`;
-                    }
-
                     sources.forEach(src => {
                         if (!src) return;
                         let cleanSrc = src.replace(/\\/manifest\\.json$/, '').trim();
@@ -1239,18 +1052,35 @@ app.get('/', async (req, res) => {
                     const sourceReportList = document.getElementById('sourceReportList');
                     if (sourceReportList) sourceReportList.innerHTML = htmlList || '<li><i>Aucune source configurée</i></li>';
 
+                    let topHtml = '';
+                    data.topChannels.forEach(c => {
+                        topHtml += \`<li><span>\${c.id.replace(/_/g, ' ').toUpperCase()}</span> <b>\${c.count} vues</b></li>\`;
+                    });
+                    const topChannelsList = document.getElementById('topChannelsList');
+                    if (topChannelsList) topChannelsList.innerHTML = topHtml || '<li><i>Aucune donnée</i></li>';
                 } catch(e) {}
             }
 
             let savedSources = localStorage.getItem('hybrid_sources');
-            if (savedSources && !configParamActive) sources = JSON.parse(savedSources);
+            if (savedSources && !${sourcesParam ? 'true' : 'false'}) sources = JSON.parse(savedSources);
             
             let savedQualities = localStorage.getItem('hybrid_qualities');
-            if (savedQualities && !configParamActive) {
+            if (savedQualities) {
                 try { qualities = JSON.parse(savedQualities); } catch(e){}
             }
 
-            renderSources(); renderQualities();
+            let startConfig = {};
+            try {
+                let pathParts = window.location.pathname.split('/');
+                if (pathParts[1] && pathParts[1] !== '') {
+                    if (pathParts[1] !== 'configure') {
+                        startConfig = JSON.parse(atob(pathParts[1]));
+                    }
+                }
+            } catch(e) {}
+
+            renderSources();
+            renderQualities();
             setInterval(() => { if(document.getElementById('metrics').classList.contains('active')) fetchMetrics(); }, 5000);
         </script>
     </body>
@@ -1260,16 +1090,14 @@ app.get('/', async (req, res) => {
 });
 
 app.get('/:config/configure', (req, res) => {
-    res.redirect('/?config=' + req.params.config);
+    res.redirect('/' + req.params.config);
 });
 
 // --- MANIFEST BUILDER ---
 app.get('/:config/manifest.json', (req, res) => {
     const config = parseConfig(req.params.config);
-    currentRamMode = config.ram || 'eco';
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
 
-    // Catalogues TV de base (INTACTS)
     let baseCatalogs = [
         { type: 'tv', id: 'tnt', name: '📺 TNT' },
         { type: 'tv', id: 'info', name: '📰 Information' },
@@ -1283,94 +1111,54 @@ app.get('/:config/manifest.json', (req, res) => {
         { type: 'tv', id: 'autres', name: '📂 Autres' }
     ];
 
-    // Passerelle Live Sport Dynamique
-    let liveCatalogs = [];
-    if (config.liveSport) {
-        let cleanUrl = config.liveSport.replace(/\/manifest\.json$/, '').trim();
-        if (nuvioCatalogsCache[cleanUrl]) {
-            liveCatalogs = nuvioCatalogsCache[cleanUrl].map(c => ({
-                type: 'tv',
-                id: c.id,
-                name: c.name ? `⚽ Live Sport - ${c.name}` : `⚽ Live Sport - ${c.id}`
-            }));
-        }
-    }
-    
-    let finalCatalogs = baseCatalogs.concat(liveCatalogs);
-    finalCatalogs.forEach(c => c.extra = [{ name: "search", isRequired: false }, { name: "skip", isRequired: false }]);
-
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.5.2',
+        version: '1.1.2',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV v1.5.2 (Fix Persistance & RAM Circuit Breaker).',
+        description: 'Meta-Addon IPTV (v1.1.2). Synchronous Health Check, 45s Cache & Strict Routing.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
-        catalogs: finalCatalogs,
+        catalogs: baseCatalogs,
         behaviorHints: { configurable: true, configurationRequired: false }
     });
 });
 
 app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], async (req, res) => {
     const config = parseConfig(req.params.config);
-    currentRamMode = config.ram || 'eco';
-    if ((!config.sources || config.sources.length === 0) && !config.liveSport) return res.json({ metas: [] });
+    if (!config.sources || config.sources.length === 0) return res.json({ metas: [] });
     
-    let channelsData = await getChannelsForSources(config.sources, config.liveSport);
+    let channelsData = await getChannelsForSources(config.sources);
     
     res.setHeader('Cache-Control', 'max-age=14400, public'); 
     const requestedCatalog = req.params.id; 
     let skip = 0;
-    let searchQuery = "";
     
     if (req.params.extra) {
         const skipMatch = req.params.extra.match(/skip=(\d+)/);
         if (skipMatch) skip = parseInt(skipMatch[1], 10);
-        
-        const searchMatch = req.params.extra.match(/search=([^&]+)/);
-        if (searchMatch) searchQuery = decodeURIComponent(searchMatch[1]).toLowerCase();
     }
 
-    let allChannels = channelsData.concat(liveSportsCache);
-    let filteredChannels = [];
-    
-    if (searchQuery) {
-        filteredChannels = allChannels.filter(ch => {
-            const name = ch.displayName || ch.name || '';
-            let matchTitle = name.toLowerCase().includes(searchQuery);
-            let matchEPG = false;
-            
-            if (!matchTitle && epgData[ch.id]) {
-                const now = Date.now();
-                const currentProg = epgData[ch.id].find(p => now >= p.start && now <= p.stop);
-                if (currentProg && currentProg.title.toLowerCase().includes(searchQuery)) {
-                    matchEPG = true;
-                }
-            }
-            return matchTitle || matchEPG;
-        });
-    } else {
-        filteredChannels = allChannels.filter(ch => ch.categories && ch.categories.includes(requestedCatalog));
-    }
+    let filteredChannels = channelsData;
+    const validCatalogs = ['tnt', 'info', 'jeunesse', 'decouverte', 'cinema', 'musique', 'canal', 'sports', 'events', 'autres'];
+    if (!validCatalogs.includes(requestedCatalog)) return res.json({ metas: [] });
+    filteredChannels = channelsData.filter(ch => ch.categories.includes(requestedCatalog));
     
     const paginatedMetas = filteredChannels.slice(skip, skip + 100).map(ch => ({
-        id: ch.id, type: 'tv', name: ch.displayName || ch.name, poster: ch.poster, posterShape: 'square'
+        id: ch.id, type: 'tv', name: ch.displayName, poster: ch.poster, posterShape: 'square'
     }));
     res.json({ metas: paginatedMetas });
 });
 
 app.get('/:config/meta/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
-    if ((!config.sources || config.sources.length === 0) && !config.liveSport) return res.json({ meta: {} });
+    if (!config.sources || config.sources.length === 0) return res.json({ meta: {} });
     
-    let channelsData = await getChannelsForSources(config.sources, config.liveSport);
+    let channelsData = await getChannelsForSources(config.sources);
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate'); 
-    
-    let channel = channelsData.find(c => c.id === req.params.id) || liveSportsCache.find(c => c.id === req.params.id);
+    const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ meta: {} });
     
-    let displayName = channel.displayName || channel.name;
-    let descriptionText = `▶ Diffusion en cours sur ${displayName}...`;
+    let descriptionText = `▶ Diffusion en cours sur ${channel.displayName}...`;
     
     if (Object.keys(epgData).length > 0) {
         const epgList = epgData[channel.id]; 
@@ -1402,45 +1190,34 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
             }
         }
     } else {
-        if (!channel.categories || !channel.categories.some(c => c !== 'events' && c !== 'tv')) {
-             descriptionText += `\n(Le Programme TV est en cours de téléchargement sur le serveur...)`;
-        }
+        descriptionText += `\n(Le Programme TV est en cours de téléchargement sur le serveur...)`;
     }
 
-    res.json({ meta: { id: channel.id, type: 'tv', name: displayName, poster: channel.poster, posterShape: 'square', description: descriptionText } });
+    res.json({ meta: { id: channel.id, type: 'tv', name: channel.displayName, poster: channel.poster, posterShape: 'square', description: descriptionText } });
 });
 
 app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
-    if ((!config.sources || config.sources.length === 0) && !config.liveSport) return res.json({ streams: [] });
+    if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
+    
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+    const clientUserAgent = req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 
     serverStats.channelClicks[req.params.id] = (serverStats.channelClicks[req.params.id] || 0) + 1;
 
-    const cacheKey = req.params.id + '|' + config.sources.join(',') + '|' + config.liveSport;
-    if (streamCache.has(cacheKey)) { 
+    const cacheKey = req.params.id + '|' + config.sources.join(',');
+    if (streamCache.has(cacheKey)) {
         serverStats.cacheHits++;
-        return res.json({ streams: streamCache.get(cacheKey) }); 
+        return res.json({ streams: streamCache.get(cacheKey) });
     }
     serverStats.cacheMisses++;
 
-    let channelsData = await getChannelsForSources(config.sources, config.liveSport);
+    let channelsData = await getChannelsForSources(config.sources);
+    
+    // SMART CACHE AUGMENTÉ À 45 SECONDES
     res.setHeader('Cache-Control', 'max-age=45, public'); 
 
-    let isLiveSport = false;
-    let channel = channelsData.find(c => c.id === req.params.id);
-    
-    if (!channel) {
-        const liveSportChannel = liveSportsCache.find(c => c.id === req.params.id);
-        if (liveSportChannel) {
-            isLiveSport = true;
-            channel = {
-                id: liveSportChannel.id,
-                displayName: liveSportChannel.name,
-                sources: [{ type: 'addon', metaId: liveSportChannel.id, providerBase: liveSportChannel._providerBase, sourceIndex: 0, originalName: liveSportChannel.name }]
-            };
-        }
-    }
-    
+    const channel = channelsData.find(c => c.id === req.params.id);
     if (!channel) return res.json({ streams: [] });
     
     try {
@@ -1453,29 +1230,24 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                     name: isBeluchon ? `▶ Source Officielle (HD)` : `▶ Full HD (1080p)`,
                     title: source.originalName || "Source M3U",
                     _score: isBeluchon ? 4500 : 1500,
-                    behaviorHints: { proxyHeaders: { request: { 'User-Agent': 'Mozilla/5.0' } } }
+                    _originalTitle: source.originalName || "Source M3U",
+                    behaviorHints: { proxyHeaders: { request: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase } } }
                 }];
             }
 
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
-                const streamRes = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 15000 });
+
+                const streamRes = await axios.get(targetUrl, {
+                    headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }, 
+                    timeout: 4500 
+                });
                 
                 if (streamRes.data && streamRes.data.streams) {
                     return streamRes.data.streams.map((s, idx) => {
-                        
-                        if (isLiveSport) {
-                            let outStream = { ...s };
-                            outStream._score = 1000 - idx;
-                            if (outStream.url && outStream.url.startsWith('//')) outStream.url = 'https:' + outStream.url;
-                            if (!outStream.behaviorHints) outStream.behaviorHints = {};
-                            if (!outStream.behaviorHints.notWebReady) outStream.behaviorHints.notWebReady = true;
-                            outStream.name = s.name || source.originalName || "Source Add-on";
-                            return outStream;
-                        }
-
                         let qual = "SD";
                         let score = 0;
+                        
                         let rawName = s.name || '';
                         let rawTitle = s.title || '';
                         let originalTitle = (rawName !== rawTitle) ? `${rawName} ${rawTitle}` : rawName || rawTitle;
@@ -1483,6 +1255,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
                         let up = originalTitle.toUpperCase();
                         let nStream = up.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').replace(/\+/g, 'PLUS').replace(/[^A-Z0-9]/g, '');
+
                         let penalty = 0;
                         
                         if (channel.id.startsWith('hyb_canal_') && !channel.id.includes('live') && channel.id !== 'hyb_aut_canal_elles') {
@@ -1503,7 +1276,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         if (channel.id === 'hyb_dec_discovery' && (nStream.includes('INVESTIGATION') || nStream.includes('ID') || nStream.includes('SCIENCE'))) penalty += 5000;
                         if (channel.id === 'hyb_dec_investigation' && (!nStream.includes('INVESTIGATION') && !nStream.includes('ID'))) penalty += 5000;
                         if (channel.id === 'hyb_jeu_disney' && (nStream.includes('JR') || nStream.includes('JUNIOR') || nStream.includes('XD') || nStream.includes('PLUS1'))) penalty += 5000;
-                        if (channel.id === 'hyb_jeu_nick' && (nStream.includes('TEEN') || nStream.includes('JR') || nStream.includes('JUNIOR') || nStream.includes('PLUS1'))) penalty += 5000;
 
                         if (channel.id.startsWith('hyb_sport_bein')) {
                             let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1'; let isTargetMax = channel.id.includes('max');
@@ -1545,7 +1317,10 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         else if (detectedQual === '720p') qualStr = "HD (720p)";
                         else qualStr = "SD";
 
-                        if (isBeluchon) { qualStr = "Source Officielle Légale (HD)"; qScore = 5000; }
+                        if (isBeluchon) {
+                            qualStr = "Source Officielle Légale (HD)";
+                            qScore = 5000; 
+                        }
 
                         score += qScore;
                         if (up.match(/\bFR\b/) || up.match(/\bVF\b/) || up.includes('FRENCH') || up.includes('TRUEFRENCH')) score += 300; 
@@ -1559,9 +1334,13 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
                         if (outStream.url) {
                             let rawUrl = outStream.url.trim();
-                            if (rawUrl.startsWith('//')) { outStream.url = 'https:' + rawUrl;
+                            if (rawUrl.startsWith('//')) {
+                                outStream.url = 'https:' + rawUrl;
                             } else if (rawUrl.startsWith('/')) {
-                                try { let baseObj = new URL(source.providerBase); outStream.url = baseObj.origin + rawUrl; } catch(e){}
+                                try {
+                                    let baseObj = new URL(source.providerBase);
+                                    outStream.url = baseObj.origin + rawUrl;
+                                } catch(e){}
                             } else if (!rawUrl.startsWith('http') && !rawUrl.includes('://')) {
                                 outStream.url = 'http://' + rawUrl;
                             }
@@ -1571,12 +1350,20 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         if (!outStream.behaviorHints.notWebReady) outStream.behaviorHints.notWebReady = true;
 
                         let refDomain = "https://vavoo.to/";
-                        try { let uObj = new URL(source.providerBase); refDomain = uObj.origin + "/"; } catch(e){}
+                        try {
+                            let uObj = new URL(source.providerBase);
+                            refDomain = uObj.origin + "/";
+                        } catch(e){}
 
                         if (outStream.behaviorHints.headers && !outStream.behaviorHints.proxyHeaders) {
                             outStream.behaviorHints.proxyHeaders = { request: outStream.behaviorHints.headers };
                         } else if (!outStream.behaviorHints.proxyHeaders) {
-                            outStream.behaviorHints.proxyHeaders = { request: { 'User-Agent': 'Mozilla/5.0', 'Referer': refDomain } };
+                            outStream.behaviorHints.proxyHeaders = {
+                                request: {
+                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                                    'Referer': refDomain
+                                }
+                            };
                         }
 
                         let fallbackName = source.originalName || "Source Add-on";
@@ -1595,28 +1382,63 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
 
+        // --- TRI INITIAL PAR SCORE ---
         allStreams.sort((a, b) => b._score - a._score);
         let limitedStreams = allStreams.slice(0, 15);
 
-        if (limitedStreams.length > 0 && !isLiveSport) {
+        // --- SCANNER SYNCHRONE DE LIENS MORTS ---
+        if (limitedStreams.length > 0) {
             await Promise.all(limitedStreams.map(async (s) => {
                 if (!s.url) return;
                 try {
-                    const r = await axios.get(s.url, { responseType: 'stream', timeout: 5000, headers: { 'User-Agent': 'Mozilla/5.0' } });
-                    if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
+                    const r = await axios.get(s.url, {
+                        responseType: 'stream',
+                        timeout: 3500,
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                            ...(s.behaviorHints && s.behaviorHints.proxyHeaders && s.behaviorHints.proxyHeaders.request ? s.behaviorHints.proxyHeaders.request : {})
+                        }
+                    });
+                    if(r.data && typeof r.data.destroy === 'function') {
+                        r.data.destroy();
+                    }
                 } catch (err) {
+                    // MODIFICATION : Immunité Anti-Bot pour le scanner
                     if (err.response && [403, 503, 520, 521, 522, 523, 524, 525].includes(err.response.status)) {
-                        s.title = `🛡️ Protégé\n` + (s.title || '');
+                        let status = err.response.status;
+                        s.title = `🛡️ Protégé (HTTP ${status})\n` + s.title;
                     } else {
                         s._score -= 100000; 
-                        s.title = `❌ HS\n` + (s.title || '');
+                        
+                        if (err.response) {
+                            let status = err.response.status;
+                            let msg = "Erreur";
+                            if (status === 401) msg = "Accès Refusé / Token Expiré";
+                            else if (status === 404) msg = "Flux Introuvable";
+                            else if (status === 512 || status === 502) msg = "Serveur Injoignable";
+                            else if (status >= 500) msg = "Serveur Planté";
+                            
+                            s.title = `❌ HS (${status} - ${msg})\n` + s.title;
+                        } else if (err.code === 'ENOTFOUND') {
+                            s.title = `❌ HS (Domaine Mort)\n` + s.title;
+                        } else {
+                            s.title = `❌ HS (${err.message})\n` + s.title;
+                        }
                     }
                 }
             }));
+            
+            // Re-tri synchrone final post-scan
             limitedStreams.sort((a, b) => b._score - a._score);
         }
 
-        const finalStreams = limitedStreams.map(s => { let obj = { ...s }; delete obj._score; return obj; });
+        const finalStreams = limitedStreams.map((s) => {
+            let streamObj = { ...s };
+            delete streamObj._score; 
+            return streamObj;
+        });
+        
+        // Stockage dans le cache pour 45 secondes
         streamCache.set(cacheKey, finalStreams);
         setTimeout(() => streamCache.delete(cacheKey), 45000); 
 
@@ -1627,5 +1449,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, async () => {
     console.log(`[INFO] Server started on port ${PORT}`);
-    updateEPG(); setInterval(updateEPG, 3600000); 
+    updateEPG(); 
+    setInterval(updateEPG, 3600000); 
 });
