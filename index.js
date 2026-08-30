@@ -817,7 +817,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.1.2).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.0.0).</p>
             </div>
 
             <div class="tabs">
@@ -1121,9 +1121,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.1.2',
+        version: '1.0.0',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.1.2). Synchronous Health Check, 45s Cache & Strict Routing.',
+        description: 'Meta-Addon IPTV (v1.0.0).',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
