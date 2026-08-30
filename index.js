@@ -1,6 +1,7 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.4.1 
+ * Version: 1.4.2 
+
  */
 
 const express = require('express');
@@ -8,9 +9,13 @@ const axios = require('axios');
 const cors = require('cors');
 const zlib = require('zlib');
 const readline = require('readline');
+const https = require('https');
 
 const app = express();
 app.use(cors());
+
+// Bypass SSL strict pour permettre de requêter des IPs directes en HTTPS (ex: https://13.38.61.112)
+const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 // --- TELEMETRY & CACHING STATE ---
 let isUpdatingEPG = false;
@@ -84,7 +89,7 @@ async function runLiveSportsScanner() {
     try {
         for (let cleanUrl of activeNuvioSources) {
             try {
-                let manifestRes = await axios.get(cleanUrl + '/manifest.json', { timeout: 30000 });
+                let manifestRes = await axios.get(cleanUrl + '/manifest.json', { timeout: 30000, httpsAgent });
                 let catalogs = manifestRes.data.catalogs || [];
                 
                 for (let catalog of catalogs) {
@@ -110,7 +115,7 @@ async function runLiveSportsScanner() {
                     while (hasMore && skip < 5000) { 
                         try {
                             let url = skip > 0 ? `${cleanUrl}/catalog/${catalog.type}/${encodeURIComponent(catalog.id)}/skip=${skip}.json` : `${cleanUrl}/catalog/${catalog.type}/${encodeURIComponent(catalog.id)}.json`;
-                            let res = await axios.get(url, { timeout: 30000 });
+                            let res = await axios.get(url, { timeout: 30000, httpsAgent });
                             
                             if (res.data && res.data.metas && res.data.metas.length > 0) {
                                 res.data.metas.forEach(m => {
@@ -388,7 +393,7 @@ function formatTime(timestamp) {
 async function fetchAndParseEPG(url, isGz) {
     return new Promise(async (resolve, reject) => {
         try {
-            const response = await axios.get(url, { responseType: 'stream', timeout: 60000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+            const response = await axios.get(url, { responseType: 'stream', timeout: 60000, headers: { 'User-Agent': 'Mozilla/5.0' }, httpsAgent });
             let stream = response.data;
             if (isGz) { const unzip = zlib.createGunzip(); stream = stream.pipe(unzip); }
 
@@ -478,7 +483,7 @@ async function fetchCatalogFromSource(sourceInput) {
 
     if (cleanInput.endsWith('.m3u') || cleanInput.endsWith('.m3u8') || cleanInput.includes('get.php') || cleanInput.includes('/live/')) {
         try {
-            const res = await axios.get(cleanInput, { timeout: 10000 });
+            const res = await axios.get(cleanInput, { timeout: 10000, httpsAgent });
             const lines = res.data.split('\n');
             let currentLogo = DEFAULT_POSTER;
             let currentName = '';
@@ -509,7 +514,7 @@ async function fetchCatalogFromSource(sourceInput) {
         if (!cleanUrl.endsWith('manifest.json')) cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
         const base = cleanUrl.replace(/\/manifest\.json$/, '');
 
-        const manifestRes = await axios.get(cleanUrl, { timeout: 6000 });
+        const manifestRes = await axios.get(cleanUrl, { timeout: 6000, httpsAgent });
         const catalogs = manifestRes.data.catalogs || [];
         
         const catalogPromises = catalogs.map(async (catalog) => {
@@ -526,7 +531,7 @@ async function fetchCatalogFromSource(sourceInput) {
                     let currentSkip = skip + (i * 100);
                     let encodedCatId = encodeURIComponent(catalog.id);
                     let url = currentSkip > 0 ? `${base}/catalog/${catalog.type}/${encodedCatId}/skip=${currentSkip}.json` : `${base}/catalog/${catalog.type}/${encodedCatId}.json`;
-                    requests.push(axios.get(url, { timeout: 6000 }).catch(e => null));
+                    requests.push(axios.get(url, { timeout: 6000, httpsAgent }).catch(e => null));
                 }
                 
                 let responses = await Promise.all(requests);
@@ -589,27 +594,27 @@ async function getChannelsForSources(config) {
             let tempChannelsMap = {};
             let sourceReport = {};
 
-            // --- VÉRIFICATION INTELLIGENTE DU LIVE SPORT ADD-ON ---
+            // --- VÉRIFICATION DU LIVE SPORT ADD-ON (Sans filtre de nom) ---
             if (lsInput) {
                 let cleanLs = lsInput.replace(/\/manifest\.json$/, '').trim();
                 if (!activeNuvioSources.has(cleanLs)) {
                     try {
-                        let mRes = await axios.get(cleanLs + '/manifest.json', { timeout: 8000 });
-                        let mName = (mRes.data.name || '').toLowerCase();
-                        if (mName.includes('live sport')) {
+                        let mRes = await axios.get(cleanLs + '/manifest.json', { timeout: 8000, httpsAgent });
+                        // Si le manifest est valide (présence de catalogs), on valide !
+                        if (mRes.data && mRes.data.catalogs) {
                             activeNuvioSources.add(cleanLs);
                             if (liveSportsCache.length === 0 && !isScanningSports) {
                                 runLiveSportsScanner(); 
                             }
-                            sourceReport[cleanLs] = { count: liveSportsCache.length, status: `✅ Validé (${liveSportsCache.length} events)`, isLiveSport: true };
+                            sourceReport[cleanLs] = { count: liveSportsCache.length, status: `✅ Add-on Validé (${liveSportsCache.length} events)`, isLiveSport: true };
                         } else {
-                            sourceReport[cleanLs] = { count: 0, status: `❌ Rejeté (Nom officiel: ${mRes.data.name})`, isLiveSport: true };
+                            sourceReport[cleanLs] = { count: 0, status: `❌ Manifest Invalide`, isLiveSport: true };
                         }
                     } catch(e) {
-                        sourceReport[cleanLs] = { count: 0, status: `❌ Injoignable`, isLiveSport: true };
+                        sourceReport[cleanLs] = { count: 0, status: `❌ Injoignable (${e.message})`, isLiveSport: true };
                     }
                 } else {
-                    sourceReport[cleanLs] = { count: liveSportsCache.length, status: `✅ Validé (${liveSportsCache.length} events)`, isLiveSport: true };
+                    sourceReport[cleanLs] = { count: liveSportsCache.length, status: `✅ Add-on Validé (${liveSportsCache.length} events)`, isLiveSport: true };
                 }
             }
 
@@ -765,7 +770,8 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                 const r = await axios.get(source.directUrl, { 
                     responseType: 'stream',
                     headers: { 'User-Agent': 'Mozilla/5.0' }, 
-                    timeout: 5000 
+                    timeout: 5000,
+                    httpsAgent 
                 });
                 if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
                 testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
@@ -782,7 +788,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
         } else {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
-                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 15000 }); 
+                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 15000, httpsAgent }); 
                 
                 let streamsTested = [];
                 if (r.data && r.data.streams) {
@@ -793,7 +799,8 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                                 const sRes = await axios.get(s.url, { 
                                     responseType: 'stream',
                                     headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase }, 
-                                    timeout: 5000 
+                                    timeout: 5000,
+                                    httpsAgent 
                                 });
                                 if(sRes.data && typeof sRes.data.destroy === 'function') sRes.data.destroy();
                                 streamTest.health = `✅ En ligne (HTTP ${sRes.status})`;
@@ -888,7 +895,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.4.1).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.4.2).</p>
             </div>
 
             <div class="tabs">
@@ -899,11 +906,11 @@ app.get('/', async (req, res) => {
 
             <div id="config" class="tab-content active">
                 
-                <!-- ENCART DÉDIÉ LIVE SPORT -->
-                <div class="section" style="border-color: #e50914;">
-                    <h3 class="section-title" style="color: #e50914;">🔴 Add-on Live Sport</h3>
-                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Collez ici le lien de votre add-on de sport (avec le jeton). S'il s'appelle officiellement "Live Sport", il sera activé avec Fast-Track et recherche croisée.</p>
-                    <input type="text" id="ls_source" value="${liveSportSource}" placeholder="URL manifest.json de l'add-on Sport..." class="export-box" style="background:#222; border:1px solid #e50914; color:#fff;" oninput="saveInputs()">
+                <!-- ENCART DÉDIÉ LIVE SPORT (Désormais harmonisé) -->
+                <div class="section">
+                    <h3 class="section-title">⚽ Add-on Live Sport (Nuvio)</h3>
+                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Collez ici le lien de votre add-on de sport (avec le jeton). Il sera automatiquement validé, incluant Fast-Track et recherche croisée.</p>
+                    <input type="text" id="ls_source" value="${liveSportSource}" placeholder="URL manifest.json de l'add-on Sport..." class="export-box" oninput="saveInputs()">
                 </div>
 
                 <div class="section">
@@ -1170,7 +1177,9 @@ app.get('/', async (req, res) => {
                         if (!r || r.status === 'fetching') {
                             htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⏳ En attente</b></li>\`;
                         } else if (r.isLiveSport) {
-                            htmlList += \`<li><span>\${displaySrc}</span> <b>\${r.status}</b></li>\`;
+                            // On vérifie la présence d'une coche verte pour éviter d'écrire Hors Ligne
+                            let isOk = r.status.includes('✅');
+                            htmlList += \`<li><span>\${displaySrc}</span> <b class="\${isOk ? 'status-ok' : 'status-err'}">\${r.status}</b></li>\`;
                         } else if (r.status === 'ok') {
                             htmlList += \`<li><span>\${displaySrc}</span> <b class="status-ok">✅ \${r.count} flux</b></li>\`;
                         } else if (r.status === 'empty') {
@@ -1256,9 +1265,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.4.1',
+        version: '1.4.2',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.4.1). Smart Live Sport Validation, EPG Cross-Search & Fast-Track.',
+        description: 'Meta-Addon IPTV (v1.4.2). SSL Bypass, Any-Name Live Sport, EPG Cross-Search.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: finalCatalogs,
@@ -1433,7 +1442,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
                 const streamRes = await axios.get(targetUrl, {
                     headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }, 
-                    timeout: 15000 
+                    timeout: 15000,
+                    httpsAgent 
                 });
                 
                 if (streamRes.data && streamRes.data.streams) {
@@ -1594,7 +1604,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                 try {
                     const r = await axios.get(s.url, {
                         responseType: 'stream',
-                        timeout: 5000, 
+                        timeout: 5000,
+                        httpsAgent,
                         headers: {
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                             ...(s.behaviorHints && s.behaviorHints.proxyHeaders && s.behaviorHints.proxyHeaders.request ? s.behaviorHints.proxyHeaders.request : {})
@@ -1650,4 +1661,4 @@ app.listen(PORT, async () => {
     console.log(`[INFO] Server started on port ${PORT}`);
     updateEPG(); 
     setInterval(updateEPG, 3600000); 
-});
+});d
