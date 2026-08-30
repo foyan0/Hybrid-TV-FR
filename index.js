@@ -1,7 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.1.2 (Optimized 45s Cache + Anti-Bot Immunity)
- * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing.
+ * Version: 1.1.2
  */
 
 const express = require('express');
