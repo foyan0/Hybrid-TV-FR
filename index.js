@@ -187,7 +187,6 @@ function getChannelData(rawName) {
             return { id: 'hyb_aut_canal_elles', name: 'Canal+ Elles', categories: ['autres'], index: 1000 };
         }
 
-        if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 100 };
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
         
         if (c.includes('LIVE')) {
@@ -266,7 +265,6 @@ function getChannelData(rawName) {
     if (c.startsWith('TFX') || c === 'NT1') return { id: 'hyb_tnt_11', name: 'TFX', categories: ['tnt'], index: 11 };
     if (c.startsWith('NRJ12') || c.startsWith('NRJ')) return { id: 'hyb_tnt_12', name: 'NRJ 12', categories: ['tnt'], index: 12 };
     if (c.includes('PUBLICSENAT') || c === 'LCP') return { id: 'hyb_tnt_13', name: 'LCP / Public Sénat', categories: ['tnt', 'info'], index: 13 };
-    if (c.includes('GULLI')) return { id: 'hyb_jeu_gulli', name: 'Gulli', categories: ['jeunesse', 'tnt'], index: 18 };
     if (c.includes('CSTAR')) return { id: 'hyb_tnt_17', name: 'CStar', categories: ['tnt', 'musique'], index: 17 };
     if (c.includes('6TER')) return { id: 'hyb_tnt_22', name: '6ter', categories: ['tnt'], index: 22 };
     if (c.includes('RMCSTORY') || c.includes('NUMERO23')) return { id: 'hyb_tnt_23', name: 'RMC Story', categories: ['tnt', 'decouverte'], index: 23 };
@@ -277,19 +275,36 @@ function getChannelData(rawName) {
     if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
     if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
 
-    if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 150 };
-    if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
-    if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 3 };
-    if (c.includes('DISNEYJR') || c.includes('DISNEYJUNIOR') || (c.includes('DISNEY') && c.includes('JR'))) return { id: 'hyb_jeu_disneyjr', name: 'Disney Junior', categories: ['jeunesse'], index: 5 };
-    if (c.includes('DISNEY') && c.includes('PLUS1')) return { id: 'hyb_jeu_disney_plus1', name: 'Disney Channel +1', categories: ['jeunesse'], index: 50 };
-    if (c.includes('DISNEY')) return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 2 };
-    if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 5 };
-    if (c.includes('BOING')) return { id: 'hyb_jeu_boing', name: 'Boing', categories: ['jeunesse'], index: 6 };
-    if (c.includes('NICKELODEON') || c.includes('NICK')) return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 7 };
-    if (c.includes('TIJI')) return { id: 'hyb_jeu_tiji', name: 'Tiji', categories: ['jeunesse'], index: 9 };
-    if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 10 };
-    if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 11 };
-    if (c.includes('PIWI')) return { id: 'hyb_jeu_piwi', name: 'Piwi+', categories: ['jeunesse'], index: 100 };
+    // --- CLASSEMENT JEUNESSE ORDONNÉ ---
+    if (c.includes('CARTOONNETWORK') || c === 'CARTOON') return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
+    
+    // Logique "Disney" stricte
+    if (c.includes('DISNEY')) {
+        if (c.includes('XD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 3 };
+        if (c.includes('JR') || c.includes('JUNIOR')) return { id: 'hyb_jeu_disneyjr', name: 'Disney Junior', categories: ['jeunesse'], index: 9 };
+        if (c.includes('PLUS1')) return { id: 'hyb_jeu_disney_plus1', name: 'Disney Channel +1', categories: ['jeunesse'], index: 50 };
+        return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 2 };
+    }
+
+    // Logique "Nickelodeon" stricte
+    if (c.includes('NICKELODEON') || c.includes('NICK')) {
+        if (c.includes('TOONS') || c.includes('TOON')) return { id: 'hyb_jeu_nicktoons', name: 'Nicktoons', categories: ['jeunesse'], index: 11 };
+        if (c.includes('TEEN')) return { id: 'hyb_jeu_nick_teen', name: 'Nickelodeon Teen', categories: ['jeunesse'], index: 12 };
+        if (c.includes('JR') || c.includes('JUNIOR')) return { id: 'hyb_jeu_nick_jr', name: 'Nickelodeon Junior', categories: ['jeunesse'], index: 13 };
+        if (c.includes('PLUS1') || c.includes('1H')) return { id: 'hyb_jeu_nick_plus1', name: 'Nickelodeon +1', categories: ['jeunesse'], index: 14 };
+        return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 4 }; 
+    }
+
+    if (c.includes('GULLI')) return { id: 'hyb_jeu_gulli', name: 'Gulli', categories: ['jeunesse', 'tnt'], index: 5 };
+    if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 6 };
+    if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 7 };
+    if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 8 };
+    if (c.includes('BOING')) return { id: 'hyb_jeu_boing', name: 'Boing', categories: ['jeunesse'], index: 10 };
+    if (c.includes('TIJI')) return { id: 'hyb_jeu_tiji', name: 'Tiji', categories: ['jeunesse'], index: 15 };
+    if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 16 };
+    if (c.includes('PIWI')) return { id: 'hyb_jeu_piwi', name: 'Piwi+', categories: ['jeunesse'], index: 17 };
+    if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 18 };
+    // -----------------------------------
 
     if (c.includes('RFMTV') || c.includes('RFM')) return { id: 'hyb_mus_rfm', name: 'RFM TV', categories: ['musique'], index: 34 }; 
     if (c.includes('MTV')) return { id: 'hyb_mus_mtv', name: 'MTV', categories: ['musique'], index: 10 };
@@ -689,10 +704,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                 if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
                 testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
             } catch(e) {
-                // MODIFICATION : Immunité Anti-Bot pour le Debug M3U
-                if(e.response && [403, 503, 520, 521, 522, 523, 524, 525].includes(e.response.status)) {
-                    testRes.httpStatus = `✅ Protégé (HTTP ${e.response.status} - Anti-bot)`;
-                } else if(e.response && (e.response.status === 401)) {
+                if(e.response && (e.response.status === 401 || e.response.status === 403)) {
                     testRes.httpStatus = `❌ Erreur: HTTP ${e.response.status} (Accès Refusé / Token Expiré)`;
                 } else {
                     testRes.httpStatus = `❌ Erreur: ${e.response ? 'HTTP ' + e.response.status : e.message}`;
@@ -718,10 +730,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                                 if(sRes.data && typeof sRes.data.destroy === 'function') sRes.data.destroy();
                                 streamTest.health = `✅ En ligne (HTTP ${sRes.status})`;
                             } catch (err) {
-                                // MODIFICATION : Immunité Anti-Bot pour le Debug Add-on
-                                if(err.response && [403, 503, 520, 521, 522, 523, 524, 525].includes(err.response.status)) {
-                                    streamTest.health = `✅ Protégé (HTTP ${err.response.status} - Anti-bot)`;
-                                } else if(err.response && (err.response.status === 401)) {
+                                if(err.response && (err.response.status === 401 || err.response.status === 403)) {
                                     streamTest.health = `❌ Échec: HTTP ${err.response.status} (Accès Refusé / Token Expiré)`;
                                 } else {
                                     streamTest.health = `❌ Échec: ${err.response ? 'HTTP ' + err.response.status : err.message}`;
@@ -1275,6 +1284,9 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         if (channel.id === 'hyb_dec_discovery' && (nStream.includes('INVESTIGATION') || nStream.includes('ID') || nStream.includes('SCIENCE'))) penalty += 5000;
                         if (channel.id === 'hyb_dec_investigation' && (!nStream.includes('INVESTIGATION') && !nStream.includes('ID'))) penalty += 5000;
                         if (channel.id === 'hyb_jeu_disney' && (nStream.includes('JR') || nStream.includes('JUNIOR') || nStream.includes('XD') || nStream.includes('PLUS1'))) penalty += 5000;
+                        
+                        // NOUVELLE PENALITE NICKELODEON (Inclus TOONS)
+                        if (channel.id === 'hyb_jeu_nick' && (nStream.includes('TEEN') || nStream.includes('JR') || nStream.includes('JUNIOR') || nStream.includes('PLUS1') || nStream.includes('TOONS') || nStream.includes('TOON'))) penalty += 5000;
 
                         if (channel.id.startsWith('hyb_sport_bein')) {
                             let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1'; let isTargetMax = channel.id.includes('max');
@@ -1402,27 +1414,21 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         r.data.destroy();
                     }
                 } catch (err) {
-                    // MODIFICATION : Immunité Anti-Bot pour le scanner
-                    if (err.response && [403, 503, 520, 521, 522, 523, 524, 525].includes(err.response.status)) {
+                    s._score -= 100000; 
+                    
+                    if (err.response) {
                         let status = err.response.status;
-                        s.title = `🛡️ Protégé (HTTP ${status})\n` + s.title;
-                    } else {
-                        s._score -= 100000; 
+                        let msg = "Erreur";
+                        if (status === 403 || status === 401) msg = "Accès Refusé / Token Expiré";
+                        else if (status === 404) msg = "Flux Introuvable";
+                        else if (status === 512 || status === 502) msg = "Serveur Injoignable";
+                        else if (status >= 500) msg = "Serveur Planté";
                         
-                        if (err.response) {
-                            let status = err.response.status;
-                            let msg = "Erreur";
-                            if (status === 401) msg = "Accès Refusé / Token Expiré";
-                            else if (status === 404) msg = "Flux Introuvable";
-                            else if (status === 512 || status === 502) msg = "Serveur Injoignable";
-                            else if (status >= 500) msg = "Serveur Planté";
-                            
-                            s.title = `❌ HS (${status} - ${msg})\n` + s.title;
-                        } else if (err.code === 'ENOTFOUND') {
-                            s.title = `❌ HS (Domaine Mort)\n` + s.title;
-                        } else {
-                            s.title = `❌ HS (${err.message})\n` + s.title;
-                        }
+                        s.title = `❌ HS (${status} - ${msg})\n` + s.title;
+                    } else if (err.code === 'ENOTFOUND') {
+                        s.title = `❌ HS (Domaine Mort)\n` + s.title;
+                    } else {
+                        s.title = `❌ HS (${err.message})\n` + s.title;
                     }
                 }
             }));
