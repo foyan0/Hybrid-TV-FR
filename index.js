@@ -699,7 +699,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                 const r = await axios.get(source.directUrl, { 
                     responseType: 'stream',
                     headers: { 'User-Agent': 'Mozilla/5.0' }, 
-                    timeout: 3500
+                    timeout: 4500
                 });
                 if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
                 testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
@@ -1248,7 +1248,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
                 const streamRes = await axios.get(targetUrl, {
                     headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }, 
-                    timeout: 4500 
+                    timeout: 5000 
                 });
                 
                 if (streamRes.data && streamRes.data.streams) {
@@ -1397,14 +1397,14 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         allStreams.sort((a, b) => b._score - a._score);
         let limitedStreams = allStreams.slice(0, 15);
 
-        // --- SCANNER SYNCHRONE DE LIENS MORTS ---
+// --- SCANNER SYNCHRONE DE LIENS MORTS ---
         if (limitedStreams.length > 0) {
             await Promise.all(limitedStreams.map(async (s) => {
                 if (!s.url) return;
                 try {
                     const r = await axios.get(s.url, {
                         responseType: 'stream',
-                        timeout: 3500,
+                        timeout: 5000, // <-- Ajusté à 5000ms
                         headers: {
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                             ...(s.behaviorHints && s.behaviorHints.proxyHeaders && s.behaviorHints.proxyHeaders.request ? s.behaviorHints.proxyHeaders.request : {})
@@ -1414,21 +1414,27 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         r.data.destroy();
                     }
                 } catch (err) {
-                    s._score -= 100000; 
-                    
-                    if (err.response) {
+                    // IMMUNITÉ CLOUDFLARE ET ANTI-BOTS
+                    if (err.response && [403, 503, 520, 521, 522, 523, 524, 525].includes(err.response.status)) {
                         let status = err.response.status;
-                        let msg = "Erreur";
-                        if (status === 403 || status === 401) msg = "Accès Refusé / Token Expiré";
-                        else if (status === 404) msg = "Flux Introuvable";
-                        else if (status === 512 || status === 502) msg = "Serveur Injoignable";
-                        else if (status >= 500) msg = "Serveur Planté";
-                        
-                        s.title = `❌ HS (${status} - ${msg})\n` + s.title;
-                    } else if (err.code === 'ENOTFOUND') {
-                        s.title = `❌ HS (Domaine Mort)\n` + s.title;
+                        s.title = `🛡️ Protégé (HTTP ${status})\n` + s.title;
                     } else {
-                        s.title = `❌ HS (${err.message})\n` + s.title;
+                        s._score -= 100000; 
+                        
+                        if (err.response) {
+                            let status = err.response.status;
+                            let msg = "Erreur";
+                            if (status === 401) msg = "Accès Refusé / Token Expiré";
+                            else if (status === 404) msg = "Flux Introuvable";
+                            else if (status === 512 || status === 502) msg = "Serveur Injoignable";
+                            else if (status >= 500) msg = "Serveur Planté";
+                            
+                            s.title = `❌ HS (${status} - ${msg})\n` + s.title;
+                        } else if (err.code === 'ENOTFOUND') {
+                            s.title = `❌ HS (Domaine Mort)\n` + s.title;
+                        } else {
+                            s.title = `❌ HS (${err.message})\n` + s.title;
+                        }
                     }
                 }
             }));
@@ -1443,9 +1449,11 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             return streamObj;
         });
         
-        // Stockage dans le cache pour 45 secondes
-        streamCache.set(cacheKey, finalStreams);
-        setTimeout(() => streamCache.delete(cacheKey), 45000); 
+        // SÉCURITÉ ANTI-VIDE : Ne met en cache QUE si on a trouvé des flux
+        if (finalStreams.length > 0) {
+            streamCache.set(cacheKey, finalStreams);
+            setTimeout(() => streamCache.delete(cacheKey), 45000); 
+        }
 
         res.json({ streams: finalStreams });
     } catch (err) { res.json({ streams: [] }); }
