@@ -1,6 +1,6 @@
 /**
  * HybridTV
- * Version: 1.0.1
+ * Version: 1.0.2 (Optimized)
  */
 
 const express = require('express');
@@ -275,10 +275,8 @@ function getChannelData(rawName) {
     if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
     if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
 
-    // --- CLASSEMENT JEUNESSE ORDONNÉ ---
     if (c.includes('CARTOONNETWORK') || c === 'CARTOON') return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
     
-    // Logique "Disney" stricte
     if (c.includes('DISNEY')) {
         if (c.includes('XD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 3 };
         if (c.includes('JR') || c.includes('JUNIOR')) return { id: 'hyb_jeu_disneyjr', name: 'Disney Junior', categories: ['jeunesse'], index: 9 };
@@ -286,7 +284,6 @@ function getChannelData(rawName) {
         return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 2 };
     }
 
-    // Logique "Nickelodeon" stricte
     if (c.includes('NICKELODEON') || c.includes('NICK')) {
         if (c.includes('TOONS') || c.includes('TOON')) return { id: 'hyb_jeu_nicktoons', name: 'Nicktoons', categories: ['jeunesse'], index: 11 };
         if (c.includes('TEEN')) return { id: 'hyb_jeu_nick_teen', name: 'Nickelodeon Teen', categories: ['jeunesse'], index: 12 };
@@ -304,7 +301,6 @@ function getChannelData(rawName) {
     if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 16 };
     if (c.includes('PIWI')) return { id: 'hyb_jeu_piwi', name: 'Piwi+', categories: ['jeunesse'], index: 17 };
     if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 18 };
-    // -----------------------------------
 
     if (c.includes('RFMTV') || c.includes('RFM')) return { id: 'hyb_mus_rfm', name: 'RFM TV', categories: ['musique'], index: 34 }; 
     if (c.includes('MTV')) return { id: 'hyb_mus_mtv', name: 'MTV', categories: ['musique'], index: 10 };
@@ -499,7 +495,7 @@ async function fetchCatalogFromSource(sourceInput) {
             let hasMore = true; 
             let skip = 0;
             const maxSkip = 50000; 
-            const batchSize = 3;   
+            const batchSize = 3;    
             let seenIds = new Set(); 
 
             while (hasMore && skip < maxSkip) {
@@ -554,12 +550,13 @@ async function getChannelsForSources(sourcesList) {
         return cacheObj.data;
     }
 
-    if (cacheObj.status === 'syncing') {
-        while (channelsCache[cacheKey] && channelsCache[cacheKey].status === 'syncing') {
-            await new Promise(r => setTimeout(r, 400));
-        }
-        return channelsCache[cacheKey] ? channelsCache[cacheKey].data : [];
+    // Sécurité Anti-Deadlock avec compteur de tentatives
+    let attempts = 0;
+    while (cacheObj.status === 'syncing' && attempts < 25) {
+        await new Promise(r => setTimeout(r, 400));
+        attempts++;
     }
+    if (cacheObj.status === 'syncing') cacheObj.status = 'idle';
 
     cacheObj.status = 'syncing';
 
@@ -626,9 +623,12 @@ async function getChannelsForSources(sourcesList) {
         }
     })();
 
-    while (cacheObj.status === 'syncing') {
+    attempts = 0;
+    while (cacheObj.status === 'syncing' && attempts < 25) {
         await new Promise(r => setTimeout(r, 400));
+        attempts++;
     }
+    if (cacheObj.status === 'syncing') cacheObj.status = 'idle';
     return cacheObj.data;
 }
 
@@ -704,10 +704,11 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                 if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
                 testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
             } catch(e) {
-                if(e.response && (e.response.status === 401 || e.response.status === 403)) {
-                    testRes.httpStatus = `❌ Erreur: HTTP ${e.response.status} (Accès Refusé / Token Expiré)`;
+                const status = e.response ? e.response.status : null;
+                if(status === 401 || status === 403) {
+                    testRes.httpStatus = `❌ Erreur: HTTP ${status} (Accès Refusé / Token Expiré)`;
                 } else {
-                    testRes.httpStatus = `❌ Erreur: ${e.response ? 'HTTP ' + e.response.status : e.message}`;
+                    testRes.httpStatus = `❌ Erreur: ${status ? 'HTTP ' + status : e.message}`;
                 }
             }
             inspectionResults.push(testRes);
@@ -730,10 +731,11 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                                 if(sRes.data && typeof sRes.data.destroy === 'function') sRes.data.destroy();
                                 streamTest.health = `✅ En ligne (HTTP ${sRes.status})`;
                             } catch (err) {
-                                if(err.response && (err.response.status === 401 || err.response.status === 403)) {
-                                    streamTest.health = `❌ Échec: HTTP ${err.response.status} (Accès Refusé / Token Expiré)`;
+                                const status = err.response ? err.response.status : null;
+                                if(status === 401 || status === 403) {
+                                    streamTest.health = `❌ Échec: HTTP ${status} (Accès Refusé / Token Expiré)`;
                                 } else {
-                                    streamTest.health = `❌ Échec: ${err.response ? 'HTTP ' + err.response.status : err.message}`;
+                                    streamTest.health = `❌ Échec: ${status ? 'HTTP ' + status : err.message}`;
                                 }
                             }
                         } else {
@@ -817,8 +819,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.0.1
-                ).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.0.2).</p>
             </div>
 
             <div class="tabs">
@@ -1122,9 +1123,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.0.1',
+        version: '1.0.2',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.0.1).',
+        description: 'Meta-Addon IPTV (v1.0.2).',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1209,9 +1210,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
     
-    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-    const clientUserAgent = req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
-
     serverStats.channelClicks[req.params.id] = (serverStats.channelClicks[req.params.id] || 0) + 1;
 
     const cacheKey = req.params.id + '|' + config.sources.join(',');
@@ -1223,7 +1221,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
     let channelsData = await getChannelsForSources(config.sources);
     
-    // SMART CACHE AUGMENTÉ À 45 SECONDES
+    // Correction de l'en-tête cache (syntaxe unique)
     res.setHeader('Cache-Control', 'max-age=45, public'); 
 
     const channel = channelsData.find(c => c.id === req.params.id);
@@ -1254,7 +1252,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                 
                 if (streamRes.data && streamRes.data.streams) {
                     return streamRes.data.streams.map((s, idx) => {
-                        let qual = "SD";
                         let score = 0;
                         
                         let rawName = s.name || '';
@@ -1286,7 +1283,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         if (channel.id === 'hyb_dec_investigation' && (!nStream.includes('INVESTIGATION') && !nStream.includes('ID'))) penalty += 5000;
                         if (channel.id === 'hyb_jeu_disney' && (nStream.includes('JR') || nStream.includes('JUNIOR') || nStream.includes('XD') || nStream.includes('PLUS1'))) penalty += 5000;
                         
-                        // NOUVELLE PENALITE NICKELODEON (Inclus TOONS)
                         if (channel.id === 'hyb_jeu_nick' && (nStream.includes('TEEN') || nStream.includes('JR') || nStream.includes('JUNIOR') || nStream.includes('PLUS1') || nStream.includes('TOONS') || nStream.includes('TOON'))) penalty += 5000;
 
                         if (channel.id.startsWith('hyb_sport_bein')) {
@@ -1324,10 +1320,11 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         
                         let qScore = (4 - priorityIndex) * 1000; 
 
+                        // Déclaration sécurisée de qualStr pour éviter ReferenceError
+                        let qualStr = "SD";
                         if (detectedQual === '4K') qualStr = "4K (UHD)";
                         else if (detectedQual === '1080p') qualStr = "Full HD (1080p)";
                         else if (detectedQual === '720p') qualStr = "HD (720p)";
-                        else qualStr = "SD";
 
                         if (isBeluchon) {
                             qualStr = "Source Officielle Légale (HD)";
@@ -1398,47 +1395,49 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         allStreams.sort((a, b) => b._score - a._score);
         let limitedStreams = allStreams.slice(0, 15);
 
-// --- SCANNER SYNCHRONE DE LIENS MORTS ---
+        // --- SCANNER SYNCHRONE OPTIMISÉ PAR LOTS (CONCURRENCE LIMITÉE) ---
         if (limitedStreams.length > 0) {
-            await Promise.all(limitedStreams.map(async (s) => {
-                if (!s.url) return;
-                try {
-                    const r = await axios.get(s.url, {
-                        responseType: 'stream',
-                        timeout: 5000, // <-- Ajusté à 5000ms
-                        headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                            ...(s.behaviorHints && s.behaviorHints.proxyHeaders && s.behaviorHints.proxyHeaders.request ? s.behaviorHints.proxyHeaders.request : {})
+            const batchSize = 3; // Traitement par lots de 3 pour éviter le blocage / rate-limit
+            for (let i = 0; i < limitedStreams.length; i += batchSize) {
+                const batch = limitedStreams.slice(i, i + batchSize);
+                await Promise.all(batch.map(async (s) => {
+                    if (!s.url) return;
+                    try {
+                        const r = await axios.get(s.url, {
+                            responseType: 'stream',
+                            timeout: 4000, 
+                            headers: {
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                                ...(s.behaviorHints && s.behaviorHints.proxyHeaders && s.behaviorHints.proxyHeaders.request ? s.behaviorHints.proxyHeaders.request : {})
+                            }
+                        });
+                        if(r.data && typeof r.data.destroy === 'function') {
+                            r.data.destroy();
                         }
-                    });
-                    if(r.data && typeof r.data.destroy === 'function') {
-                        r.data.destroy();
-                    }
-                } catch (err) {
-                    // IMMUNITÉ CLOUDFLARE ET ANTI-BOTS
-                    if (err.response && [403, 458, 503, 520, 521, 522, 523, 524, 525].includes(err.response.status)) {
-                        let status = err.response.status;
-                        s.title = `🛡️ Protégé (HTTP ${status})\n` + s.title;
-                    } else {
-                        s._score -= 100000; 
-                        
-                        if (err.response) {
-                            let status = err.response.status;
-                            let msg = "Erreur";
-                            if (status === 401) msg = "Accès Refusé / Token Expiré";
-                            else if (status === 404) msg = "Flux Introuvable";
-                            else if (status === 512 || status === 502) msg = "Serveur Injoignable";
-                            else if (status >= 500) msg = "Serveur Planté";
-                            
-                            s.title = `❌ HS (${status} - ${msg})\n` + s.title;
-                        } else if (err.code === 'ENOTFOUND') {
-                            s.title = `❌ HS (Domaine Mort)\n` + s.title;
+                    } catch (err) {
+                        const status = err.response ? err.response.status : null;
+                        if (status && [403, 458, 503, 520, 521, 522, 523, 524, 525].includes(status)) {
+                            s.title = `🛡️ Protégé (HTTP ${status})\n` + s.title;
                         } else {
-                            s.title = `❌ HS (${err.message})\n` + s.title;
+                            s._score -= 100000; 
+                            
+                            if (status) {
+                                let msg = "Erreur";
+                                if (status === 401) msg = "Accès Refusé / Token Expiré";
+                                else if (status === 404) msg = "Flux Introuvable";
+                                else if (status === 512 || status === 502) msg = "Serveur Injoignable";
+                                else if (status >= 500) msg = "Serveur Planté";
+                                
+                                s.title = `❌ HS (${status} - ${msg})\n` + s.title;
+                            } else if (err.code === 'ENOTFOUND') {
+                                s.title = `❌ HS (Domaine Mort)\n` + s.title;
+                            } else {
+                                s.title = `❌ HS (${err.message})\n` + s.title;
+                            }
                         }
                     }
-                }
-            }));
+                }));
+            }
             
             // Re-tri synchrone final post-scan
             limitedStreams.sort((a, b) => b._score - a._score);
@@ -1450,7 +1449,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             return streamObj;
         });
         
-        // SÉCURITÉ ANTI-VIDE : Ne met en cache QUE si on a trouvé des flux
         if (finalStreams.length > 0) {
             streamCache.set(cacheKey, finalStreams);
             setTimeout(() => streamCache.delete(cacheKey), 45000); 
