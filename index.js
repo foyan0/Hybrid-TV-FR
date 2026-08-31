@@ -1,6 +1,6 @@
 /**
  * HybridTV
- * Version: 1.0.13 (Tri 3 Niveaux, Sémantique Intégrale, Dashboard Complet & Warm-up Prioritaire)
+ * Version: 1.0.14 (Code Intégral Définitif : Sémantique Complète, Dashboard Dashboard Dashboard Complet, Health-Check 3 Niveaux & Codes d'Erreur Granulaires)
  */
 
 const express = require('express');
@@ -20,7 +20,8 @@ let channelsCache = {};
 let streamCache = new Map(); 
 let streamResponseCache = new Map(); 
 let sourceBlocklist = new Map();
-let streamHealthStates = new Map(); // Stocke l'état de santé à 3 niveaux : 'healthy', 'uncertain', 'dead'
+let streamHealthStates = new Map(); // 'healthy', 'uncertain', 'dead'
+let streamErrorCodes = new Map();   // Stocke le code d'erreur exact (ex: 404, 403, 504)
 
 const serverStats = {
     startTime: Date.now(),
@@ -126,7 +127,7 @@ function extractMatchEvent(rawName) {
     return null;
 }
 
-// --- TABLE DE ROUTAGE SÉMANTIQUE INTÉGRALE ---
+// --- TABLE DE ROUTAGE SÉMANTIQUE INTÉGRALE (100% INTACTE, SANS TRONCATURE) ---
 function getChannelData(rawName) {
     if (!rawName) return null;
     let eventData = extractMatchEvent(rawName);
@@ -144,7 +145,7 @@ function getChannelData(rawName) {
 
     let cCheck = n.replace(/[^A-Z0-9]/g, '');
 
-    // --- EXCEPTIONS SÉMANTIQUES STRICTES ---
+    // --- EXCEPTIONS SÉMANTIQUES STRICTES (ISOLATION PRÉVENTIVE ABSOLUE) ---
     if (cCheck.includes('CANALJ') || cCheck === 'CJ') return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse'], index: 6 };
     if (cCheck.includes('CANALSAVOIR') || cCheck.includes('SAVOIR')) return { id: 'hyb_dec_savoir', name: 'Canal Savoir', categories: ['decouverte'], index: 40 };
     if (cCheck.includes('CANALALPHA') || cCheck.includes('ALPHA')) return { id: 'hyb_aut_canalalpha', name: 'Canal Alpha', categories: ['autres'], index: 150 };
@@ -206,14 +207,18 @@ function getChannelData(rawName) {
         if (c.includes('ELLES') || c.includes('LCENTRE') || c.includes('CENTRE') || c === 'CANALL' || c.includes('REGIONAL') || c.includes('LOCAL') || c.includes('OUTREMER')) {
             return { id: 'hyb_aut_canal_elles', name: 'Canal+ Elles', categories: ['autres'], index: 1000 };
         }
+
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
+        
         if (c.includes('LIVE')) {
             let m = c.match(/LIVE(\d+)/); let num = m ? m[1] : '1';
             return { id: 'hyb_canal_live_' + num, name: 'Canal+ Live ' + num, categories: ['canal'], index: 200 + parseInt(num, 10) };
         }
+
         if (c.includes('SPORT360') || c.includes('360')) return { id: 'hyb_canal_sport360', name: 'Canal+ Sport 360', categories: ['canal', 'sports'], index: 90 };
         if (c.includes('FOOT')) return { id: 'hyb_canal_foot', name: 'Canal+ Foot', categories: ['canal', 'sports'], index: 91 };
         if (c.includes('SPORT')) return { id: 'hyb_canal_sport', name: 'Canal+ Sport', categories: ['canal', 'sports'], index: 94 };
+        
         if (c.includes('CINEMA') || c.includes('CNEMA')) return { id: 'hyb_canal_cinema', name: 'Canal+ Cinéma', categories: ['canal', 'cinema'], index: 2 };
         if (c.includes('GRANDECRAN') || c.includes('ECRAN')) return { id: 'hyb_canal_grandecran', name: 'Canal+ Grand Écran', categories: ['canal', 'cinema'], index: 3 };
         if (c.includes('SERIES') || c.includes('SERIE')) return { id: 'hyb_canal_series', name: 'Canal+ Séries', categories: ['canal', 'cinema'], index: 4 };
@@ -221,6 +226,7 @@ function getChannelData(rawName) {
         if (c.includes('DOC')) return { id: 'hyb_canal_docs', name: 'Canal+ Docs', categories: ['canal', 'decouverte'], index: 6 };
         if (c.includes('DECALE')) return { id: 'hyb_canal_decale', name: 'Canal+ Décalé', categories: ['canal'], index: 14 };
         if (c.includes('FAMILY')) return { id: 'hyb_canal_family', name: 'Canal+ Family', categories: ['canal'], index: 15 };
+        
         return { id: 'hyb_canal_cplus', name: 'Canal+', categories: ['canal'], index: 1 };
     }
 
@@ -463,7 +469,7 @@ async function updateEPG() {
     } finally { isUpdatingEPG = false; }
 }
 
-// --- WORKER DE SANTÉ EN ARRIÈRE-PLAN (3 NIVEAUX D'ÉTAT) ---
+// --- WORKER DE SANTÉ EN ARRIÈRE-PLAN (3 NIVEAUX D'ÉTAT & CODES D'ERREUR PRÉCIS) ---
 async function backgroundHealthChecker() {
     for (const [key, cacheObj] of Object.entries(channelsCache)) {
         if (!cacheObj.data) continue;
@@ -478,14 +484,15 @@ async function backgroundHealthChecker() {
                     const duration = Date.now() - start;
                     
                     if (r.status < 400) {
-                        // Niveau 1 : Sain ou Niveau 2 : Lent/Incertain si la réponse prend plus de 2.5s
                         streamHealthStates.set(targetUrl, duration > 2500 ? 'uncertain' : 'healthy');
+                        streamErrorCodes.delete(targetUrl);
                     } else {
-                        // Niveau 3 : Down
                         streamHealthStates.set(targetUrl, 'dead');
+                        streamErrorCodes.set(targetUrl, r.status);
                     }
                 } catch (e) {
                     streamHealthStates.set(targetUrl, 'dead');
+                    streamErrorCodes.set(targetUrl, e.response ? e.response.status : 504);
                 }
             }
         }
@@ -850,7 +857,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.0.13)</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.0.14)</p>
             </div>
 
             <div class="tabs">
@@ -1144,9 +1151,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.0.13',
+        version: '1.0.14',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV Sécurisé (v1.0.13).',
+        description: 'Meta-Addon IPTV Sécurisé (v1.0.14).',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1227,7 +1234,7 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
     res.json({ meta: { id: channel.id, type: 'tv', name: channel.displayName, poster: channel.poster, posterShape: 'square', description: descriptionText } });
 });
 
-// --- ROUTE STREAM (AVEC SYSTÈME DE SANTÉ À 3 NIVEAUX : SAIN, INCERTAIN, DEAD) ---
+// --- ROUTE STREAM ULTRA-RAPIDE (TRI 3 NIVEAUX + DIAGNOSTIC ERREURS GRANULAIRES) ---
 app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
@@ -1260,16 +1267,25 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             if (source.type === 'm3u') {
                 if (!source.directUrl || !isValidHttpUrl(source.directUrl)) return [];
                 
-                // Application du système de santé à 3 niveaux pour les flux M3U directs
                 let healthState = streamHealthStates.get(source.directUrl) || 'healthy';
                 let healthPenalty = 0;
-                if (healthState === 'uncertain') healthPenalty = 2000;
-                else if (healthState === 'dead') healthPenalty = 100000;
+                let errorTag = "";
+                
+                if (healthState === 'uncertain') {
+                    healthPenalty = 2000;
+                    errorTag = "⚠️ LENT [ERR-TIMEOUT_LATENCY]";
+                } else if (healthState === 'dead') {
+                    healthPenalty = 100000;
+                    let code = streamErrorCodes.get(source.directUrl) || 504;
+                    errorTag = `❌ HS [ERR-${code}-DOWN]`;
+                }
+
+                let titleFormatted = errorTag ? `${errorTag} - ${source.originalName || "Source M3U"}` : (source.originalName || "Source M3U");
 
                 return [{
                     url: source.directUrl,
                     name: isBeluchon ? `▶ Source Officielle (HD)` : `▶ Full HD (1080p)`,
-                    title: source.originalName || "Source M3U",
+                    title: titleFormatted,
                     _score: (isBeluchon ? 4500 : 1500) - healthPenalty,
                     _originalTitle: source.originalName || "Source M3U",
                     behaviorHints: { proxyHeaders: { request: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase || 'https://vavoo.to/' } } }
@@ -1333,10 +1349,17 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             qScore = 5000; 
                         }
 
-                        // Application de l'état de santé à 3 niveaux sur l'URL directe du stream si connue
+                        // Gestion de la santé du stream direct s'il est connu dans le health cache
                         let healthState = streamHealthStates.get(s.url) || 'healthy';
-                        if (healthState === 'uncertain') penalty += 2000;
-                        else if (healthState === 'dead') penalty += 100000;
+                        let errorTag = "";
+                        if (healthState === 'uncertain') {
+                            penalty += 2000;
+                            errorTag = "⚠️ LENT [ERR-TIMEOUT_LATENCY]";
+                        } else if (healthState === 'dead') {
+                            penalty += 100000;
+                            let code = streamErrorCodes.get(s.url) || 504;
+                            errorTag = `❌ HS [ERR-${code}-DOWN]`;
+                        }
 
                         score += qScore;
                         if (up.match(/\bFR\b/) || up.match(/\bVF\b/) || up.includes('FRENCH') || up.includes('TRUEFRENCH')) score += 300; 
@@ -1384,7 +1407,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         outStream.name = s.name ? s.name : fallbackName;
                         
                         let combinedTitle = s.title || s.description || "";
-                        outStream.title = combinedTitle ? `${combinedTitle}\n▶ ${qualStr}` : `▶ ${qualStr}`;
+                        let finalTitlePart = combinedTitle ? `${combinedTitle}\n▶ ${qualStr}` : `▶ ${qualStr}`;
+                        outStream.title = errorTag ? `${errorTag} - ${finalTitlePart}` : finalTitlePart;
                         outStream._score = score;
                         return outStream;
                     }).filter(Boolean);
@@ -1421,7 +1445,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, async () => {
-    console.log(`[INFO] Server started on port ${PORT} (HybridTV v1.0.13 STABLE)`);
+    console.log(`[INFO] Server started on port ${PORT} (HybridTV v1.0.14 STABLE & DIAGNOSTIC)`);
     updateEPG(); 
     setInterval(updateEPG, 3600000); 
 });
