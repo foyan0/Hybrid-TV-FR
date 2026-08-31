@@ -1,6 +1,6 @@
 /**
- * HybridTV - IPTV Meta-Addon
- * Version: 1.4.0 (Production Stable & Optimized)
+ * HybridTV
+ * Version: 1.0.1
  */
 
 const express = require('express');
@@ -12,6 +12,7 @@ const readline = require('readline');
 const app = express();
 app.use(cors());
 
+// --- TELEMETRY & CACHING STATE ---
 let isUpdatingEPG = false;
 let lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
 let epgData = {}; 
@@ -27,6 +28,7 @@ const serverStats = {
     activeIps: new Map()
 };
 
+// --- MIDDLEWARE: Metrics Tracker ---
 app.use((req, res, next) => {
     if (req.path.includes('.json')) {
         serverStats.totalRequests++;
@@ -35,17 +37,16 @@ app.use((req, res, next) => {
             const cleanIp = ip.split(',')[0].trim();
             serverStats.activeIps.set(cleanIp, Date.now());
         }
+        
+        const now = Date.now();
+        for (let [key, time] of serverStats.activeIps.entries()) {
+            if (now - time > 5 * 60 * 1000) serverStats.activeIps.delete(key);
+        }
     }
     next();
 });
 
-setInterval(() => {
-    const now = Date.now();
-    for (let [key, time] of serverStats.activeIps.entries()) {
-        if (now - time > 5 * 60 * 1000) serverStats.activeIps.delete(key);
-    }
-}, 60000);
-
+// --- ASSETS & CONFIG ---
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 const EVENT_POSTER = 'https://cdn-icons-png.flaticon.com/512/861/861512.png';
 
@@ -68,6 +69,7 @@ function parseConfig(encodedConfig) {
     }
 }
 
+// --- ORIGINAL LIVE EVENTS PARSER ---
 function extractMatchEvent(rawName) {
     if (!rawName) return null;
     let s = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -82,7 +84,7 @@ function extractMatchEvent(rawName) {
                  .replace(/\b(?:FHD|HD|SD|4K|1080P|720P|MATCH\s*TIME|MATCHTIME)\b/gi, '')
                  .replace(/[^A-Z0-9\s-]/g, '').trim();
         if (cleanName.length < 3) cleanName = "Événement Sportif";
-        return { id: 'hyb_ev_' + toSyncId(cleanName), name: '🔴 ' + cleanName, categories: ['events', 'live_top'], index: 5, customPoster: EVENT_POSTER };
+        return { id: 'hyb_ev_' + toSyncId(cleanName), name: '🔴 ' + cleanName, categories: ['events'], index: 5, customPoster: EVENT_POSTER };
     }
 
     let vsMatch = s.match(/([A-Z0-9\s]{3,20})\s+(?:VS\.?|CONTRE|\bV\b|\bVERSUS\b)\s+([A-Z0-9\s]{3,20})/i);
@@ -112,16 +114,17 @@ function extractMatchEvent(rawName) {
 
         if (cleanT1.length >= 2 && cleanT2.length >= 2 && cleanT1 !== cleanT2) {
             let canonicalKey = [toSyncId(cleanT1), toSyncId(cleanT2)].sort().join('_');
-            return { id: 'hyb_ev_' + canonicalKey, name: `⚽ ${cleanT1} vs ${cleanT2}`, categories: ['events', 'live_top'], index: 5, customPoster: EVENT_POSTER };
+            return { id: 'hyb_ev_' + canonicalKey, name: `⚽ ${cleanT1} vs ${cleanT2}`, categories: ['events'], index: 5, customPoster: EVENT_POSTER };
         }
     }
 
     if (s.includes('MULTIPLEX') && !s.includes('CANAL')) {
-        return { id: 'hyb_ev_multi', name: '🔴 MULTIPLEX EN DIRECT', categories: ['events', 'live_top'], index: 1, customPoster: EVENT_POSTER };
+        return { id: 'hyb_ev_multi', name: '🔴 MULTIPLEX EN DIRECT', categories: ['events'], index: 1, customPoster: EVENT_POSTER };
     }
     return null;
 }
 
+// --- ORIGINAL SEMANTIC ROUTING ---
 function getChannelData(rawName) {
     if (!rawName) return null;
     let eventData = extractMatchEvent(rawName);
@@ -184,7 +187,6 @@ function getChannelData(rawName) {
             return { id: 'hyb_aut_canal_elles', name: 'Canal+ Elles', categories: ['autres'], index: 1000 };
         }
 
-        if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 100 };
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
         
         if (c.includes('LIVE')) {
@@ -263,7 +265,6 @@ function getChannelData(rawName) {
     if (c.startsWith('TFX') || c === 'NT1') return { id: 'hyb_tnt_11', name: 'TFX', categories: ['tnt'], index: 11 };
     if (c.startsWith('NRJ12') || c.startsWith('NRJ')) return { id: 'hyb_tnt_12', name: 'NRJ 12', categories: ['tnt'], index: 12 };
     if (c.includes('PUBLICSENAT') || c === 'LCP') return { id: 'hyb_tnt_13', name: 'LCP / Public Sénat', categories: ['tnt', 'info'], index: 13 };
-    if (c.includes('GULLI')) return { id: 'hyb_jeu_gulli', name: 'Gulli', categories: ['jeunesse', 'tnt'], index: 18 };
     if (c.includes('CSTAR')) return { id: 'hyb_tnt_17', name: 'CStar', categories: ['tnt', 'musique'], index: 17 };
     if (c.includes('6TER')) return { id: 'hyb_tnt_22', name: '6ter', categories: ['tnt'], index: 22 };
     if (c.includes('RMCSTORY') || c.includes('NUMERO23')) return { id: 'hyb_tnt_23', name: 'RMC Story', categories: ['tnt', 'decouverte'], index: 23 };
@@ -274,26 +275,36 @@ function getChannelData(rawName) {
     if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
     if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
 
-    if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 150 };
-    if (c.includes('CARTOON')) return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
-    if (c.includes('DISNEYXD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 3 };
-    if (c.includes('DISNEYJR') || c.includes('DISNEYJUNIOR') || (c.includes('DISNEY') && c.includes('JR'))) return { id: 'hyb_jeu_disneyjr', name: 'Disney Junior', categories: ['jeunesse'], index: 5 };
-    if (c.includes('DISNEY') && c.includes('PLUS1')) return { id: 'hyb_jeu_disney_plus1', name: 'Disney Channel +1', categories: ['jeunesse'], index: 50 };
-    if (c.includes('DISNEY')) return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 2 };
-    if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 5 };
-    if (c.includes('BOING')) return { id: 'hyb_jeu_boing', name: 'Boing', categories: ['jeunesse'], index: 6 };
+    // --- CLASSEMENT JEUNESSE ORDONNÉ ---
+    if (c.includes('CARTOONNETWORK') || c === 'CARTOON') return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
     
-    if (c.includes('NICKELODEON') || c.includes('NICK')) {
-        if (c.includes('TEEN')) return { id: 'hyb_jeu_nick_teen', name: 'Nickelodeon Teen', categories: ['jeunesse'], index: 151 };
-        if (c.includes('JR') || c.includes('JUNIOR')) return { id: 'hyb_jeu_nick_jr', name: 'Nickelodeon Junior', categories: ['jeunesse'], index: 152 };
-        if (c.includes('PLUS1') || c.includes('1H')) return { id: 'hyb_jeu_nick_plus1', name: 'Nickelodeon +1', categories: ['jeunesse'], index: 153 };
-        return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 7 };
+    // Logique "Disney" stricte
+    if (c.includes('DISNEY')) {
+        if (c.includes('XD')) return { id: 'hyb_jeu_disneyxd', name: 'Disney XD', categories: ['jeunesse'], index: 3 };
+        if (c.includes('JR') || c.includes('JUNIOR')) return { id: 'hyb_jeu_disneyjr', name: 'Disney Junior', categories: ['jeunesse'], index: 9 };
+        if (c.includes('PLUS1')) return { id: 'hyb_jeu_disney_plus1', name: 'Disney Channel +1', categories: ['jeunesse'], index: 50 };
+        return { id: 'hyb_jeu_disney', name: 'Disney Channel', categories: ['jeunesse'], index: 2 };
     }
-    
-    if (c.includes('TIJI')) return { id: 'hyb_jeu_tiji', name: 'Tiji', categories: ['jeunesse'], index: 9 };
-    if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 10 };
-    if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 11 };
-    if (c.includes('PIWI')) return { id: 'hyb_jeu_piwi', name: 'Piwi+', categories: ['jeunesse'], index: 100 };
+
+    // Logique "Nickelodeon" stricte
+    if (c.includes('NICKELODEON') || c.includes('NICK')) {
+        if (c.includes('TOONS') || c.includes('TOON')) return { id: 'hyb_jeu_nicktoons', name: 'Nicktoons', categories: ['jeunesse'], index: 11 };
+        if (c.includes('TEEN')) return { id: 'hyb_jeu_nick_teen', name: 'Nickelodeon Teen', categories: ['jeunesse'], index: 12 };
+        if (c.includes('JR') || c.includes('JUNIOR')) return { id: 'hyb_jeu_nick_jr', name: 'Nickelodeon Junior', categories: ['jeunesse'], index: 13 };
+        if (c.includes('PLUS1') || c.includes('1H')) return { id: 'hyb_jeu_nick_plus1', name: 'Nickelodeon +1', categories: ['jeunesse'], index: 14 };
+        return { id: 'hyb_jeu_nick', name: 'Nickelodeon', categories: ['jeunesse'], index: 4 }; 
+    }
+
+    if (c.includes('GULLI')) return { id: 'hyb_jeu_gulli', name: 'Gulli', categories: ['jeunesse', 'tnt'], index: 5 };
+    if (c.includes('CANALJ') || c.includes('CJ')) return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse', 'canal'], index: 6 };
+    if (c.includes('GAMEONE') || c.match(/\bG1\b/) || c === 'G1') return { id: 'hyb_jeu_gameone', name: 'Game One', categories: ['jeunesse'], index: 7 };
+    if (c.includes('BOOMERANG')) return { id: 'hyb_jeu_boom', name: 'Boomerang', categories: ['jeunesse'], index: 8 };
+    if (c.includes('BOING')) return { id: 'hyb_jeu_boing', name: 'Boing', categories: ['jeunesse'], index: 10 };
+    if (c.includes('TIJI')) return { id: 'hyb_jeu_tiji', name: 'Tiji', categories: ['jeunesse'], index: 15 };
+    if (c.includes('MANGAS')) return { id: 'hyb_jeu_mangas', name: 'Mangas', categories: ['jeunesse'], index: 16 };
+    if (c.includes('PIWI')) return { id: 'hyb_jeu_piwi', name: 'Piwi+', categories: ['jeunesse'], index: 17 };
+    if (c.includes('CARTOONITO')) return { id: 'hyb_jeu_cartoonito', name: 'Cartoonito', categories: ['jeunesse'], index: 18 };
+    // -----------------------------------
 
     if (c.includes('RFMTV') || c.includes('RFM')) return { id: 'hyb_mus_rfm', name: 'RFM TV', categories: ['musique'], index: 34 }; 
     if (c.includes('MTV')) return { id: 'hyb_mus_mtv', name: 'MTV', categories: ['musique'], index: 10 };
@@ -355,6 +366,7 @@ function formatTime(timestamp) {
     return new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }).format(new Date(timestamp)).replace(':', 'h');
 }
 
+// --- EPG SYNC ---
 async function fetchAndParseEPG(url, isGz) {
     return new Promise(async (resolve, reject) => {
         try {
@@ -440,6 +452,7 @@ async function updateEPG() {
     } finally { isUpdatingEPG = false; }
 }
 
+// --- CATALOG ENGINE ---
 async function fetchCatalogFromSource(sourceInput) {
     let metas = [];
     let cleanInput = sourceInput.trim();
@@ -527,6 +540,7 @@ async function fetchCatalogFromSource(sourceInput) {
     return metas;
 }
 
+// --- SYNC ORCHESTRATOR ---
 async function getChannelsForSources(sourcesList) {
     const cacheKey = sourcesList.join('|');
 
@@ -618,22 +632,9 @@ async function getChannelsForSources(sourcesList) {
     return cacheObj.data;
 }
 
-app.get('/api/debug/livesport', (req, res) => {
-    let latestCache = null;
-    let latestTime = 0;
-    for (const [key, val] of Object.entries(channelsCache)) {
-        if (val.timestamp > latestTime) { latestTime = val.timestamp; latestCache = val; }
-    }
-    if (!latestCache || !latestCache.data) return res.json({ error: "Cache vide." });
-
-    const liveEvents = latestCache.data.filter(c => c.categories.includes('events'));
-    const report = liveEvents.map(c => `▶ ${c.displayName} (${c.sources.length} flux agrégés)`);
-    
-    res.json({ 
-        total_events: liveEvents.length, 
-        matches: report.length > 0 ? report : ["Aucun événement live scrapé pour le moment."] 
-    });
-});
+// ============================================================================
+// APP ROUTES & DASHBOARD
+// ============================================================================
 
 app.get('/api/metrics', (req, res) => {
     let totalChannels = 0;
@@ -664,16 +665,12 @@ app.get('/api/metrics', (req, res) => {
 
     const totalCache = serverStats.cacheHits + serverStats.cacheMisses;
     const cacheRate = totalCache > 0 ? Math.round((serverStats.cacheHits / totalCache) * 100) + '%' : 'N/A';
-    
-    const memUsage = process.memoryUsage();
-    const ramUsed = Math.round(memUsage.rss / 1024 / 1024) + ' MB';
 
     res.json({
         uptime: `${uptimeHours}h ${uptimeMinutes}m`,
         activeUsers: serverStats.activeIps.size,
         totalRequests: serverStats.totalRequests,
         cacheRate: cacheRate,
-        ramUsage: ramUsed,
         epgCount: Object.keys(epgData).length,
         epgLastUpdate: lastUpdate,
         totalChannels: totalChannels > 1 ? totalChannels : 0,
@@ -702,7 +699,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                 const r = await axios.get(source.directUrl, { 
                     responseType: 'stream',
                     headers: { 'User-Agent': 'Mozilla/5.0' }, 
-                    timeout: 5000
+                    timeout: 4500
                 });
                 if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
                 testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
@@ -717,7 +714,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
         } else {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
-                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 5000 });
+                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 4000 });
                 
                 let streamsTested = [];
                 if (r.data && r.data.streams) {
@@ -728,7 +725,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                                 const sRes = await axios.get(s.url, { 
                                     responseType: 'stream',
                                     headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase }, 
-                                    timeout: 5000
+                                    timeout: 3500
                                 });
                                 if(sRes.data && typeof sRes.data.destroy === 'function') sRes.data.destroy();
                                 streamTest.health = `✅ En ligne (HTTP ${sRes.status})`;
@@ -820,7 +817,8 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.4.0).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.0.1
+                ).</p>
             </div>
 
             <div class="tabs">
@@ -871,10 +869,6 @@ app.get('/', async (req, res) => {
                         <div class="metric-label">Performance Cache</div>
                         <div class="metric-value" id="m-cache">--</div>
                     </div>
-                    <div class="metric-card">
-                        <div class="metric-label">RAM Serveur</div>
-                        <div class="metric-value" id="m-ram">--</div>
-                    </div>
                 </div>
 
                 <div class="section">
@@ -904,7 +898,6 @@ app.get('/', async (req, res) => {
                     <div style="display: flex; gap: 8px; margin-bottom: 15px;">
                         <input type="text" id="debugQuery" placeholder="Nom de la chaîne..." style="flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px;">
                         <button type="button" onclick="runDebug()" class="btn-small" style="padding: 10px 15px; font-weight: bold;">Tester les flux</button>
-                        <button type="button" onclick="checkLiveSport()" class="btn-small" style="padding: 10px 15px; font-weight: bold; margin-left: 10px; background: #e50914;">Scan Live Sport</button>
                     </div>
                     <pre id="debugOutput" style="background: #111; padding: 12px; border-radius: 6px; font-size: 11px; color: #00ffcc; max-height: 400px; overflow-y: auto; text-align: left; white-space: pre-wrap; word-break: break-all;">En attente de test...</pre>
                 </div>
@@ -933,17 +926,6 @@ app.get('/', async (req, res) => {
                     document.getElementById('debugOutput').innerText = JSON.stringify(data, null, 2);
                 } catch(e) {
                     document.getElementById('debugOutput').innerText = "Erreur de requête : " + e.message;
-                }
-            }
-
-            async function checkLiveSport() {
-                document.getElementById('debugOutput').innerText = "Analyse des matchs scrapés en cours...";
-                try {
-                    let res = await fetch('/api/debug/livesport');
-                    let data = await res.json();
-                    document.getElementById('debugOutput').innerText = JSON.stringify(data, null, 2);
-                } catch(e) {
-                    document.getElementById('debugOutput').innerText = "Erreur : " + e.message;
                 }
             }
 
@@ -1060,7 +1042,6 @@ app.get('/', async (req, res) => {
                     document.getElementById('m-users').innerText = data.activeUsers;
                     document.getElementById('m-req').innerText = data.totalRequests;
                     document.getElementById('m-cache').innerText = data.cacheRate;
-                    document.getElementById('m-ram').innerText = data.ramUsage;
                     
                     document.getElementById('m-channels').innerText = data.totalChannels;
                     document.getElementById('m-epg').innerText = data.epgCount;
@@ -1121,12 +1102,12 @@ app.get('/:config/configure', (req, res) => {
     res.redirect('/' + req.params.config);
 });
 
+// --- MANIFEST BUILDER ---
 app.get('/:config/manifest.json', (req, res) => {
     const config = parseConfig(req.params.config);
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
 
     let baseCatalogs = [
-        { type: 'tv', id: 'live_top', name: '🔥 Live: Top Événements' },
         { type: 'tv', id: 'tnt', name: '📺 TNT' },
         { type: 'tv', id: 'info', name: '📰 Information' },
         { type: 'tv', id: 'jeunesse', name: '👶 Jeunesse' },
@@ -1141,9 +1122,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.4.0',
+        version: '1.0.1',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.4.0). Top Événements & Recherche Croisée EPG.',
+        description: 'Meta-Addon IPTV (v1.0.1).',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1167,14 +1148,9 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
     }
 
     let filteredChannels = channelsData;
-    const validCatalogs = ['live_top', 'tnt', 'info', 'jeunesse', 'decouverte', 'cinema', 'musique', 'canal', 'sports', 'events', 'autres'];
+    const validCatalogs = ['tnt', 'info', 'jeunesse', 'decouverte', 'cinema', 'musique', 'canal', 'sports', 'events', 'autres'];
     if (!validCatalogs.includes(requestedCatalog)) return res.json({ metas: [] });
-    
-    if (requestedCatalog === 'live_top') {
-        filteredChannels = channelsData.filter(ch => ch.categories.includes('live_top') || ch.categories.includes('events'));
-    } else {
-        filteredChannels = channelsData.filter(ch => ch.categories.includes(requestedCatalog));
-    }
+    filteredChannels = channelsData.filter(ch => ch.categories.includes(requestedCatalog));
     
     const paginatedMetas = filteredChannels.slice(skip, skip + 100).map(ch => ({
         id: ch.id, type: 'tv', name: ch.displayName, poster: ch.poster, posterShape: 'square'
@@ -1233,6 +1209,9 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
     
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+    const clientUserAgent = req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+
     serverStats.channelClicks[req.params.id] = (serverStats.channelClicks[req.params.id] || 0) + 1;
 
     const cacheKey = req.params.id + '|' + config.sources.join(',');
@@ -1244,6 +1223,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
     let channelsData = await getChannelsForSources(config.sources);
     
+    // SMART CACHE AUGMENTÉ À 45 SECONDES
     res.setHeader('Cache-Control', 'max-age=45, public'); 
 
     const channel = channelsData.find(c => c.id === req.params.id);
@@ -1269,11 +1249,12 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
                 const streamRes = await axios.get(targetUrl, {
                     headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }, 
-                    timeout: 5000
+                    timeout: 5000 
                 });
                 
                 if (streamRes.data && streamRes.data.streams) {
                     return streamRes.data.streams.map((s, idx) => {
+                        let qual = "SD";
                         let score = 0;
                         
                         let rawName = s.name || '';
@@ -1304,7 +1285,9 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         if (channel.id === 'hyb_dec_discovery' && (nStream.includes('INVESTIGATION') || nStream.includes('ID') || nStream.includes('SCIENCE'))) penalty += 5000;
                         if (channel.id === 'hyb_dec_investigation' && (!nStream.includes('INVESTIGATION') && !nStream.includes('ID'))) penalty += 5000;
                         if (channel.id === 'hyb_jeu_disney' && (nStream.includes('JR') || nStream.includes('JUNIOR') || nStream.includes('XD') || nStream.includes('PLUS1'))) penalty += 5000;
-                        if (channel.id === 'hyb_jeu_nick' && (nStream.includes('TEEN') || nStream.includes('JR') || nStream.includes('JUNIOR') || nStream.includes('PLUS1'))) penalty += 5000;
+                        
+                        // NOUVELLE PENALITE NICKELODEON (Inclus TOONS)
+                        if (channel.id === 'hyb_jeu_nick' && (nStream.includes('TEEN') || nStream.includes('JR') || nStream.includes('JUNIOR') || nStream.includes('PLUS1') || nStream.includes('TOONS') || nStream.includes('TOON'))) penalty += 5000;
 
                         if (channel.id.startsWith('hyb_sport_bein')) {
                             let targetNumMatch = channel.id.match(/_(\d+)$/); let targetNum = targetNumMatch ? targetNumMatch[1] : '1'; let isTargetMax = channel.id.includes('max');
@@ -1340,11 +1323,11 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         if (priorityIndex === -1) priorityIndex = 3; 
                         
                         let qScore = (4 - priorityIndex) * 1000; 
-                        let qualStr = "SD";
 
                         if (detectedQual === '4K') qualStr = "4K (UHD)";
                         else if (detectedQual === '1080p') qualStr = "Full HD (1080p)";
                         else if (detectedQual === '720p') qualStr = "HD (720p)";
+                        else qualStr = "SD";
 
                         if (isBeluchon) {
                             qualStr = "Source Officielle Légale (HD)";
@@ -1411,16 +1394,18 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
 
+        // --- TRI INITIAL PAR SCORE ---
         allStreams.sort((a, b) => b._score - a._score);
         let limitedStreams = allStreams.slice(0, 15);
 
+// --- SCANNER SYNCHRONE DE LIENS MORTS ---
         if (limitedStreams.length > 0) {
             await Promise.all(limitedStreams.map(async (s) => {
                 if (!s.url) return;
                 try {
                     const r = await axios.get(s.url, {
                         responseType: 'stream',
-                        timeout: 5000,
+                        timeout: 5000, // <-- Ajusté à 5000ms
                         headers: {
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                             ...(s.behaviorHints && s.behaviorHints.proxyHeaders && s.behaviorHints.proxyHeaders.request ? s.behaviorHints.proxyHeaders.request : {})
@@ -1430,25 +1415,32 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         r.data.destroy();
                     }
                 } catch (err) {
-                    s._score -= 100000; 
-                    
-                    if (err.response) {
+                    // IMMUNITÉ CLOUDFLARE ET ANTI-BOTS
+                    if (err.response && [403, 458, 503, 520, 521, 522, 523, 524, 525].includes(err.response.status)) {
                         let status = err.response.status;
-                        let msg = "Erreur";
-                        if (status === 403 || status === 401) msg = "Accès Refusé / Token Expiré";
-                        else if (status === 404) msg = "Flux Introuvable";
-                        else if (status === 512 || status === 502) msg = "Serveur Injoignable";
-                        else if (status >= 500) msg = "Serveur Planté";
-                        
-                        s.title = `❌ HS (${status} - ${msg})\n` + s.title;
-                    } else if (err.code === 'ENOTFOUND') {
-                        s.title = `❌ HS (Domaine Mort)\n` + s.title;
+                        s.title = `🛡️ Protégé (HTTP ${status})\n` + s.title;
                     } else {
-                        s.title = `❌ HS (${err.message})\n` + s.title;
+                        s._score -= 100000; 
+                        
+                        if (err.response) {
+                            let status = err.response.status;
+                            let msg = "Erreur";
+                            if (status === 401) msg = "Accès Refusé / Token Expiré";
+                            else if (status === 404) msg = "Flux Introuvable";
+                            else if (status === 512 || status === 502) msg = "Serveur Injoignable";
+                            else if (status >= 500) msg = "Serveur Planté";
+                            
+                            s.title = `❌ HS (${status} - ${msg})\n` + s.title;
+                        } else if (err.code === 'ENOTFOUND') {
+                            s.title = `❌ HS (Domaine Mort)\n` + s.title;
+                        } else {
+                            s.title = `❌ HS (${err.message})\n` + s.title;
+                        }
                     }
                 }
             }));
             
+            // Re-tri synchrone final post-scan
             limitedStreams.sort((a, b) => b._score - a._score);
         }
 
@@ -1458,8 +1450,11 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             return streamObj;
         });
         
-        streamCache.set(cacheKey, finalStreams);
-        setTimeout(() => streamCache.delete(cacheKey), 45000); 
+        // SÉCURITÉ ANTI-VIDE : Ne met en cache QUE si on a trouvé des flux
+        if (finalStreams.length > 0) {
+            streamCache.set(cacheKey, finalStreams);
+            setTimeout(() => streamCache.delete(cacheKey), 45000); 
+        }
 
         res.json({ streams: finalStreams });
     } catch (err) { res.json({ streams: [] }); }
