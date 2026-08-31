@@ -1,6 +1,6 @@
 /**
  * HybridTV
- * Version: 1.0.4 (Correction Sémantique Canal+ / Canal J & Background Stream Warmer)
+ * Version: 1.0.5 (Dashboard Complet Restoré & Background Stream Warmer)
  */
 
 const express = require('express');
@@ -12,14 +12,13 @@ const readline = require('readline');
 const app = express();
 app.use(cors());
 
-// --- STATE & CACHING ---
+// --- TELEMETRY & CACHING STATE ---
 let isUpdatingEPG = false;
 let lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
 let epgData = {}; 
 let channelsCache = {}; 
 let streamCache = new Map();
-let backgroundStreamCache = new Map(); // Cache proactif asynchrone
-let streamHealthCache = new Map();
+let backgroundStreamCache = new Map(); // Cache proactif asynchrone pour zéro latence de recherche
 
 const serverStats = {
     startTime: Date.now(),
@@ -30,6 +29,7 @@ const serverStats = {
     activeIps: new Map()
 };
 
+// --- SECURITY: SSRF Protection ---
 function isValidHttpUrl(string) {
     try {
         const url = new URL(string);
@@ -51,6 +51,7 @@ function isValidHttpUrl(string) {
     }
 }
 
+// --- MIDDLEWARE: Metrics Tracker ---
 app.use((req, res, next) => {
     if (req.path.includes('.json')) {
         serverStats.totalRequests++;
@@ -94,9 +95,39 @@ function parseConfig(encodedConfig) {
     }
 }
 
-// --- ROUTAGE SÉMANTIQUE CORRIGÉ & ROBUSTE ---
+function extractMatchEvent(rawName) {
+    if (!rawName) return null;
+    let s = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    s = s.replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
+
+    if (s.includes('MATCH TIME') || s.includes('MATCHTIME')) {
+        let cleanName = s.replace(/^(?:FR|BE|CH|VIP|LIVE|DIRECT|EVENT|MATCH|LIGUE\s*1|DAZN|BEIN|RMC|CANAL\+?|MULTI|MULTIPLEX)\s*[:|-|\|]*\s*/gi, '')
+                 .replace(/\d{1,2}[hH:]\d{2}/g, '')
+                 .replace(/\b(?:FHD|HD|SD|4K|1080P|720P|MATCH\s*TIME|MATCHTIME)\b/gi, '')
+                 .replace(/[^A-Z0-9\s-]/g, '').trim();
+        if (cleanName.length < 3) cleanName = "Événement Sportif";
+        return { id: 'hyb_ev_' + toSyncId(cleanName), name: '🔴 ' + cleanName, categories: ['events'], index: 5, customPoster: EVENT_POSTER };
+    }
+
+    let vsMatch = s.match(/([A-Z0-9\s]{3,20})\s+(?:VS\.?|CONTRE|\bV\b|\bVERSUS\b)\s+([A-Z0-9\s]{3,20})/i);
+    if (vsMatch) {
+        let cleanTeam = (str) => str.replace(/[^A-Z0-9\s]/g, '').trim();
+        let t1 = cleanTeam(vsMatch[1]);
+        let t2 = cleanTeam(vsMatch[2]);
+        if (t1.length >= 2 && t2.length >= 2 && t1 !== t2) {
+            let canonicalKey = [toSyncId(t1), toSyncId(t2)].sort().join('_');
+            return { id: 'hyb_ev_' + canonicalKey, name: `⚽ ${t1} vs ${t2}`, categories: ['events'], index: 5, customPoster: EVENT_POSTER };
+        }
+    }
+    return null;
+}
+
+// --- ROUTAGE SÉMANTIQUE CORRIGÉ (ISOLATION STRICTE DE CANAL J, SAVOIR, MOTOGP) ---
 function getChannelData(rawName) {
     if (!rawName) return null;
+    let eventData = extractMatchEvent(rawName);
+    if (eventData) return eventData;
+
     let n = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     n = n.replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
     n = n.replace(/^(?:FR|BE|CH|CA|VIP|VAVOO)\s*[:|/-]+\s*/i, '');
@@ -109,16 +140,13 @@ function getChannelData(rawName) {
     if (!c || c.length < 2) return null;
     if (BLACKLIST.some(b => c.includes(b))) return null;
 
-    // 1. EXCEPTIONS "CANAL" (Chaînes indépendantes qui contiennent le mot Canal)
+    // 1. EXCEPTIONS "CANAL" (Chaînes indépendantes)
     if (c.includes('CANALJ') || c === 'CJ') return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse'], index: 6 };
     if (c.includes('CANALSAVOIR') || c.includes('SAVOIR')) return { id: 'hyb_dec_savoir', name: 'Canal Savoir', categories: ['decouverte'], index: 40 };
-    if (c.includes('CANALALPH') || c.includes('ALPH')) return { id: 'hyb_aut_canalalpha', name: 'Canal Alpha', categories: ['autres'], index: 150 };
-
-    // 2. CHAÎNES SPORTIVES SPÉCIFIQUES CANAL+
     if (c.includes('MOTOGP') || c.includes('MOTO GP')) return { id: 'hyb_sport_motogp', name: 'Canal+ MotoGP', categories: ['sports', 'canal'], index: 92 };
     if (c.includes('FORMULA1') || c.includes('F1')) return { id: 'hyb_sport_f1', name: 'Canal+ Formula 1', categories: ['sports', 'canal'], index: 93 };
 
-    // 3. VRAI BOUQUET CANAL+ PAYANT
+    // 2. BOUQUET CANAL+ OFFICIEL
     if (c.includes('CANAL') || c.includes('CPLUS')) {
         if (c.includes('ELLES')) return { id: 'hyb_aut_canal_elles', name: 'Canal+ Elles', categories: ['autres'], index: 1000 };
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
@@ -139,7 +167,7 @@ function getChannelData(rawName) {
         return { id: 'hyb_canal_cplus', name: 'Canal+', categories: ['canal'], index: 1 };
     }
 
-    // 4. AUTRES GRANDES CHAÎNES (TNT, Sports, Infos, Jeunesse)
+    // 3. AUTRES CHAÎNES PRINCIPALES
     if (c.startsWith('TF1')) return { id: 'hyb_tnt_1', name: 'TF1', categories: ['tnt'], index: 1 };
     if (c.startsWith('FRANCE2') || c === 'FR2') return { id: 'hyb_tnt_2', name: 'France 2', categories: ['tnt'], index: 2 };
     if (c.startsWith('FRANCE3') || c === 'FR3') return { id: 'hyb_tnt_3', name: 'France 3', categories: ['tnt'], index: 3 };
@@ -152,7 +180,7 @@ function getChannelData(rawName) {
         return { id: 'hyb_sport_bein_' + (isMax?'max':'') + num, name: isMax ? 'beIN SPORTS MAX '+num : 'beIN SPORTS '+num, categories: ['sports'], index: isMax ? 40 + parseInt(num, 10) : 30 + parseInt(num, 10) };
     }
 
-    // Fallback catégorisation intelligente
+    // Fallback catégorisation par mots-clés
     let cat = 'autres';
     let idx = 300;
     if (c.includes('SPORT') || c.includes('FOOT') || c.includes('GOLF') || c.includes('RUGBY')) cat = 'sports';
@@ -271,7 +299,7 @@ async function updateEPG() {
     } finally { isUpdatingEPG = false; }
 }
 
-// --- CATALOG ENGINE UNIVERSEL & ROBUSTE ---
+// --- CATALOG ENGINE UNIVERSEL ---
 async function fetchCatalogFromSource(sourceInput) {
     let metas = [];
     let cleanInput = sourceInput.trim();
@@ -450,8 +478,7 @@ async function getChannelsForSources(sourcesList) {
     return cacheObj.data;
 }
 
-// --- BACKGROUND STREAM WARMER (RÉSOLUTION ASYNCHRONE PERMANENTE) ---
-// Pré-charge les flux en arrière-plan pour éviter les temps d'attente et échecs de recherche
+// --- BACKGROUND STREAM WARMER (RÉSOLUTION ASYNCHRONE) ---
 async function backgroundStreamWarmer() {
     for (const [key, cacheObj] of Object.entries(channelsCache)) {
         if (!cacheObj.data) continue;
@@ -477,10 +504,10 @@ async function backgroundStreamWarmer() {
         }
     }
 }
-setInterval(backgroundStreamWarmer, 10 * 60 * 1000); // Exécuté toutes les 10 minutes
+setInterval(backgroundStreamWarmer, 10 * 60 * 1000);
 
 // ============================================================================
-// APP ROUTES & DASHBOARD
+// APP ROUTES & DASHBOARD COMPLET RESTORÉ
 // ============================================================================
 
 app.get('/api/metrics', (req, res) => {
@@ -501,12 +528,67 @@ app.get('/api/metrics', (req, res) => {
         sourceReport = latestCache.sourceReport || {};
     }
 
+    let sortedChannels = Object.entries(serverStats.channelClicks)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([id, count]) => ({ id: id.replace('hyb_', ''), count }));
+
+    const uptimeMs = Date.now() - serverStats.startTime;
+    const uptimeHours = Math.floor(uptimeMs / 3600000);
+    const uptimeMinutes = Math.floor((uptimeMs % 3600000) / 60000);
+
+    const totalCache = serverStats.cacheHits + serverStats.cacheMisses;
+    const cacheRate = totalCache > 0 ? Math.round((serverStats.cacheHits / totalCache) * 100) + '%' : 'N/A';
+
     res.json({
-        uptime: `${Math.floor((Date.now() - serverStats.startTime)/3600000)}h`,
+        uptime: `${uptimeHours}h ${uptimeMinutes}m`,
+        activeUsers: serverStats.activeIps.size,
         totalRequests: serverStats.totalRequests,
-        totalChannels: totalChannels,
+        cacheRate: cacheRate,
+        epgCount: Object.keys(epgData).length,
+        epgLastUpdate: lastUpdate,
+        totalChannels: totalChannels > 1 ? totalChannels : 0,
+        topChannels: sortedChannels,
         sourceReport: sourceReport
     });
+});
+
+app.get('/api/debug/inspect/:query', async (req, res) => {
+    let q = req.params.query.toLowerCase();
+    let latestCache = null;
+    let latestTime = 0;
+    for (const [key, val] of Object.entries(channelsCache)) {
+        if (val.timestamp > latestTime) { latestTime = val.timestamp; latestCache = val; }
+    }
+    if (!latestCache || !latestCache.data) return res.json({ error: "Cache vide. Ouvrez d'abord l'add-on dans Stremio." });
+
+    const channel = latestCache.data.find(c => c.id.toLowerCase().includes(q) || c.displayName.toLowerCase().includes(q));
+    if (!channel) return res.json({ error: `Chaîne "${q}" introuvable dans le cache actuel.` });
+
+    let inspectionResults = [];
+    for (const source of channel.sources) {
+        if (source.type === 'm3u') {
+            let testRes = { source: source.providerBase || 'M3U Local', type: 'm3u', url: source.directUrl };
+            try {
+                const r = await axios.get(source.directUrl, { responseType: 'stream', headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 4500 });
+                if(r.data && typeof r.data.destroy === 'function') r.data.destroy();
+                testRes.httpStatus = `✅ En ligne (HTTP ${r.status})`;
+            } catch(e) {
+                testRes.httpStatus = `❌ Erreur: ${e.response ? 'HTTP ' + e.response.status : e.message}`;
+            }
+            inspectionResults.push(testRes);
+        } else {
+            try {
+                let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
+                if (!isValidHttpUrl(targetUrl)) continue;
+                let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 4000 });
+                inspectionResults.push({ provider: source.providerBase, metaId: source.metaId, rawResponse: r.data });
+            } catch(e) {
+                inspectionResults.push({ provider: source.providerBase, error: e.message });
+            }
+        }
+    }
+    res.json({ channelName: channel.displayName, channelId: channel.id, inspectionResults });
 });
 
 app.get('/', async (req, res) => {
@@ -523,59 +605,120 @@ app.get('/', async (req, res) => {
         <title>HybridTV Dashboard</title>
         <style>
             :root { --bg: #141414; --card: #1f1f1f; --card-alt: #111; --primary: #e50914; --text: #fff; --text-muted: #bbb; --border: #333; }
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 40px 20px; margin: 0; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 40px 20px; margin: 0; }
             .container { max-width: 700px; margin: 0 auto; background: var(--card); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; }
             .header { padding: 30px; text-align: center; border-bottom: 1px solid var(--border); }
             h1 { margin: 0 0 10px 0; font-size: 28px; }
             .subtitle { font-size: 14px; color: var(--text-muted); margin: 0; }
-            .tabs { display: flex; border-bottom: 1px solid var(--border); background: #1a1a1a; }
-            .tab-btn { flex: 1; padding: 15px; background: none; border: none; color: var(--text-muted); font-size: 15px; font-weight: bold; cursor: pointer; }
+            .tabs { display: flex; border-bottom: 1px solid var(--border); background: #1a1a1a; overflow-x: auto; }
+            .tab-btn { flex: 1; padding: 15px; background: none; border: none; color: var(--text-muted); font-size: 15px; font-weight: bold; cursor: pointer; transition: 0.2s; white-space: nowrap; }
+            .tab-btn:hover { color: var(--text); background: #222; }
             .tab-btn.active { color: var(--text); border-bottom: 3px solid var(--primary); background: var(--card); }
             .tab-content { display: none; padding: 30px; }
             .tab-content.active { display: block; }
             .section { background: var(--card-alt); padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid var(--border); }
-            .section-title { font-size: 14px; color: #ccc; font-weight: bold; margin-bottom: 15px; text-transform: uppercase; }
+            .section-title { font-size: 14px; color: #ccc; font-weight: bold; margin-top: 0; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }
             .source-row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
             .source-num { font-size: 13px; font-weight: bold; color: var(--primary); min-width: 20px; text-align: center; }
             .source-row input { flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px; }
-            .btn { display: inline-block; background: var(--primary); color: #fff; padding: 12px 24px; font-weight: bold; border-radius: 8px; cursor: pointer; border: none; width: 100%; box-sizing: border-box; text-align: center; }
+            .btn { display: inline-block; background: var(--primary); color: #fff; padding: 12px 24px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; border: none; transition: 0.2s; text-align: center; width: 100%; box-sizing: border-box; }
+            .btn:hover { background: #f40612; }
             .btn-secondary { background: #333; margin-top: 10px; }
-            .main-link { width: 100%; padding: 15px; margin-top: 15px; background: #111; color: #fff; border: 1px dashed #666; border-radius: 6px; box-sizing: border-box; }
+            .btn-secondary:hover { background: #444; }
+            .btn-small { background: #444; padding: 8px 10px; font-size: 12px; border-radius: 6px; cursor: pointer; color: #fff; border: none; }
+            .btn-small:hover { background: #555; }
+            .btn-danger { background: #800; padding: 8px 10px; border-radius: 6px; cursor: pointer; color: #fff; border: none; }
+            .btn-danger:hover { background: #a00; }
+            .main-link { width: 100%; padding: 15px; margin-top: 15px; background: #111; color: #fff; border: 1px dashed #666; border-radius: 6px; text-align: center; font-size: 14px; box-sizing: border-box; }
+            input[type="text"].export-box { width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #aaa; border-radius: 6px; font-size: 12px; box-sizing: border-box; }
+            .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+            .metric-card { background: #222; padding: 15px; border-radius: 8px; border: 1px solid var(--border); text-align: center; }
+            .metric-value { font-size: 24px; font-weight: bold; color: var(--primary); margin: 10px 0 5px 0; }
+            .metric-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; }
             ul.report-list { list-style: none; padding: 0; margin: 0; font-size: 13px; }
             ul.report-list li { padding: 8px 0; border-bottom: 1px solid #333; display: flex; justify-content: space-between; }
-            .status-ok { color: #4caf50; } .status-warn { color: #ff9800; }
+            ul.report-list li:last-child { border-bottom: none; }
+            .status-ok { color: #4caf50; } .status-warn { color: #ff9800; } .status-err { color: #f44336; }
         </style>
     </head>
     <body>
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">Agrégateur IPTV Universel (v1.0.4)</p>
+                <p class="subtitle">L'agrégateur IPTV universel et optimisé (v1.0.5)</p>
             </div>
+
             <div class="tabs">
                 <button class="tab-btn active" onclick="switchTab('config', this)">⚙️ Configurer</button>
                 <button class="tab-btn" onclick="switchTab('metrics', this)">📊 Métriques</button>
+                <button class="tab-btn" onclick="switchTab('debug', this)">🔍 Debug Flux</button>
             </div>
+
             <div id="config" class="tab-content active">
                 <div class="section">
-                    <h3 class="section-title">Sources (Add-ons Stremio ou M3U)</h3>
+                    <h3 class="section-title">Sources (Add-ons ou M3U)</h3>
                     <div id="sourcesContainer"></div>
-                    <button type="button" onclick="addSourceField()" class="btn btn-secondary" style="padding:8px; font-size:12px;">+ Ajouter une source</button>
+                    <button type="button" onclick="addSourceField()" class="btn btn-small" style="margin-top: 10px;">+ Ajouter une source</button>
                 </div>
+
+                <div class="section">
+                    <h3 class="section-title">Priorité de Qualité</h3>
+                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Ajustez l'ordre. Le format placé en haut sera lancé en priorité.</p>
+                    <div id="qualityList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                </div>
+
+                <div class="section">
+                    <h3 class="section-title">Code de Sauvegarde</h3>
+                    <input type="text" id="exportTokenBox" class="export-box" placeholder="Code de configuration..." readonly>
+                    <button type="button" onclick="importToken()" class="btn btn-small" style="margin-top: 8px;">📥 Importer</button>
+                </div>
+                
                 <button type="button" onclick="generateLink()" class="btn">⚡ Générer l'Add-on</button>
                 <input type="text" id="manifestLink" class="main-link" placeholder="Lien généré ici..." readonly>
-                <button type="button" onclick="copyLink()" class="btn btn-secondary">📋 Copier le lien</button>
+                <button type="button" onclick="copyLink()" class="btn btn-secondary">📋 Copier le lien d'installation</button>
             </div>
+
             <div id="metrics" class="tab-content">
+                <div class="metrics-grid">
+                    <div class="metric-card"><div class="metric-label">Uptime</div><div class="metric-value" id="m-uptime">--</div></div>
+                    <div class="metric-card"><div class="metric-label">Utilisateurs Actifs (5m)</div><div class="metric-value" id="m-users">--</div></div>
+                    <div class="metric-card"><div class="metric-label">Requêtes Totales</div><div class="metric-value" id="m-req">--</div></div>
+                    <div class="metric-card"><div class="metric-label">Performance Cache</div><div class="metric-value" id="m-cache">--</div></div>
+                </div>
+
                 <div class="section">
+                    <h3 class="section-title">Inventaire des Bases</h3>
+                    <ul class="report-list" style="margin-bottom: 15px;">
+                        <li><span>Chaînes Uniques validées</span> <b id="m-channels" class="status-ok">--</b></li>
+                        <li><span>Guide TV synchronisé</span> <b id="m-epg" class="status-ok">--</b></li>
+                    </ul>
                     <h3 class="section-title">Rapport des Sources</h3>
                     <ul class="report-list" id="sourceReportList"><li><i>Chargement...</i></li></ul>
                 </div>
+                
+                <div class="section">
+                    <h3 class="section-title">Top 5 Chaînes (Session)</h3>
+                    <ul class="report-list" id="topChannelsList"><li><i>Aucune donnée</i></li></ul>
+                </div>
+            </div>
+
+            <div id="debug" class="tab-content">
+                <div class="section">
+                    <h3 class="section-title">🔍 Inspecteur & Testeur de Flux</h3>
+                    <p class="subtitle" style="margin-bottom: 10px; font-size: 12px;">Tapez une chaîne (ex: "ligue", "bein", "tf1") pour tester la santé des liens en direct.</p>
+                    <div style="display: flex; gap: 8px; margin-bottom: 15px;">
+                        <input type="text" id="debugQuery" placeholder="Nom de la chaîne..." style="flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 13px;">
+                        <button type="button" onclick="runDebug()" class="btn-small" style="padding: 10px 15px; font-weight: bold;">Tester les flux</button>
+                    </div>
+                    <pre id="debugOutput" style="background: #111; padding: 12px; border-radius: 6px; font-size: 11px; color: #00ffcc; max-height: 400px; overflow-y: auto; text-align: left; white-space: pre-wrap; word-break: break-all;">En attente de test...</pre>
+                </div>
             </div>
         </div>
+
         <script>
             let sources = ${JSON.stringify(sourcesList)};
             let qualities = ${defaultQualities};
+
             function switchTab(tabId, btn) {
                 document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
                 document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
@@ -583,6 +726,20 @@ app.get('/', async (req, res) => {
                 btn.classList.add('active');
                 if(tabId === 'metrics') fetchMetrics();
             }
+
+            async function runDebug() {
+                let q = document.getElementById('debugQuery').value.trim();
+                if(!q) return alert("Veuillez entrer un nom de chaîne !");
+                document.getElementById('debugOutput').innerText = "Test des liens et des serveurs en cours...";
+                try {
+                    let res = await fetch('/api/debug/inspect/' + encodeURIComponent(q));
+                    let data = await res.json();
+                    document.getElementById('debugOutput').innerText = JSON.stringify(data, null, 2);
+                } catch(e) {
+                    document.getElementById('debugOutput').innerText = "Erreur de requête : " + e.message;
+                }
+            }
+
             function renderSources() {
                 const container = document.getElementById('sourcesContainer');
                 if (!container) return;
@@ -591,33 +748,145 @@ app.get('/', async (req, res) => {
                     if (index >= 5) return;
                     const div = document.createElement('div');
                     div.className = 'source-row';
-                    div.innerHTML = \`<span class="source-num">#\${index + 1}</span><input type="text" id="src_\${index}" value="\${src}" placeholder="URL manifest.json ou .m3u">\`;
+                    div.innerHTML = \`
+                        <span class="source-num">#\${index + 1}</span>
+                        <input type="text" id="src_\${index}" value="\${src}" placeholder="URL manifest.json ou .m3u">
+                        \${index > 0 ? '<button type="button" onclick="moveSource(' + index + ', -1)" class="btn-small">▲</button>' : '<div style="width: 28px;"></div>'}
+                        \${index < sources.length - 1 ? '<button type="button" onclick="moveSource(' + index + ', 1)" class="btn-small">▼</button>' : '<div style="width: 28px;"></div>'}
+                        \${sources.length > 1 ? '<button type="button" onclick="removeSource(' + index + ')" class="btn-danger">✕</button>' : ''}
+                    \`;
                     container.appendChild(div);
                 });
+                updateExportToken();
             }
-            function addSourceField() { if (sources.length < 5) { sources.push(''); renderSources(); } }
-            function generateLink() {
+
+            function renderQualities() {
+                const container = document.getElementById('qualityList');
+                if (!container) return;
+                container.innerHTML = '';
+                qualities.forEach((q, index) => {
+                    let badge = q === '4K' ? ' <span style="font-size:10px;color:#ff9800;">(Instable)</span>' : '';
+                    container.innerHTML += \`
+                        <div style="display: flex; align-items: center; background: #222; border: 1px solid #444; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px;">
+                            <span style="font-size: 14px; font-weight: bold; color: #e50914; min-width: 25px;">\${index + 1}.</span>
+                            <span style="flex: 1; font-size: 13px;">\${q}\${badge}</span>
+                            \${index > 0 ? '<button type="button" onclick="moveQuality(' + index + ', -1)" class="btn-small" style="padding: 4px 8px; margin-right: 5px;">▲</button>' : '<div style="width: 28px; margin-right: 5px;"></div>'}
+                            \${index < qualities.length - 1 ? '<button type="button" onclick="moveQuality(' + index + ', 1)" class="btn-small" style="padding: 4px 8px;">▼</button>' : '<div style="width: 28px;"></div>'}
+                        </div>
+                    \`;
+                });
+                updateExportToken();
+            }
+
+            function moveSource(index, direction) {
+                saveInputs();
+                const newIndex = index + direction;
+                if (newIndex < 0 || newIndex >= sources.length) return;
+                const temp = sources[index];
+                sources[index] = sources[newIndex];
+                sources[newIndex] = temp;
+                renderSources();
+            }
+
+            function moveQuality(index, direction) {
+                const newIndex = index + direction;
+                if (newIndex < 0 || newIndex >= qualities.length) return;
+                const temp = qualities[index];
+                qualities[index] = qualities[newIndex];
+                qualities[newIndex] = temp;
+                localStorage.setItem('hybrid_qualities', JSON.stringify(qualities));
+                renderQualities();
+            }
+
+            function addSourceField() { if (sources.length < 5) { saveInputs(); sources.push(''); renderSources(); } }
+            function removeSource(index) { saveInputs(); sources.splice(index, 1); renderSources(); }
+            
+            function saveInputs() {
                 sources.forEach((_, index) => { const el = document.getElementById('src_' + index); if (el) sources[index] = el.value.trim(); });
-                const valid = sources.filter(s => s.length > 0);
-                if (valid.length === 0) return alert("Entrez au moins une source !");
-                const token = btoa(JSON.stringify({ sources: valid, qualities: qualities }));
-                document.getElementById("manifestLink").value = window.location.protocol + "//" + window.location.host + "/" + token + "/manifest.json";
-                alert("Lien généré !");
+                localStorage.setItem('hybrid_sources', JSON.stringify(sources));
+                updateExportToken();
             }
-            function copyLink() { document.getElementById("manifestLink").select(); document.execCommand("copy"); alert("Copié !"); }
+
+            function updateExportToken() {
+                const validSources = sources.filter(s => s.length > 0);
+                const configObj = { sources: validSources, qualities: qualities }; 
+                const tokenBox = document.getElementById('exportTokenBox');
+                if (tokenBox) tokenBox.value = btoa(JSON.stringify(configObj));
+            }
+
+            function importToken() {
+                let inputCode = prompt("Collez le code de sauvegarde ici :");
+                if (!inputCode) return;
+                try {
+                    const jsonStr = atob(inputCode.trim());
+                    const config = JSON.parse(jsonStr);
+                    if (config.sources && Array.isArray(config.sources)) {
+                        sources = config.sources; if (sources.length === 0) sources = ['', ''];
+                        if (config.qualities) { qualities = config.qualities; localStorage.setItem('hybrid_qualities', JSON.stringify(qualities)); }
+                        renderSources(); renderQualities(); alert("Configuration importée avec succès !");
+                    } else alert("Code invalide.");
+                } catch(e) { alert("Erreur : Ce code est corrompu."); }
+            }
+
+            function generateLink() {
+                saveInputs();
+                const validSources = sources.filter(s => s.length > 0);
+                if (validSources.length === 0) return alert("Veuillez entrer au moins un lien de source !");
+                const token = document.getElementById('exportTokenBox').value;
+                const linkField = document.getElementById("manifestLink");
+                if (linkField) linkField.value = window.location.protocol + "//" + window.location.host + "/" + token + "/manifest.json";
+                alert("Lien généré. Veuillez désinstaller l'ancienne version dans Stremio/NuVio avant d'ajouter celle-ci !");
+            }
+
+            function copyLink() {
+                var copyText = document.getElementById("manifestLink");
+                if (!copyText || !copyText.value) return alert("Générez le lien d'abord !");
+                copyText.select(); document.execCommand("copy"); alert("Copié !");
+            }
+
             async function fetchMetrics() {
                 try {
                     let res = await fetch('/api/metrics');
                     let data = await res.json();
+                    
+                    document.getElementById('m-uptime').innerText = data.uptime;
+                    document.getElementById('m-users').innerText = data.activeUsers;
+                    document.getElementById('m-req').innerText = data.totalRequests;
+                    document.getElementById('m-cache').innerText = data.cacheRate;
+                    document.getElementById('m-channels').innerText = data.totalChannels;
+                    document.getElementById('m-epg').innerText = data.epgCount;
+                    
                     let htmlList = '';
-                    for(let [k, v] of Object.entries(data.sourceReport)) {
-                        let statusClass = v.status === 'ok' ? 'status-ok' : 'status-warn';
-                        htmlList += \`<li><span>\${k}</span> <b class="\${statusClass}">\${v.status} (\${v.count})</b></li>\`;
-                    }
-                    document.getElementById('sourceReportList').innerHTML = htmlList || '<li>Aucune source</li>';
-                } catch(e){}
+                    sources.forEach(src => {
+                        if (!src) return;
+                        let cleanSrc = src.replace(/\\/manifest\\.json$/, '').trim();
+                        let displaySrc = cleanSrc.length > 35 ? cleanSrc.substring(0, 32) + '...' : cleanSrc;
+                        let r = data.sourceReport[cleanSrc];
+                        
+                        if (!r || r.status === 'fetching') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⏳ En attente</b></li>\`;
+                        else if (r.status === 'ok') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-ok">✅ \${r.count} flux</b></li>\`;
+                        else if (r.status === 'empty') htmlList += \`<li><span>\${displaySrc}</span> <b class="status-warn">⚠️ 0 flux</b></li>\`;
+                        else htmlList += \`<li><span>\${displaySrc}</span> <b class="status-err">❌ Hors Ligne</b></li>\`;
+                    });
+                    document.getElementById('sourceReportList').innerHTML = htmlList || '<li><i>Aucune source configurée</i></li>';
+
+                    let topHtml = '';
+                    data.topChannels.forEach(c => {
+                        topHtml += \`<li><span>\${c.id.replace(/_/g, ' ').toUpperCase()}</span> <b>\${c.count} vues</b></li>\`;
+                    });
+                    document.getElementById('topChannelsList').innerHTML = topHtml || '<li><i>Aucune donnée</i></li>';
+                } catch(e) {}
             }
+
+            let savedSources = localStorage.getItem('hybrid_sources');
+            if (savedSources && !${sourcesParam ? 'true' : 'false'}) sources = JSON.parse(savedSources);
+            
+            let savedQualities = localStorage.getItem('hybrid_qualities');
+            if (savedQualities) { try { qualities = JSON.parse(savedQualities); } catch(e){} }
+
             renderSources();
+            renderQualities();
+            setInterval(() => { if(document.getElementById('metrics').classList.contains('active')) fetchMetrics(); }, 5000);
         </script>
     </body>
     </html>
@@ -629,9 +898,9 @@ app.get('/:config/manifest.json', (req, res) => {
     res.setHeader('Cache-Control', 'max-age=86400, public');
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.0.4',
+        version: '1.0.5',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV Universel (v1.0.4)',
+        description: 'Meta-Addon IPTV Universel (v1.0.5)',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: [
@@ -672,7 +941,7 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
     res.json({ meta: { id: channel.id, type: 'tv', name: channel.displayName, poster: channel.poster, posterShape: 'square', description: `Diffusion en direct sur ${channel.displayName}` } });
 });
 
-// --- ROUTE STREAM ULTRA-RAPIDE (UTILISE LE CACHE ASYNCHRONE PRÉ-CHARGÉ) ---
+// --- ROUTE STREAM ULTRA-RAPIDE (UTILISE LE CACHE ASYNCHRONE) ---
 app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
@@ -680,10 +949,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     serverStats.channelClicks[req.params.id] = (serverStats.channelClicks[req.params.id] || 0) + 1;
     res.setHeader('Cache-Control', 'max-age=60, public');
 
-    // Récupération instantanée depuis le cache de fond (zéro attente réseau synchrone)
     let streams = backgroundStreamCache.get(req.params.id);
     if (!streams || streams.length === 0) {
-        // Fallback synchrone léger si le cache n'a pas encore tourné
         let channelsData = await getChannelsForSources(config.sources);
         const channel = channelsData.find(c => c.id === req.params.id);
         if (channel) {
@@ -709,8 +976,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, async () => {
-    console.log(`[INFO] HybridTV v1.0.4 running on port ${PORT}`);
+    console.log(`[INFO] HybridTV v1.0.5 running on port ${PORT}`);
     updateEPG();
     setInterval(updateEPG, 3600000);
-    setTimeout(backgroundStreamWarmer, 3000); // Lancement initial du pré-chargement des flux
+    setTimeout(backgroundStreamWarmer, 3000);
 });
