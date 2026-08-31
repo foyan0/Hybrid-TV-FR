@@ -1,6 +1,6 @@
 /**
  * HybridTV
- * Version: 1.0.10 (Dashboard Intégral Restauré + Sémantique & Résilience NuVio)
+ * Version: 1.0.11 (Background Warm-up Immédiat, Fix Statut Tethys & Sémantique Intégrale)
  */
 
 const express = require('express');
@@ -19,7 +19,7 @@ let epgData = {};
 let channelsCache = {}; 
 let streamCache = new Map(); 
 let streamResponseCache = new Map(); 
-let sourceBlocklist = new Map(); // Circuit Breaker anti-rate limiting (TVMio / autres)
+let sourceBlocklist = new Map();
 
 const serverStats = {
     startTime: Date.now(),
@@ -152,7 +152,7 @@ function extractMatchEvent(rawName) {
     return null;
 }
 
-// --- TABLE DE ROUTAGE SÉMANTIQUE INTÉGRALE (100% INTACTE D'ORIGINE AVEC ISOLATION DES EXCEPTIONS) ---
+// --- TABLE DE ROUTAGE SÉMANTIQUE INTÉGRALE ---
 function getChannelData(rawName) {
     if (!rawName) return null;
     let eventData = extractMatchEvent(rawName);
@@ -167,7 +167,7 @@ function getChannelData(rawName) {
 
     let cCheck = n.replace(/[^A-Z0-9]/g, '');
 
-    // --- ISOLATION PRÉVENTIVE STRICTE DES CHAÎNES CONTENANT "CANAL" OU "PREMIER" HORS BOUQUET ---
+    // --- EXCEPTIONS SÉMANTIQUES STRICTES (ISOLATION PRÉVENTIVE) ---
     if (cCheck.includes('CANALJ') || cCheck === 'CJ') return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse'], index: 6 };
     if (cCheck.includes('CANALSAVOIR') || cCheck.includes('SAVOIR')) return { id: 'hyb_dec_savoir', name: 'Canal Savoir', categories: ['decouverte'], index: 40 };
     if (cCheck.includes('CANALALPHA') || cCheck.includes('ALPHA')) return { id: 'hyb_aut_canalalpha', name: 'Canal Alpha', categories: ['autres'], index: 150 };
@@ -371,12 +371,12 @@ function getChannelData(rawName) {
 
     let cat = 'autres';
     let idx = 300;
-    if (c.includes('SPORT') || c.includes('FOOT') || c.includes('GOLF') || c.includes('TENNIS') || c.includes('RUGBY') || c.includes('AUTO') || c.includes('MOTO')) cat = 'sports';
-    else if (c.includes('CINE') || c.includes('FILM') || c.includes('SERIE') || c.includes('ACTION') || c.includes('PARAMOUNT')) cat = 'cinema';
-    else if (c.includes('INFO') || c.includes('NEWS') || c.includes('METEO')) cat = 'info';
-    else if (c.includes('DOC') || c.includes('NATURE') || c.includes('HISTOIRE') || c.includes('CRIME') || c.includes('ANIMAUX') || c.includes('PLANET') || c.includes('CHASSE') || c.includes('SCIENC')) cat = 'decouverte';
-    else if (c.includes('KIDS') || c.includes('JUNIOR') || c.includes('TOON') || c.includes('NICKELODEON') || c.includes('DISNEY')) cat = 'jeunesse';
-    else if (c.includes('MUSIC') || c.includes('HIT') || c.includes('POP') || c.includes('ROCK') || c.includes('TRACE') || c.includes('MELODY') || c.includes('MTV') || c.includes('MCM')) cat = 'musique';
+    if (c.includes('SPORT') || c.includes('FOOT') || c.includes('GOLF') || c.includes('RUGBY')) cat = 'sports';
+    else if (c.includes('CINE') || c.includes('FILM') || c.includes('SERIE') || c.includes('ACTION')) cat = 'cinema';
+    else if (c.includes('INFO') || c.includes('NEWS')) cat = 'info';
+    else if (c.includes('DOC') || c.includes('PLANET') || c.includes('ANIMAUX') || c.includes('NATIONAL')) cat = 'decouverte';
+    else if (c.includes('KIDS') || c.includes('JUNIOR') || c.includes('TOON') || c.includes('DISNEY') || c.includes('NICKELODEON')) cat = 'jeunesse';
+    else if (c.includes('MUSIC') || c.includes('HIT') || c.includes('MTV')) cat = 'musique';
 
     let prettyName = rawName.replace(/\[.*?\]|\(.*?\)/g, '').replace(/\b(?:FHD|HD|SD|4K|1080P|720P)\b/gi, '').trim();
     prettyName = prettyName.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.substr(1).toLowerCase());
@@ -488,13 +488,14 @@ async function updateEPG() {
     } finally { isUpdatingEPG = false; }
 }
 
-// --- CATALOG ENGINE UNIVERSEL (AVEC CIRCUIT BREAKER ANTI-RATE LIMITING) ---
-async function fetchCatalogFromSource(sourceInput) {
+// --- CATALOG ENGINE UNIVERSEL (AVEC STATUT ROBUSTE POUR TETHYS) ---
+async function fetchCatalogFromSource(sourceInput, reportObj = null) {
     let metas = [];
     let cleanInput = sourceInput.trim();
     if (!cleanInput || !isValidHttpUrl(cleanInput)) return metas;
 
     if (sourceBlocklist.has(cleanInput) && Date.now() < sourceBlocklist.get(cleanInput)) {
+        if (reportObj) reportObj.status = 'blocked (rate-limit)';
         return metas;
     }
 
@@ -502,6 +503,7 @@ async function fetchCatalogFromSource(sourceInput) {
         try {
             const res = await axios.get(cleanInput, { timeout: 10000, headers: { 'User-Agent': 'VLC/3.0.18' } });
             sourceBlocklist.delete(cleanInput);
+            if (reportObj) reportObj.status = 'ok';
             const lines = res.data.split('\n');
             let currentLogo = DEFAULT_POSTER;
             let currentName = '';
@@ -527,6 +529,7 @@ async function fetchCatalogFromSource(sourceInput) {
             if (e.response && (e.response.status === 403 || e.response.status === 429)) {
                 sourceBlocklist.set(cleanInput, Date.now() + 15 * 60 * 1000);
             }
+            if (reportObj) reportObj.status = 'error';
         }
         return metas;
     }
@@ -536,8 +539,11 @@ async function fetchCatalogFromSource(sourceInput) {
         if (!cleanUrl.endsWith('manifest.json')) cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
         const base = cleanUrl.replace(/\/manifest\.json$/, '');
 
+        // Test immédiat du manifest : si le manifest répond, la source est en ligne (Fix Tethys)
         const manifestRes = await axios.get(cleanUrl, { timeout: 6000, headers: { 'User-Agent': 'Mozilla/5.0' } });
         sourceBlocklist.delete(cleanInput);
+        if (reportObj) reportObj.status = 'ok';
+
         const catalogs = manifestRes.data.catalogs || [];
         
         const catalogPromises = catalogs.map(async (catalog) => {
@@ -587,18 +593,89 @@ async function fetchCatalogFromSource(sourceInput) {
         if (err.response && (err.response.status === 403 || err.response.status === 429)) {
             sourceBlocklist.set(cleanInput, Date.now() + 15 * 60 * 1000);
         }
+        if (reportObj) reportObj.status = 'error';
     }
 
     return metas;
 }
 
-// --- SYNC ORCHESTRATOR ---
+// --- SYNC ORCHESTRATOR AVEC WARM-UP IMMÉDIAT ---
+async function syncSourcesInBackground(sourcesList) {
+    const validSources = sourcesList.filter(s => typeof s === 'string' && isValidHttpUrl(s.trim()));
+    const cacheKey = validSources.join('|');
+    if (!channelsCache[cacheKey]) {
+        channelsCache[cacheKey] = { status: 'syncing', data: [], sourceReport: {}, timestamp: 0 };
+    }
+
+    let cacheObj = channelsCache[cacheKey];
+    cacheObj.status = 'syncing';
+
+    try {
+        let tempChannelsMap = {};
+        let sourceReport = {};
+
+        for (let i = 0; i < validSources.length; i++) {
+            const sourceInput = validSources[i].trim();
+            let cleanUrl = sourceInput.replace(/\/manifest\.json$/, '').trim();
+            sourceReport[cleanUrl] = { count: 0, status: 'fetching' };
+
+            try {
+                const metas = await fetchCatalogFromSource(sourceInput, sourceReport[cleanUrl]);
+                sourceReport[cleanUrl].count = metas.length;
+                if (sourceReport[cleanUrl].status !== 'error' && sourceReport[cleanUrl].status !== 'blocked (rate-limit)') {
+                    sourceReport[cleanUrl].status = 'ok';
+                }
+
+                metas.forEach(meta => {
+                    let channelInfo = getChannelData(meta.name || '');
+                    if (!channelInfo) return; 
+
+                    const id = channelInfo.id;
+                    let finalPoster = meta.poster || DEFAULT_POSTER;
+
+                    if (!tempChannelsMap[id]) {
+                        tempChannelsMap[id] = { 
+                            id: id, name: channelInfo.name, displayName: channelInfo.name, categories: channelInfo.categories,
+                            sortIndex: channelInfo.index, sources: [], poster: finalPoster 
+                        };
+                    }
+                    
+                    if (meta._isDirectStream) {
+                        const sourceExists = tempChannelsMap[id].sources.find(s => s.directUrl === meta._directUrl);
+                        if (!sourceExists) tempChannelsMap[id].sources.push({ type: 'm3u', directUrl: meta._directUrl, sourceIndex: i, originalName: meta.name });
+                    } else {
+                        const sourceExists = tempChannelsMap[id].sources.find(s => s.metaId === meta.id && s.providerBase === cleanUrl);
+                        if (!sourceExists) tempChannelsMap[id].sources.push({ type: 'addon', metaId: meta.id, providerBase: cleanUrl, sourceIndex: i, originalName: meta.name });
+                    }
+                });
+            } catch (e) {
+                sourceReport[cleanUrl] = { count: 0, status: 'error' };
+            }
+        }
+
+        let tempChannelsData = Object.values(tempChannelsMap).filter(ch => ch.sources.length > 0);
+        tempChannelsData.sort((a, b) => {
+            if (a.sortIndex !== b.sortIndex) return a.sortIndex - b.sortIndex;
+            return a.displayName.localeCompare(b.displayName);
+        });
+
+        cacheObj.data = tempChannelsData;
+        cacheObj.sourceReport = sourceReport;
+        cacheObj.status = 'done';
+        cacheObj.timestamp = Date.now();
+    } catch (e) {
+        cacheObj.status = 'idle';
+    }
+}
+
 async function getChannelsForSources(sourcesList) {
     const validSources = sourcesList.filter(s => typeof s === 'string' && isValidHttpUrl(s.trim()));
     const cacheKey = validSources.join('|');
 
     if (!channelsCache[cacheKey]) {
         channelsCache[cacheKey] = { status: 'idle', data: [], sourceReport: {}, timestamp: 0 };
+        syncSourcesInBackground(validSources);
+        return [];
     }
 
     let cacheObj = channelsCache[cacheKey];
@@ -607,84 +684,15 @@ async function getChannelsForSources(sourcesList) {
         return cacheObj.data;
     }
 
-    if (cacheObj.status === 'syncing') {
-        while (channelsCache[cacheKey] && channelsCache[cacheKey].status === 'syncing') {
-            await new Promise(r => setTimeout(r, 400));
-        }
-        return channelsCache[cacheKey] ? channelsCache[cacheKey].data : [];
+    if (cacheObj.status === 'idle') {
+        syncSourcesInBackground(validSources);
     }
 
-    cacheObj.status = 'syncing';
-
-    (async () => {
-        try {
-            let tempChannelsMap = {};
-            let sourceReport = {};
-
-            for (let i = 0; i < validSources.length; i++) {
-                const sourceInput = validSources[i].trim();
-                let cleanUrl = sourceInput.replace(/\/manifest\.json$/, '').trim();
-                sourceReport[cleanUrl] = { count: 0, status: 'fetching' };
-
-                try {
-                    const metas = await fetchCatalogFromSource(sourceInput);
-                    
-                    if (metas && metas.length > 0) {
-                        sourceReport[cleanUrl] = { count: metas.length, status: 'ok' };
-                    } else {
-                        sourceReport[cleanUrl] = { count: 0, status: sourceBlocklist.has(cleanInput) ? 'blocked (rate-limit)' : 'empty' };
-                    }
-
-                    metas.forEach(meta => {
-                        let channelInfo = getChannelData(meta.name || '');
-                        if (!channelInfo) return; 
-
-                        const id = channelInfo.id;
-                        let finalPoster = meta.poster || DEFAULT_POSTER;
-
-                        if (!tempChannelsMap[id]) {
-                            tempChannelsMap[id] = { 
-                                id: id, name: channelInfo.name, displayName: channelInfo.name, categories: channelInfo.categories,
-                                sortIndex: channelInfo.index, sources: [], poster: finalPoster 
-                            };
-                        }
-                        
-                        if (meta._isDirectStream) {
-                            const sourceExists = tempChannelsMap[id].sources.find(s => s.directUrl === meta._directUrl);
-                            if (!sourceExists) tempChannelsMap[id].sources.push({ type: 'm3u', directUrl: meta._directUrl, sourceIndex: i, originalName: meta.name });
-                        } else {
-                            const sourceExists = tempChannelsMap[id].sources.find(s => s.metaId === meta.id && s.providerBase === cleanUrl);
-                            if (!sourceExists) tempChannelsMap[id].sources.push({ type: 'addon', metaId: meta.id, providerBase: cleanUrl, sourceIndex: i, originalName: meta.name });
-                        }
-                    });
-                } catch (e) {
-                    sourceReport[cleanUrl] = { count: 0, status: 'error' };
-                }
-            }
-
-            let tempChannelsData = Object.values(tempChannelsMap).filter(ch => ch.sources.length > 0);
-            tempChannelsData.sort((a, b) => {
-                if (a.sortIndex !== b.sortIndex) return a.sortIndex - b.sortIndex;
-                return a.displayName.localeCompare(b.displayName);
-            });
-
-            cacheObj.data = tempChannelsData;
-            cacheObj.sourceReport = sourceReport;
-            cacheObj.status = 'done';
-            cacheObj.timestamp = Date.now();
-        } catch (e) {
-            cacheObj.status = 'idle';
-        }
-    })();
-
-    while (cacheObj.status === 'syncing') {
-        await new Promise(r => setTimeout(r, 400));
-    }
-    return cacheObj.data;
+    return cacheObj.data || [];
 }
 
 // ============================================================================
-// APP ROUTES & DASHBOARD COMPLET RESTORÉ (AVEC GESTION QUALITÉ ET SAUVEGARDE)
+// APP ROUTES & DASHBOARD COMPLET RESTORÉ
 // ============================================================================
 
 app.get('/api/metrics', (req, res) => {
@@ -838,7 +846,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.0.10)</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.0.11)</p>
             </div>
 
             <div class="tabs">
@@ -1132,9 +1140,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.0.10',
+        version: '1.0.11',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV Sécurisé (v1.0.10).',
+        description: 'Meta-Addon IPTV Sécurisé (v1.0.11).',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1215,13 +1223,12 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
     res.json({ meta: { id: channel.id, type: 'tv', name: channel.displayName, poster: channel.poster, posterShape: 'square', description: descriptionText } });
 });
 
-// --- ROUTE STREAM ULTRA-RAPIDE (OPTIMISÉE CONTRE LES TIMEOUTS DE NUVIO & RATE-LIMITING) ---
+// --- ROUTE STREAM NON-BLOQUANTE (RÉPONSE INSTANTANÉE SANS TIMEOUT) ---
 app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
     
     serverStats.channelClicks[req.params.id] = (serverStats.channelClicks[req.params.id] || 0) + 1;
-
     const cacheKey = req.params.id + '|' + config.sources.join(',');
     
     if (streamResponseCache.has(cacheKey)) {
@@ -1377,7 +1384,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             }
         });
 
-        // --- TRI PAR SCORE EXACT D'ORIGINE ---
         allStreams.sort((a, b) => b._score - a._score);
         let limitedStreams = allStreams.slice(0, 15).map((s) => {
             let streamObj = { ...s };
@@ -1398,7 +1404,11 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, async () => {
-    console.log(`[INFO] Server started on port ${PORT} (HybridTV v1.0.10 STABLE & COMPLETE)`);
+    console.log(`[INFO] Server started on port ${PORT} (HybridTV v1.0.11 STABLE)`);
     updateEPG(); 
     setInterval(updateEPG, 3600000); 
+    // Synchronisation automatique immédiate de toutes les sources au démarrage
+    for (const key of Object.keys(channelsCache)) {
+        syncSourcesInBackground(key.split('|'));
+    }
 });
