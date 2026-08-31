@@ -1,6 +1,6 @@
 /**
  * HybridTV
- * Version: 1.0.11 (Background Warm-up Immédiat, Fix Statut Tethys & Sémantique Intégrale)
+ * Version: 1.0.12 (Normalisation +1 Corrigée, Isolation Disney+ & Health-Check Background Restauré)
  */
 
 const express = require('express');
@@ -20,6 +20,7 @@ let channelsCache = {};
 let streamCache = new Map(); 
 let streamResponseCache = new Map(); 
 let sourceBlocklist = new Map();
+let streamHealthCache = new Map(); // Cache de santé périodique en arrière-plan
 
 const serverStats = {
     startTime: Date.now(),
@@ -152,7 +153,7 @@ function extractMatchEvent(rawName) {
     return null;
 }
 
-// --- TABLE DE ROUTAGE SÉMANTIQUE INTÉGRALE ---
+// --- TABLE DE ROUTAGE SÉMANTIQUE INTÉGRALE (AVEC PRÉSERVATION DES +1 ET ISOLATION DISNEY+) ---
 function getChannelData(rawName) {
     if (!rawName) return null;
     let eventData = extractMatchEvent(rawName);
@@ -162,12 +163,16 @@ function getChannelData(rawName) {
     n = n.replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
     n = n.replace(/^(?:FR|BE|CH|CA|VIP|VAVOO)\s*[:|/-]+\s*/i, '');
     n = n.replace(/DURING EVENT ONLY/g, '').replace(/EVENT ONLY/g, '');
+    
+    // Remplacement explicite de "+1" avant le nettoyage pour ne pas perdre l'information de décalage
+    n = n.replace(/\+1/g, 'PLUS1').replace(/\+([0-9])/g, 'PLUS$1');
+
     const tags = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'DIRECT', 'RAW', 'ACCESS'];
     tags.forEach(tag => { n = n.replace(new RegExp(`\\b${tag}\\b`, 'gi'), ''); });
 
     let cCheck = n.replace(/[^A-Z0-9]/g, '');
 
-    // --- EXCEPTIONS SÉMANTIQUES STRICTES (ISOLATION PRÉVENTIVE) ---
+    // --- EXCEPTIONS STRICTES (ISOLATION PRÉVENTIVE AVANT LE BOUQUET CANAL) ---
     if (cCheck.includes('CANALJ') || cCheck === 'CJ') return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse'], index: 6 };
     if (cCheck.includes('CANALSAVOIR') || cCheck.includes('SAVOIR')) return { id: 'hyb_dec_savoir', name: 'Canal Savoir', categories: ['decouverte'], index: 40 };
     if (cCheck.includes('CANALALPHA') || cCheck.includes('ALPHA')) return { id: 'hyb_aut_canalalpha', name: 'Canal Alpha', categories: ['autres'], index: 150 };
@@ -175,6 +180,9 @@ function getChannelData(rawName) {
     if (cCheck.includes('FORMULA1') || cCheck.includes('F1')) return { id: 'hyb_sport_f1', name: 'Canal+ Formula 1', categories: ['sports', 'canal'], index: 93 };
     if (cCheck.includes('PREMIERLEAGUE') || cCheck === 'PREMIER' || cCheck.includes('PREMIERELIGUE') || cCheck.includes('PREMIERLIGUE')) {
         return { id: 'hyb_sport_premierleague', name: 'Premier League', categories: ['sports'], index: 95 };
+    }
+    if (cCheck === 'DISNEYPLUS' || cCheck === 'DISNEY' && rawName.includes('+')) {
+        return { id: 'hyb_cine_disneyplus', name: 'Disney+', categories: ['cinema'], index: 55 };
     }
 
     if (n.includes('LFL') || n.includes('LEAGUE OF LEGENDS') || n.includes('LOL LFL')) {
@@ -199,7 +207,7 @@ function getChannelData(rawName) {
 
     let c = cCheck;
     if (!c || c.length < 2) return null;
-    if (BLACKLIST.some(b => c.includes(b))) return null;
+    if (BLACKLIST.some(b => c.includes(b) && c !== 'DISNEYPLUS')) return null;
 
     if (c.includes('JURAS') || c.includes('TOP14') || c.includes('LCENTRE') || c.includes('LIGA') || c === 'CANALPLUSL' || c === 'CPLUSL' || c === 'CPLUSSPORT') {
         let pretty = rawName.replace(/\[.*?\]|\(.*?\)/g, '').replace(/\b(?:FHD|HD|SD|4K|1080P|720P)\b/gi, '').trim();
@@ -314,7 +322,7 @@ function getChannelData(rawName) {
     if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
     if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
 
-    // --- CLASSEMENT JEUNESSE ORDONNÉ ---
+    // --- CLASSEMENT JEUNESSE ORDONNÉ (AVEC GESTION DES +1) ---
     if (c.includes('CARTOONNETWORK') || c === 'CARTOON') return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
     
     if (c.includes('DISNEY')) {
@@ -371,12 +379,12 @@ function getChannelData(rawName) {
 
     let cat = 'autres';
     let idx = 300;
-    if (c.includes('SPORT') || c.includes('FOOT') || c.includes('GOLF') || c.includes('RUGBY')) cat = 'sports';
-    else if (c.includes('CINE') || c.includes('FILM') || c.includes('SERIE') || c.includes('ACTION')) cat = 'cinema';
-    else if (c.includes('INFO') || c.includes('NEWS')) cat = 'info';
-    else if (c.includes('DOC') || c.includes('PLANET') || c.includes('ANIMAUX') || c.includes('NATIONAL')) cat = 'decouverte';
-    else if (c.includes('KIDS') || c.includes('JUNIOR') || c.includes('TOON') || c.includes('DISNEY') || c.includes('NICKELODEON')) cat = 'jeunesse';
-    else if (c.includes('MUSIC') || c.includes('HIT') || c.includes('MTV')) cat = 'musique';
+    if (c.includes('SPORT') || c.includes('FOOT') || c.includes('GOLF') || c.includes('TENNIS') || c.includes('RUGBY') || c.includes('AUTO') || c.includes('MOTO')) cat = 'sports';
+    else if (c.includes('CINE') || c.includes('FILM') || c.includes('SERIE') || c.includes('ACTION') || c.includes('PARAMOUNT')) cat = 'cinema';
+    else if (c.includes('INFO') || c.includes('NEWS') || c.includes('METEO')) cat = 'info';
+    else if (c.includes('DOC') || c.includes('NATURE') || c.includes('HISTOIRE') || c.includes('CRIME') || c.includes('ANIMAUX') || c.includes('PLANET') || c.includes('CHASSE') || c.includes('SCIENC')) cat = 'decouverte';
+    else if (c.includes('KIDS') || c.includes('JUNIOR') || c.includes('TOON') || c.includes('NICKELODEON') || c.includes('DISNEY')) cat = 'jeunesse';
+    else if (c.includes('MUSIC') || c.includes('HIT') || c.includes('POP') || c.includes('ROCK') || c.includes('TRACE') || c.includes('MELODY') || c.includes('MTV') || c.includes('MCM')) cat = 'musique';
 
     let prettyName = rawName.replace(/\[.*?\]|\(.*?\)/g, '').replace(/\b(?:FHD|HD|SD|4K|1080P|720P)\b/gi, '').trim();
     prettyName = prettyName.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.substr(1).toLowerCase());
@@ -488,7 +496,28 @@ async function updateEPG() {
     } finally { isUpdatingEPG = false; }
 }
 
-// --- CATALOG ENGINE UNIVERSEL (AVEC STATUT ROBUSTE POUR TETHYS) ---
+// --- WORKER DE SANTÉ EN ARRIÈRE-PLAN (BACKGROUND HEALTH-CHECK RESTORÉ) ---
+async function backgroundHealthChecker() {
+    for (const [key, cacheObj] of Object.entries(channelsCache)) {
+        if (!cacheObj.data) continue;
+        for (const channel of cacheObj.data) {
+            for (const source of channel.sources) {
+                let targetUrl = source.type === 'm3u' ? source.directUrl : null;
+                if (!targetUrl || !isValidHttpUrl(targetUrl)) continue;
+                
+                try {
+                    const r = await axios.head(targetUrl, { timeout: 3000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+                    streamHealthCache.set(targetUrl, r.status < 400);
+                } catch (e) {
+                    streamHealthCache.set(targetUrl, false);
+                }
+            }
+        }
+    }
+}
+setInterval(backgroundHealthChecker, 15 * 60 * 1000); // Exécuté toutes les 15 minutes
+
+// --- CATALOG ENGINE UNIVERSEL ---
 async function fetchCatalogFromSource(sourceInput, reportObj = null) {
     let metas = [];
     let cleanInput = sourceInput.trim();
@@ -539,7 +568,6 @@ async function fetchCatalogFromSource(sourceInput, reportObj = null) {
         if (!cleanUrl.endsWith('manifest.json')) cleanUrl = cleanUrl.replace(/\/$/, '') + '/manifest.json';
         const base = cleanUrl.replace(/\/manifest\.json$/, '');
 
-        // Test immédiat du manifest : si le manifest répond, la source est en ligne (Fix Tethys)
         const manifestRes = await axios.get(cleanUrl, { timeout: 6000, headers: { 'User-Agent': 'Mozilla/5.0' } });
         sourceBlocklist.delete(cleanInput);
         if (reportObj) reportObj.status = 'ok';
@@ -599,7 +627,7 @@ async function fetchCatalogFromSource(sourceInput, reportObj = null) {
     return metas;
 }
 
-// --- SYNC ORCHESTRATOR AVEC WARM-UP IMMÉDIAT ---
+// --- SYNC ORCHESTRATOR & WARM-UP ---
 async function syncSourcesInBackground(sourcesList) {
     const validSources = sourcesList.filter(s => typeof s === 'string' && isValidHttpUrl(s.trim()));
     const cacheKey = validSources.join('|');
@@ -846,7 +874,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.0.11)</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.0.12)</p>
             </div>
 
             <div class="tabs">
@@ -1140,9 +1168,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.0.11',
+        version: '1.0.12',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV Sécurisé (v1.0.11).',
+        description: 'Meta-Addon IPTV Sécurisé (v1.0.12).',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1223,12 +1251,13 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
     res.json({ meta: { id: channel.id, type: 'tv', name: channel.displayName, poster: channel.poster, posterShape: 'square', description: descriptionText } });
 });
 
-// --- ROUTE STREAM NON-BLOQUANTE (RÉPONSE INSTANTANÉE SANS TIMEOUT) ---
+// --- ROUTE STREAM ULTRA-RAPIDE (AVEC INTÉGRATION DU HEALTH CACHE) ---
 app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
     
     serverStats.channelClicks[req.params.id] = (serverStats.channelClicks[req.params.id] || 0) + 1;
+
     const cacheKey = req.params.id + '|' + config.sources.join(',');
     
     if (streamResponseCache.has(cacheKey)) {
@@ -1254,11 +1283,12 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
             if (source.type === 'm3u') {
                 if (!source.directUrl || !isValidHttpUrl(source.directUrl)) return [];
+                let isHealthy = streamHealthCache.get(source.directUrl) !== false;
                 return [{
                     url: source.directUrl,
                     name: isBeluchon ? `▶ Source Officielle (HD)` : `▶ Full HD (1080p)`,
                     title: source.originalName || "Source M3U",
-                    _score: isBeluchon ? 4500 : 1500,
+                    _score: (isHealthy ? 1500 : 100) + (isBeluchon ? 3000 : 0),
                     _originalTitle: source.originalName || "Source M3U",
                     behaviorHints: { proxyHeaders: { request: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase || 'https://vavoo.to/' } } }
                 }];
@@ -1404,11 +1434,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, async () => {
-    console.log(`[INFO] Server started on port ${PORT} (HybridTV v1.0.11 STABLE)`);
+    console.log(`[INFO] Server started on port ${PORT} (HybridTV v1.0.12 STABLE)`);
     updateEPG(); 
     setInterval(updateEPG, 3600000); 
-    // Synchronisation automatique immédiate de toutes les sources au démarrage
-    for (const key of Object.keys(channelsCache)) {
-        syncSourcesInBackground(key.split('|'));
-    }
 });
