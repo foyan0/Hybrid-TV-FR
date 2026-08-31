@@ -1,7 +1,6 @@
 /**
  * HybridTV - IPTV Meta-Addon
- * Version: 1.1.2 (Optimized 45s Cache)
- * Core Engine: Synchronous Health Check, 45s Smart Cache, Strict Original Routing.
+ * Version: 1.4.0 (Production Stable & Optimized)
  */
 
 const express = require('express');
@@ -13,7 +12,6 @@ const readline = require('readline');
 const app = express();
 app.use(cors());
 
-// --- TELEMETRY & CACHING STATE ---
 let isUpdatingEPG = false;
 let lastUpdate = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
 let epgData = {}; 
@@ -29,7 +27,6 @@ const serverStats = {
     activeIps: new Map()
 };
 
-// --- MIDDLEWARE: Metrics Tracker ---
 app.use((req, res, next) => {
     if (req.path.includes('.json')) {
         serverStats.totalRequests++;
@@ -42,7 +39,6 @@ app.use((req, res, next) => {
     next();
 });
 
-// Nettoyage des vieilles IPs en tâche de fond (Optimisation CPU)
 setInterval(() => {
     const now = Date.now();
     for (let [key, time] of serverStats.activeIps.entries()) {
@@ -50,7 +46,6 @@ setInterval(() => {
     }
 }, 60000);
 
-// --- ASSETS & CONFIG ---
 const DEFAULT_POSTER = 'https://raw.githubusercontent.com/Stremio/stremio-addon-sdk/master/docs/api/images/stremio-placeholder.jpg';
 const EVENT_POSTER = 'https://cdn-icons-png.flaticon.com/512/861/861512.png';
 
@@ -73,7 +68,6 @@ function parseConfig(encodedConfig) {
     }
 }
 
-// --- ORIGINAL LIVE EVENTS PARSER ---
 function extractMatchEvent(rawName) {
     if (!rawName) return null;
     let s = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -88,7 +82,7 @@ function extractMatchEvent(rawName) {
                  .replace(/\b(?:FHD|HD|SD|4K|1080P|720P|MATCH\s*TIME|MATCHTIME)\b/gi, '')
                  .replace(/[^A-Z0-9\s-]/g, '').trim();
         if (cleanName.length < 3) cleanName = "Événement Sportif";
-        return { id: 'hyb_ev_' + toSyncId(cleanName), name: '🔴 ' + cleanName, categories: ['events'], index: 5, customPoster: EVENT_POSTER };
+        return { id: 'hyb_ev_' + toSyncId(cleanName), name: '🔴 ' + cleanName, categories: ['events', 'live_top'], index: 5, customPoster: EVENT_POSTER };
     }
 
     let vsMatch = s.match(/([A-Z0-9\s]{3,20})\s+(?:VS\.?|CONTRE|\bV\b|\bVERSUS\b)\s+([A-Z0-9\s]{3,20})/i);
@@ -118,17 +112,16 @@ function extractMatchEvent(rawName) {
 
         if (cleanT1.length >= 2 && cleanT2.length >= 2 && cleanT1 !== cleanT2) {
             let canonicalKey = [toSyncId(cleanT1), toSyncId(cleanT2)].sort().join('_');
-            return { id: 'hyb_ev_' + canonicalKey, name: `⚽ ${cleanT1} vs ${cleanT2}`, categories: ['events'], index: 5, customPoster: EVENT_POSTER };
+            return { id: 'hyb_ev_' + canonicalKey, name: `⚽ ${cleanT1} vs ${cleanT2}`, categories: ['events', 'live_top'], index: 5, customPoster: EVENT_POSTER };
         }
     }
 
     if (s.includes('MULTIPLEX') && !s.includes('CANAL')) {
-        return { id: 'hyb_ev_multi', name: '🔴 MULTIPLEX EN DIRECT', categories: ['events'], index: 1, customPoster: EVENT_POSTER };
+        return { id: 'hyb_ev_multi', name: '🔴 MULTIPLEX EN DIRECT', categories: ['events', 'live_top'], index: 1, customPoster: EVENT_POSTER };
     }
     return null;
 }
 
-// --- ORIGINAL SEMANTIC ROUTING ---
 function getChannelData(rawName) {
     if (!rawName) return null;
     let eventData = extractMatchEvent(rawName);
@@ -362,7 +355,6 @@ function formatTime(timestamp) {
     return new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }).format(new Date(timestamp)).replace(':', 'h');
 }
 
-// --- EPG SYNC ---
 async function fetchAndParseEPG(url, isGz) {
     return new Promise(async (resolve, reject) => {
         try {
@@ -448,7 +440,6 @@ async function updateEPG() {
     } finally { isUpdatingEPG = false; }
 }
 
-// --- CATALOG ENGINE ---
 async function fetchCatalogFromSource(sourceInput) {
     let metas = [];
     let cleanInput = sourceInput.trim();
@@ -536,7 +527,6 @@ async function fetchCatalogFromSource(sourceInput) {
     return metas;
 }
 
-// --- SYNC ORCHESTRATOR ---
 async function getChannelsForSources(sourcesList) {
     const cacheKey = sourcesList.join('|');
 
@@ -627,10 +617,6 @@ async function getChannelsForSources(sourcesList) {
     }
     return cacheObj.data;
 }
-
-// ============================================================================
-// APP ROUTES & DASHBOARD
-// ============================================================================
 
 app.get('/api/debug/livesport', (req, res) => {
     let latestCache = null;
@@ -834,7 +820,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.1.2).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.4.0).</p>
             </div>
 
             <div class="tabs">
@@ -1135,12 +1121,12 @@ app.get('/:config/configure', (req, res) => {
     res.redirect('/' + req.params.config);
 });
 
-// --- MANIFEST BUILDER ---
 app.get('/:config/manifest.json', (req, res) => {
     const config = parseConfig(req.params.config);
     res.setHeader('Cache-Control', 'max-age=86400, public'); 
 
     let baseCatalogs = [
+        { type: 'tv', id: 'live_top', name: '🔥 Live: Top Événements' },
         { type: 'tv', id: 'tnt', name: '📺 TNT' },
         { type: 'tv', id: 'info', name: '📰 Information' },
         { type: 'tv', id: 'jeunesse', name: '👶 Jeunesse' },
@@ -1155,9 +1141,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.1.2',
+        version: '1.4.0',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.1.2). Synchronous Health Check, 45s Cache & Strict Routing.',
+        description: 'Meta-Addon IPTV (v1.4.0). Top Événements & Recherche Croisée EPG.',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1181,9 +1167,14 @@ app.get(['/:config/catalog/tv/:id.json', '/:config/catalog/tv/:id/:extra'], asyn
     }
 
     let filteredChannels = channelsData;
-    const validCatalogs = ['tnt', 'info', 'jeunesse', 'decouverte', 'cinema', 'musique', 'canal', 'sports', 'events', 'autres'];
+    const validCatalogs = ['live_top', 'tnt', 'info', 'jeunesse', 'decouverte', 'cinema', 'musique', 'canal', 'sports', 'events', 'autres'];
     if (!validCatalogs.includes(requestedCatalog)) return res.json({ metas: [] });
-    filteredChannels = channelsData.filter(ch => ch.categories.includes(requestedCatalog));
+    
+    if (requestedCatalog === 'live_top') {
+        filteredChannels = channelsData.filter(ch => ch.categories.includes('live_top') || ch.categories.includes('events'));
+    } else {
+        filteredChannels = channelsData.filter(ch => ch.categories.includes(requestedCatalog));
+    }
     
     const paginatedMetas = filteredChannels.slice(skip, skip + 100).map(ch => ({
         id: ch.id, type: 'tv', name: ch.displayName, poster: ch.poster, posterShape: 'square'
@@ -1387,8 +1378,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         if (!outStream.behaviorHints) outStream.behaviorHints = {};
                         if (!outStream.behaviorHints.notWebReady) outStream.behaviorHints.notWebReady = true;
 
-                        // Utilisation dynamique de la base du fournisseur sans domaine tiers fixe
-                        let refDomain = "https://example.com/";
+                        let refDomain = "https://vavoo.to/";
                         try {
                             let uObj = new URL(source.providerBase);
                             refDomain = uObj.origin + "/";
