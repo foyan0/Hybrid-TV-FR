@@ -1,6 +1,6 @@
 /**
  * HybridTV
- * Version: 1.0.12 (Normalisation +1 Corrigée, Isolation Disney+ & Health-Check Background Restauré)
+ * Version: 1.0.13 (Tri 3 Niveaux, Sémantique Intégrale, Dashboard Complet & Warm-up Prioritaire)
  */
 
 const express = require('express');
@@ -20,7 +20,7 @@ let channelsCache = {};
 let streamCache = new Map(); 
 let streamResponseCache = new Map(); 
 let sourceBlocklist = new Map();
-let streamHealthCache = new Map(); // Cache de santé périodique en arrière-plan
+let streamHealthStates = new Map(); // Stocke l'état de santé à 3 niveaux : 'healthy', 'uncertain', 'dead'
 
 const serverStats = {
     startTime: Date.now(),
@@ -104,9 +104,6 @@ function extractMatchEvent(rawName) {
     let s = rawName.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     s = s.replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
 
-    let isMatch = false;
-    let eventName = '';
-
     if (s.includes('MATCH TIME') || s.includes('MATCHTIME')) {
         let cleanName = s.replace(/^(?:FR|BE|CH|VIP|LIVE|DIRECT|EVENT|MATCH|LIGUE\s*1|DAZN|BEIN|RMC|CANAL\+?|MULTI|MULTIPLEX)\s*[:|-|\|]*\s*/gi, '')
                  .replace(/\d{1,2}[hH:]\d{2}/g, '')
@@ -118,42 +115,18 @@ function extractMatchEvent(rawName) {
 
     let vsMatch = s.match(/([A-Z0-9\s]{3,20})\s+(?:VS\.?|CONTRE|\bV\b|\bVERSUS\b)\s+([A-Z0-9\s]{3,20})/i);
     if (vsMatch) {
-        isMatch = true; 
-        eventName = `${vsMatch[1].trim()} vs ${vsMatch[2].trim()}`;
-    } else if (/(?:LIGUE\s*1|UCL|LDC|EURO|PREMIER LEAGUE|MATCH|EVENT).+?\b([A-Z][A-Z0-9\s]{2,20})\s*[-/]\s*([A-Z][A-Z0-9\s]{2,20})\b/i.test(s)) {
-        let dashMatch = s.match(/\b([A-Z][A-Z0-9\s]{2,20})\s*[-/]\s*([A-Z][A-Z0-9\s]{2,20})\b/i);
-        if (dashMatch) {
-            let inv = ['CANAL', 'CINE', 'SPORT', 'BEIN', 'RMC', 'EUROSPORT', 'TF1', 'FRANCE', 'M6', 'DAZN', '1080P', '720P', 'UHD', '4K', 'FHD', 'HD', 'SD', 'PLUS'];
-            if (!inv.includes(dashMatch[1].trim()) && !inv.includes(dashMatch[2].trim())) {
-                isMatch = true; 
-                eventName = `${dashMatch[1].trim()} vs ${dashMatch[2].trim()}`;
-            }
+        const cleanTeam = (str) => str.replace(/[^A-Z0-9\s]/g, '').trim();
+        let t1 = cleanTeam(vsMatch[1]);
+        let t2 = cleanTeam(vsMatch[2]);
+        if (t1.length >= 2 && t2.length >= 2 && t1 !== t2) {
+            let canonicalKey = [toSyncId(t1), toSyncId(t2)].sort().join('_');
+            return { id: 'hyb_ev_' + canonicalKey, name: `⚽ ${t1} vs ${t2}`, categories: ['events'], index: 5, customPoster: EVENT_POSTER };
         }
-    }
-
-    if (isMatch) {
-        const cleanTeam = (str) => {
-            return str.replace(/^(?:FR|BE|CH|VIP|1080P|720P|4K|HD|SD|LIVE|DIRECT|EVENT|MATCH|LIGUE\s*1|DAZN|BEIN|RMC|CANAL\+?|MULTI)\s*[:|-|\|]*/gi, '')
-                      .replace(/\b(?:FHD|HD|SD|4K|1080P|720P|LIVE|DIRECT|RAW)\b/gi, '')
-                      .replace(/[^A-Z0-9\s]/g, '').trim();
-        };
-        let parts = eventName.split(' vs ');
-        let cleanT1 = cleanTeam(parts[0]);
-        let cleanT2 = cleanTeam(parts[1]);
-
-        if (cleanT1.length >= 2 && cleanT2.length >= 2 && cleanT1 !== cleanT2) {
-            let canonicalKey = [toSyncId(cleanT1), toSyncId(cleanT2)].sort().join('_');
-            return { id: 'hyb_ev_' + canonicalKey, name: `⚽ ${cleanT1} vs ${cleanT2}`, categories: ['events'], index: 5, customPoster: EVENT_POSTER };
-        }
-    }
-
-    if (s.includes('MULTIPLEX') && !s.includes('CANAL')) {
-        return { id: 'hyb_ev_multi', name: '🔴 MULTIPLEX EN DIRECT', categories: ['events'], index: 1, customPoster: EVENT_POSTER };
     }
     return null;
 }
 
-// --- TABLE DE ROUTAGE SÉMANTIQUE INTÉGRALE (AVEC PRÉSERVATION DES +1 ET ISOLATION DISNEY+) ---
+// --- TABLE DE ROUTAGE SÉMANTIQUE INTÉGRALE ---
 function getChannelData(rawName) {
     if (!rawName) return null;
     let eventData = extractMatchEvent(rawName);
@@ -164,7 +137,6 @@ function getChannelData(rawName) {
     n = n.replace(/^(?:FR|BE|CH|CA|VIP|VAVOO)\s*[:|/-]+\s*/i, '');
     n = n.replace(/DURING EVENT ONLY/g, '').replace(/EVENT ONLY/g, '');
     
-    // Remplacement explicite de "+1" avant le nettoyage pour ne pas perdre l'information de décalage
     n = n.replace(/\+1/g, 'PLUS1').replace(/\+([0-9])/g, 'PLUS$1');
 
     const tags = ['FHD', 'HD', 'SD', '4K', 'UHD', '1080P', '720P', '1080', '720', 'HEVC', 'H265', 'VOD', 'BACKUP', 'SECOURS', 'VIP', 'DIRECT', 'RAW', 'ACCESS'];
@@ -172,7 +144,7 @@ function getChannelData(rawName) {
 
     let cCheck = n.replace(/[^A-Z0-9]/g, '');
 
-    // --- EXCEPTIONS STRICTES (ISOLATION PRÉVENTIVE AVANT LE BOUQUET CANAL) ---
+    // --- EXCEPTIONS SÉMANTIQUES STRICTES ---
     if (cCheck.includes('CANALJ') || cCheck === 'CJ') return { id: 'hyb_jeu_canalj', name: 'Canal J', categories: ['jeunesse'], index: 6 };
     if (cCheck.includes('CANALSAVOIR') || cCheck.includes('SAVOIR')) return { id: 'hyb_dec_savoir', name: 'Canal Savoir', categories: ['decouverte'], index: 40 };
     if (cCheck.includes('CANALALPHA') || cCheck.includes('ALPHA')) return { id: 'hyb_aut_canalalpha', name: 'Canal Alpha', categories: ['autres'], index: 150 };
@@ -234,18 +206,14 @@ function getChannelData(rawName) {
         if (c.includes('ELLES') || c.includes('LCENTRE') || c.includes('CENTRE') || c === 'CANALL' || c.includes('REGIONAL') || c.includes('LOCAL') || c.includes('OUTREMER')) {
             return { id: 'hyb_aut_canal_elles', name: 'Canal+ Elles', categories: ['autres'], index: 1000 };
         }
-
         if (c.includes('KIDS')) return { id: 'hyb_canal_kids', name: 'Canal+ Kids', categories: ['canal', 'jeunesse'], index: 101 };
-        
         if (c.includes('LIVE')) {
             let m = c.match(/LIVE(\d+)/); let num = m ? m[1] : '1';
             return { id: 'hyb_canal_live_' + num, name: 'Canal+ Live ' + num, categories: ['canal'], index: 200 + parseInt(num, 10) };
         }
-
         if (c.includes('SPORT360') || c.includes('360')) return { id: 'hyb_canal_sport360', name: 'Canal+ Sport 360', categories: ['canal', 'sports'], index: 90 };
         if (c.includes('FOOT')) return { id: 'hyb_canal_foot', name: 'Canal+ Foot', categories: ['canal', 'sports'], index: 91 };
         if (c.includes('SPORT')) return { id: 'hyb_canal_sport', name: 'Canal+ Sport', categories: ['canal', 'sports'], index: 94 };
-        
         if (c.includes('CINEMA') || c.includes('CNEMA')) return { id: 'hyb_canal_cinema', name: 'Canal+ Cinéma', categories: ['canal', 'cinema'], index: 2 };
         if (c.includes('GRANDECRAN') || c.includes('ECRAN')) return { id: 'hyb_canal_grandecran', name: 'Canal+ Grand Écran', categories: ['canal', 'cinema'], index: 3 };
         if (c.includes('SERIES') || c.includes('SERIE')) return { id: 'hyb_canal_series', name: 'Canal+ Séries', categories: ['canal', 'cinema'], index: 4 };
@@ -253,7 +221,6 @@ function getChannelData(rawName) {
         if (c.includes('DOC')) return { id: 'hyb_canal_docs', name: 'Canal+ Docs', categories: ['canal', 'decouverte'], index: 6 };
         if (c.includes('DECALE')) return { id: 'hyb_canal_decale', name: 'Canal+ Décalé', categories: ['canal'], index: 14 };
         if (c.includes('FAMILY')) return { id: 'hyb_canal_family', name: 'Canal+ Family', categories: ['canal'], index: 15 };
-        
         return { id: 'hyb_canal_cplus', name: 'Canal+', categories: ['canal'], index: 1 };
     }
 
@@ -322,7 +289,7 @@ function getChannelData(rawName) {
     if (c.includes('RTL9')) return { id: 'hyb_tnt_rtl9', name: 'RTL9', categories: ['tnt', 'cinema'], index: 32 };
     if (c.includes('AB1')) return { id: 'hyb_tnt_ab1', name: 'AB1', categories: ['tnt'], index: 33 };
 
-    // --- CLASSEMENT JEUNESSE ORDONNÉ (AVEC GESTION DES +1) ---
+    // --- CLASSEMENT JEUNESSE ORDONNÉ ---
     if (c.includes('CARTOONNETWORK') || c === 'CARTOON') return { id: 'hyb_jeu_cartoon', name: 'Cartoon Network', categories: ['jeunesse'], index: 1 };
     
     if (c.includes('DISNEY')) {
@@ -496,7 +463,7 @@ async function updateEPG() {
     } finally { isUpdatingEPG = false; }
 }
 
-// --- WORKER DE SANTÉ EN ARRIÈRE-PLAN (BACKGROUND HEALTH-CHECK RESTORÉ) ---
+// --- WORKER DE SANTÉ EN ARRIÈRE-PLAN (3 NIVEAUX D'ÉTAT) ---
 async function backgroundHealthChecker() {
     for (const [key, cacheObj] of Object.entries(channelsCache)) {
         if (!cacheObj.data) continue;
@@ -506,16 +473,25 @@ async function backgroundHealthChecker() {
                 if (!targetUrl || !isValidHttpUrl(targetUrl)) continue;
                 
                 try {
-                    const r = await axios.head(targetUrl, { timeout: 3000, headers: { 'User-Agent': 'Mozilla/5.0' } });
-                    streamHealthCache.set(targetUrl, r.status < 400);
+                    const start = Date.now();
+                    const r = await axios.head(targetUrl, { timeout: 4000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+                    const duration = Date.now() - start;
+                    
+                    if (r.status < 400) {
+                        // Niveau 1 : Sain ou Niveau 2 : Lent/Incertain si la réponse prend plus de 2.5s
+                        streamHealthStates.set(targetUrl, duration > 2500 ? 'uncertain' : 'healthy');
+                    } else {
+                        // Niveau 3 : Down
+                        streamHealthStates.set(targetUrl, 'dead');
+                    }
                 } catch (e) {
-                    streamHealthCache.set(targetUrl, false);
+                    streamHealthStates.set(targetUrl, 'dead');
                 }
             }
         }
     }
 }
-setInterval(backgroundHealthChecker, 15 * 60 * 1000); // Exécuté toutes les 15 minutes
+setInterval(backgroundHealthChecker, 10 * 60 * 1000);
 
 // --- CATALOG ENGINE UNIVERSEL ---
 async function fetchCatalogFromSource(sourceInput, reportObj = null) {
@@ -874,7 +850,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.0.12)</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.0.13)</p>
             </div>
 
             <div class="tabs">
@@ -1168,9 +1144,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.0.12',
+        version: '1.0.13',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV Sécurisé (v1.0.12).',
+        description: 'Meta-Addon IPTV Sécurisé (v1.0.13).',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1251,7 +1227,7 @@ app.get('/:config/meta/tv/:id.json', async (req, res) => {
     res.json({ meta: { id: channel.id, type: 'tv', name: channel.displayName, poster: channel.poster, posterShape: 'square', description: descriptionText } });
 });
 
-// --- ROUTE STREAM ULTRA-RAPIDE (AVEC INTÉGRATION DU HEALTH CACHE) ---
+// --- ROUTE STREAM (AVEC SYSTÈME DE SANTÉ À 3 NIVEAUX : SAIN, INCERTAIN, DEAD) ---
 app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
@@ -1283,12 +1259,18 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
             if (source.type === 'm3u') {
                 if (!source.directUrl || !isValidHttpUrl(source.directUrl)) return [];
-                let isHealthy = streamHealthCache.get(source.directUrl) !== false;
+                
+                // Application du système de santé à 3 niveaux pour les flux M3U directs
+                let healthState = streamHealthStates.get(source.directUrl) || 'healthy';
+                let healthPenalty = 0;
+                if (healthState === 'uncertain') healthPenalty = 2000;
+                else if (healthState === 'dead') healthPenalty = 100000;
+
                 return [{
                     url: source.directUrl,
                     name: isBeluchon ? `▶ Source Officielle (HD)` : `▶ Full HD (1080p)`,
                     title: source.originalName || "Source M3U",
-                    _score: (isHealthy ? 1500 : 100) + (isBeluchon ? 3000 : 0),
+                    _score: (isBeluchon ? 4500 : 1500) - healthPenalty,
                     _originalTitle: source.originalName || "Source M3U",
                     behaviorHints: { proxyHeaders: { request: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase || 'https://vavoo.to/' } } }
                 }];
@@ -1350,6 +1332,11 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             qualStr = "Source Officielle Légale (HD)";
                             qScore = 5000; 
                         }
+
+                        // Application de l'état de santé à 3 niveaux sur l'URL directe du stream si connue
+                        let healthState = streamHealthStates.get(s.url) || 'healthy';
+                        if (healthState === 'uncertain') penalty += 2000;
+                        else if (healthState === 'dead') penalty += 100000;
 
                         score += qScore;
                         if (up.match(/\bFR\b/) || up.match(/\bVF\b/) || up.includes('FRENCH') || up.includes('TRUEFRENCH')) score += 300; 
@@ -1434,7 +1421,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, async () => {
-    console.log(`[INFO] Server started on port ${PORT} (HybridTV v1.0.12 STABLE)`);
+    console.log(`[INFO] Server started on port ${PORT} (HybridTV v1.0.13 STABLE)`);
     updateEPG(); 
     setInterval(updateEPG, 3600000); 
 });
