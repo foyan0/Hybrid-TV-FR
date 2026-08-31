@@ -1,6 +1,6 @@
 /**
  * HybridTV
- * Version: 1.0.14 (Code Intégral Définitif : Sémantique Complète, Dashboard Dashboard Dashboard Complet, Health-Check 3 Niveaux & Codes d'Erreur Granulaires)
+ * Version: 1.0.15 (Code Review Final : Fix Fuites Mémoire, Optimisation EPG & Fix Catalogue Vide)
  */
 
 const express = require('express');
@@ -154,7 +154,7 @@ function getChannelData(rawName) {
     if (cCheck.includes('PREMIERLEAGUE') || cCheck === 'PREMIER' || cCheck.includes('PREMIERELIGUE') || cCheck.includes('PREMIERLIGUE')) {
         return { id: 'hyb_sport_premierleague', name: 'Premier League', categories: ['sports'], index: 95 };
     }
-    if (cCheck === 'DISNEYPLUS' || cCheck === 'DISNEY' && rawName.includes('+')) {
+    if (cCheck.includes('DISNEYPLUS') || (cCheck.includes('DISNEY') && rawName.includes('+'))) {
         return { id: 'hyb_cine_disneyplus', name: 'Disney+', categories: ['cinema'], index: 55 };
     }
 
@@ -180,7 +180,7 @@ function getChannelData(rawName) {
 
     let c = cCheck;
     if (!c || c.length < 2) return null;
-    if (BLACKLIST.some(b => c.includes(b) && c !== 'DISNEYPLUS')) return null;
+    if (BLACKLIST.some(b => c.includes(b) && b !== 'DISNEYPLUS')) return null;
 
     if (c.includes('JURAS') || c.includes('TOP14') || c.includes('LCENTRE') || c.includes('LIGA') || c === 'CANALPLUSL' || c === 'CPLUSL' || c === 'CPLUSSPORT') {
         let pretty = rawName.replace(/\[.*?\]|\(.*?\)/g, '').replace(/\b(?:FHD|HD|SD|4K|1080P|720P)\b/gi, '').trim();
@@ -383,18 +383,24 @@ function formatTime(timestamp) {
     return new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }).format(new Date(timestamp)).replace(':', 'h');
 }
 
-// --- EPG SYNC ---
+// --- EPG SYNC (OPTIMISÉ RAM: IGNORE LES PROGRAMMES PASSÉS) ---
 async function fetchAndParseEPG(url, isGz) {
     return new Promise(async (resolve, reject) => {
         try {
             const response = await axios.get(url, { responseType: 'stream', timeout: 60000, headers: { 'User-Agent': 'Mozilla/5.0' } });
             let stream = response.data;
-            if (isGz) { const unzip = zlib.createGunzip(); stream = stream.pipe(unzip); }
+            if (isGz) { 
+                const unzip = zlib.createGunzip(); 
+                unzip.on('error', (e) => reject(e));
+                stream = stream.pipe(unzip); 
+            }
 
             const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
             let localChannels = {}; let localEpg = {};      
             let inChannel = false, chanBlock = '';
             let inProgramme = false, progBlock = '';
+            const nowMs = Date.now();
+            const twoHoursAgo = nowMs - (2 * 3600 * 1000); // Filtre RAM : Ignore les programmes terminés il y a > 2h
 
             rl.on('line', (line) => {
                 if (line.includes('<desc') || line.includes('<icon')) return;
@@ -424,11 +430,14 @@ async function fetchAndParseEPG(url, isGz) {
                     if (startM && stopM && chanM && titleM) {
                         const syncId = localChannels[chanM[1]];
                         if (syncId) {
-                            if (!localEpg[syncId]) localEpg[syncId] = [];
-                            localEpg[syncId].push({
-                                start: parseXmltvDate(startM[1]), stop: parseXmltvDate(stopM[1]),
-                                title: titleM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").replace(/&quot;/g, '"').trim()
-                            });
+                            const stopTimeMs = parseXmltvDate(stopM[1]);
+                            if (stopTimeMs > twoHoursAgo) { // OPTIMISATION RAM CRITIQUE
+                                if (!localEpg[syncId]) localEpg[syncId] = [];
+                                localEpg[syncId].push({
+                                    start: parseXmltvDate(startM[1]), stop: stopTimeMs,
+                                    title: titleM[1].replace(/&amp;/g, '&').replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim()
+                                });
+                            }
                         }
                     }
                     inProgramme = false; progBlock = '';
@@ -469,8 +478,12 @@ async function updateEPG() {
     } finally { isUpdatingEPG = false; }
 }
 
-// --- WORKER DE SANTÉ EN ARRIÈRE-PLAN (3 NIVEAUX D'ÉTAT & CODES D'ERREUR PRÉCIS) ---
+// --- WORKER DE SANTÉ EN ARRIÈRE-PLAN (AVEC FIX MEMORY LEAK) ---
 async function backgroundHealthChecker() {
+    // Nettoyage sécurité de la RAM si le Map grossit trop
+    if (streamHealthStates.size > 20000) streamHealthStates.clear();
+    if (streamErrorCodes.size > 20000) streamErrorCodes.clear();
+
     for (const [key, cacheObj] of Object.entries(channelsCache)) {
         if (!cacheObj.data) continue;
         for (const channel of cacheObj.data) {
@@ -685,8 +698,6 @@ async function getChannelsForSources(sourcesList) {
 
     if (!channelsCache[cacheKey]) {
         channelsCache[cacheKey] = { status: 'idle', data: [], sourceReport: {}, timestamp: 0 };
-        syncSourcesInBackground(validSources);
-        return [];
     }
 
     let cacheObj = channelsCache[cacheKey];
@@ -695,11 +706,19 @@ async function getChannelsForSources(sourcesList) {
         return cacheObj.data;
     }
 
-    if (cacheObj.status === 'idle') {
-        syncSourcesInBackground(validSources);
+    if (cacheObj.status === 'syncing') {
+        let timeout = 0;
+        // Fix Timeout infini: on attend max 30s
+        while (channelsCache[cacheKey] && channelsCache[cacheKey].status === 'syncing' && timeout < 300) {
+            await new Promise(r => setTimeout(r, 100));
+            timeout++;
+        }
+        return channelsCache[cacheKey] ? channelsCache[cacheKey].data : [];
     }
 
-    return cacheObj.data || [];
+    // Fix Bug Catalogue Vide : On force l'attente du scan pour le premier chargement !
+    await syncSourcesInBackground(validSources);
+    return channelsCache[cacheKey].data || [];
 }
 
 // ============================================================================
@@ -857,7 +876,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.0.14)</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.0.15)</p>
             </div>
 
             <div class="tabs">
@@ -1151,9 +1170,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.0.14',
+        version: '1.0.15',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV Sécurisé (v1.0.14).',
+        description: 'Meta-Addon IPTV Sécurisé (v1.0.15).',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1277,7 +1296,10 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                 } else if (healthState === 'dead') {
                     healthPenalty = 100000;
                     let code = streamErrorCodes.get(source.directUrl) || 504;
-                    errorTag = `❌ HS [ERR-${code}-DOWN]`;
+                    if (code === 404) errorTag = "❌ HS [ERR-404-NOT_FOUND]";
+                    else if (code === 401 || code === 403) errorTag = "❌ HS [ERR-403-FORBIDDEN]";
+                    else if (code === 502 || code === 503) errorTag = "❌ HS [ERR-502-GATEWAY_DOWN]";
+                    else errorTag = `❌ HS [ERR-${code}-DOWN]`;
                 }
 
                 let titleFormatted = errorTag ? `${errorTag} - ${source.originalName || "Source M3U"}` : (source.originalName || "Source M3U");
@@ -1349,7 +1371,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                             qScore = 5000; 
                         }
 
-                        // Gestion de la santé du stream direct s'il est connu dans le health cache
                         let healthState = streamHealthStates.get(s.url) || 'healthy';
                         let errorTag = "";
                         if (healthState === 'uncertain') {
@@ -1358,7 +1379,10 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         } else if (healthState === 'dead') {
                             penalty += 100000;
                             let code = streamErrorCodes.get(s.url) || 504;
-                            errorTag = `❌ HS [ERR-${code}-DOWN]`;
+                            if (code === 404) errorTag = "❌ HS [ERR-404-NOT_FOUND]";
+                            else if (code === 401 || code === 403) errorTag = "❌ HS [ERR-403-FORBIDDEN]";
+                            else if (code === 502 || code === 503) errorTag = "❌ HS [ERR-502-GATEWAY_DOWN]";
+                            else errorTag = `❌ HS [ERR-${code}-DOWN]`;
                         }
 
                         score += qScore;
@@ -1445,7 +1469,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, async () => {
-    console.log(`[INFO] Server started on port ${PORT} (HybridTV v1.0.14 STABLE & DIAGNOSTIC)`);
+    console.log(`[INFO] Server started on port ${PORT} (HybridTV v1.0.15 FINAL STABLE)`);
     updateEPG(); 
     setInterval(updateEPG, 3600000); 
 });
