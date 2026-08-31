@@ -1,6 +1,6 @@
 /**
  * HybridTV
- * Version: 1.0.1
+ * Version: 1.0.2 (Sécurisée & Optimisée AWS)
  */
 
 const express = require('express');
@@ -27,6 +27,28 @@ const serverStats = {
     channelClicks: {},
     activeIps: new Map()
 };
+
+// --- SECURITY: SSRF Protection for URLs ---
+function isValidHttpUrl(string) {
+    try {
+        const url = new URL(string);
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+        const hostname = url.hostname.toLowerCase();
+        if (
+            hostname === 'localhost' ||
+            hostname === '127.0.0.1' ||
+            hostname === '0.0.0.0' ||
+            hostname.startsWith('10.') ||
+            hostname.startsWith('192.168.') ||
+            hostname.startsWith('169.254.') // Protection contre AWS Metadata SSRF
+        ) {
+            return false;
+        }
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
 
 // --- MIDDLEWARE: Metrics Tracker ---
 app.use((req, res, next) => {
@@ -62,6 +84,12 @@ function parseConfig(encodedConfig) {
         let parsed = JSON.parse(jsonStr);
         if (!parsed.qualities || !Array.isArray(parsed.qualities)) {
             parsed.qualities = ['1080p', '720p', '4K', 'SD'];
+        }
+        // Filtrage strict anti-SSRF sur les sources configurées
+        if (parsed.sources && Array.isArray(parsed.sources)) {
+            parsed.sources = parsed.sources.filter(s => typeof s === 'string' && isValidHttpUrl(s.trim()));
+        } else {
+            parsed.sources = [];
         }
         return parsed;
     } catch (e) {
@@ -456,7 +484,7 @@ async function updateEPG() {
 async function fetchCatalogFromSource(sourceInput) {
     let metas = [];
     let cleanInput = sourceInput.trim();
-    if (!cleanInput) return metas;
+    if (!cleanInput || !isValidHttpUrl(cleanInput)) return metas;
 
     if (cleanInput.endsWith('.m3u') || cleanInput.endsWith('.m3u8') || cleanInput.includes('get.php') || cleanInput.includes('/live/')) {
         try {
@@ -475,8 +503,10 @@ async function fetchCatalogFromSource(sourceInput) {
                 } else if (line && !line.startsWith('#')) {
                     if (currentName) {
                         let streamUrl = line;
-                        let metaId = Buffer.from(streamUrl).toString('base64');
-                        metas.push({ id: metaId, name: currentName, poster: currentLogo, _isDirectStream: true, _directUrl: streamUrl });
+                        if (isValidHttpUrl(streamUrl)) {
+                            let metaId = Buffer.from(streamUrl).toString('base64');
+                            metas.push({ id: metaId, name: currentName, poster: currentLogo, _isDirectStream: true, _directUrl: streamUrl });
+                        }
                     }
                     currentLogo = DEFAULT_POSTER;
                     currentName = '';
@@ -508,7 +538,9 @@ async function fetchCatalogFromSource(sourceInput) {
                     let currentSkip = skip + (i * 100);
                     let encodedCatId = encodeURIComponent(catalog.id);
                     let url = currentSkip > 0 ? `${base}/catalog/${catalog.type}/${encodedCatId}/skip=${currentSkip}.json` : `${base}/catalog/${catalog.type}/${encodedCatId}.json`;
-                    requests.push(axios.get(url, { timeout: 6000 }).catch(e => null));
+                    if (isValidHttpUrl(url)) {
+                        requests.push(axios.get(url, { timeout: 6000 }).catch(e => null));
+                    }
                 }
                 
                 let responses = await Promise.all(requests);
@@ -542,7 +574,8 @@ async function fetchCatalogFromSource(sourceInput) {
 
 // --- SYNC ORCHESTRATOR ---
 async function getChannelsForSources(sourcesList) {
-    const cacheKey = sourcesList.join('|');
+    const validSources = sourcesList.filter(s => typeof s === 'string' && isValidHttpUrl(s.trim()));
+    const cacheKey = validSources.join('|');
 
     if (!channelsCache[cacheKey]) {
         channelsCache[cacheKey] = { status: 'idle', data: [], sourceReport: {}, timestamp: 0 };
@@ -568,10 +601,8 @@ async function getChannelsForSources(sourcesList) {
             let tempChannelsMap = {};
             let sourceReport = {};
 
-            for (let i = 0; i < sourcesList.length; i++) {
-                const sourceInput = sourcesList[i].trim();
-                if (!sourceInput) continue;
-                
+            for (let i = 0; i < validSources.length; i++) {
+                const sourceInput = validSources[i].trim();
                 let cleanUrl = sourceInput.replace(/\/manifest\.json$/, '').trim();
                 sourceReport[cleanUrl] = { count: 0, status: 'fetching' };
 
@@ -714,13 +745,14 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
         } else {
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
+                if (!isValidHttpUrl(targetUrl)) continue;
                 let r = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 4000 });
                 
                 let streamsTested = [];
                 if (r.data && r.data.streams) {
                     for (let s of r.data.streams) {
                         let streamTest = { title: s.title || s.name, url: s.url };
-                        if (s.url) {
+                        if (s.url && isValidHttpUrl(s.url)) {
                             try {
                                 const sRes = await axios.get(s.url, { 
                                     responseType: 'stream',
@@ -737,7 +769,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
                                 }
                             }
                         } else {
-                            streamTest.health = `⚠️ Pas d'URL directe`;
+                            streamTest.health = `⚠️ Pas d'URL directe valide`;
                         }
                         streamsTested.push(streamTest);
                     }
@@ -753,7 +785,7 @@ app.get('/api/debug/inspect/:query', async (req, res) => {
 
 app.get('/', async (req, res) => {
     let sourcesParam = req.query.sources;
-    let sourcesList = sourcesParam ? sourcesParam.split(',') : ['', ''];
+    let sourcesList = sourcesParam ? sourcesParam.split(',').map(s => s.trim()).filter(isValidHttpUrl) : ['', ''];
     let defaultQualities = "['1080p', '720p', '4K', 'SD']";
 
     const html = `
@@ -817,8 +849,7 @@ app.get('/', async (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>📺 HybridTV Dashboard</h1>
-                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.0.1
-                ).</p>
+                <p class="subtitle">L'expérience IPTV centralisée, synchrone et optimisée (v1.0.2 - Sécurisée & AWS Ready).</p>
             </div>
 
             <div class="tabs">
@@ -1122,9 +1153,9 @@ app.get('/:config/manifest.json', (req, res) => {
 
     res.json({
         id: 'org.hybridtv.meta', 
-        version: '1.0.1',
+        version: '1.0.2',
         name: 'HybridTV',
-        description: 'Meta-Addon IPTV (v1.0.1).',
+        description: 'Meta-Addon IPTV Sécurisé (v1.0.2).',
         resources: ['catalog', 'meta', 'stream'],
         types: ['tv'],
         catalogs: baseCatalogs,
@@ -1209,9 +1240,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
     const config = parseConfig(req.params.config);
     if (!config.sources || config.sources.length === 0) return res.json({ streams: [] });
     
-    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-    const clientUserAgent = req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
-
     serverStats.channelClicks[req.params.id] = (serverStats.channelClicks[req.params.id] || 0) + 1;
 
     const cacheKey = req.params.id + '|' + config.sources.join(',');
@@ -1223,7 +1251,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
     let channelsData = await getChannelsForSources(config.sources);
     
-    // SMART CACHE AUGMENTÉ À 45 SECONDES
     res.setHeader('Cache-Control', 'max-age=45, public'); 
 
     const channel = channelsData.find(c => c.id === req.params.id);
@@ -1234,18 +1261,20 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
             let isBeluchon = source.providerBase && source.providerBase.toLowerCase().includes('beluchon');
 
             if (source.type === 'm3u') {
+                if (!source.directUrl || !isValidHttpUrl(source.directUrl)) return [];
                 return [{
                     url: source.directUrl,
                     name: isBeluchon ? `▶ Source Officielle (HD)` : `▶ Full HD (1080p)`,
                     title: source.originalName || "Source M3U",
                     _score: isBeluchon ? 4500 : 1500,
                     _originalTitle: source.originalName || "Source M3U",
-                    behaviorHints: { proxyHeaders: { request: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase } } }
+                    behaviorHints: { proxyHeaders: { request: { 'User-Agent': 'Mozilla/5.0', 'Referer': source.providerBase || 'https://vavoo.to/' } } }
                 }];
             }
 
             try {
                 let targetUrl = `${source.providerBase}/stream/tv/${encodeURIComponent(source.metaId)}.json`;
+                if (!isValidHttpUrl(targetUrl)) return [];
 
                 const streamRes = await axios.get(targetUrl, {
                     headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }, 
@@ -1254,6 +1283,8 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                 
                 if (streamRes.data && streamRes.data.streams) {
                     return streamRes.data.streams.map((s, idx) => {
+                        if (!s.url || !isValidHttpUrl(s.url)) return null;
+
                         let qual = "SD";
                         let score = 0;
                         
@@ -1285,8 +1316,6 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         if (channel.id === 'hyb_dec_discovery' && (nStream.includes('INVESTIGATION') || nStream.includes('ID') || nStream.includes('SCIENCE'))) penalty += 5000;
                         if (channel.id === 'hyb_dec_investigation' && (!nStream.includes('INVESTIGATION') && !nStream.includes('ID'))) penalty += 5000;
                         if (channel.id === 'hyb_jeu_disney' && (nStream.includes('JR') || nStream.includes('JUNIOR') || nStream.includes('XD') || nStream.includes('PLUS1'))) penalty += 5000;
-                        
-                        // NOUVELLE PENALITE NICKELODEON (Inclus TOONS)
                         if (channel.id === 'hyb_jeu_nick' && (nStream.includes('TEEN') || nStream.includes('JR') || nStream.includes('JUNIOR') || nStream.includes('PLUS1') || nStream.includes('TOONS') || nStream.includes('TOON'))) penalty += 5000;
 
                         if (channel.id.startsWith('hyb_sport_bein')) {
@@ -1323,11 +1352,10 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         if (priorityIndex === -1) priorityIndex = 3; 
                         
                         let qScore = (4 - priorityIndex) * 1000; 
-
+                        let qualStr = "SD";
                         if (detectedQual === '4K') qualStr = "4K (UHD)";
                         else if (detectedQual === '1080p') qualStr = "Full HD (1080p)";
                         else if (detectedQual === '720p') qualStr = "HD (720p)";
-                        else qualStr = "SD";
 
                         if (isBeluchon) {
                             qualStr = "Source Officielle Légale (HD)";
@@ -1344,18 +1372,16 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
 
                         let outStream = { ...s };
 
-                        if (outStream.url) {
-                            let rawUrl = outStream.url.trim();
-                            if (rawUrl.startsWith('//')) {
-                                outStream.url = 'https:' + rawUrl;
-                            } else if (rawUrl.startsWith('/')) {
-                                try {
-                                    let baseObj = new URL(source.providerBase);
-                                    outStream.url = baseObj.origin + rawUrl;
-                                } catch(e){}
-                            } else if (!rawUrl.startsWith('http') && !rawUrl.includes('://')) {
-                                outStream.url = 'http://' + rawUrl;
-                            }
+                        let rawUrl = outStream.url.trim();
+                        if (rawUrl.startsWith('//')) {
+                            outStream.url = 'https:' + rawUrl;
+                        } else if (rawUrl.startsWith('/')) {
+                            try {
+                                let baseObj = new URL(source.providerBase);
+                                outStream.url = baseObj.origin + rawUrl;
+                            } catch(e){}
+                        } else if (!rawUrl.startsWith('http') && !rawUrl.includes('://')) {
+                            outStream.url = 'http://' + rawUrl;
                         }
 
                         if (!outStream.behaviorHints) outStream.behaviorHints = {};
@@ -1385,7 +1411,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                         outStream.title = combinedTitle ? `${combinedTitle}\n▶ ${qualStr}` : `▶ ${qualStr}`;
                         outStream._score = score;
                         return outStream;
-                    });
+                    }).filter(Boolean);
                 }
             } catch (err) {}
             return [];
@@ -1394,75 +1420,27 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
         let results = await Promise.all(streamPromises);
         let allStreams = [].concat(...results);
 
-        // --- TRI INITIAL PAR SCORE ---
+        // --- TRI OPTIMISÉ NON-BLOQUANT (SUPPRESSION DU PING SYNCHRONE LOURD POUR ÉVITER LES TIMEOUTS STREMIO) ---
         allStreams.sort((a, b) => b._score - a._score);
-        let limitedStreams = allStreams.slice(0, 15);
-
-// --- SCANNER SYNCHRONE DE LIENS MORTS ---
-        if (limitedStreams.length > 0) {
-            await Promise.all(limitedStreams.map(async (s) => {
-                if (!s.url) return;
-                try {
-                    const r = await axios.get(s.url, {
-                        responseType: 'stream',
-                        timeout: 5000, // <-- Ajusté à 5000ms
-                        headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                            ...(s.behaviorHints && s.behaviorHints.proxyHeaders && s.behaviorHints.proxyHeaders.request ? s.behaviorHints.proxyHeaders.request : {})
-                        }
-                    });
-                    if(r.data && typeof r.data.destroy === 'function') {
-                        r.data.destroy();
-                    }
-                } catch (err) {
-                    // IMMUNITÉ CLOUDFLARE ET ANTI-BOTS
-                    if (err.response && [403, 458, 503, 520, 521, 522, 523, 524, 525].includes(err.response.status)) {
-                        let status = err.response.status;
-                        s.title = `🛡️ Protégé (HTTP ${status})\n` + s.title;
-                    } else {
-                        s._score -= 100000; 
-                        
-                        if (err.response) {
-                            let status = err.response.status;
-                            let msg = "Erreur";
-                            if (status === 401) msg = "Accès Refusé / Token Expiré";
-                            else if (status === 404) msg = "Flux Introuvable";
-                            else if (status === 512 || status === 502) msg = "Serveur Injoignable";
-                            else if (status >= 500) msg = "Serveur Planté";
-                            
-                            s.title = `❌ HS (${status} - ${msg})\n` + s.title;
-                        } else if (err.code === 'ENOTFOUND') {
-                            s.title = `❌ HS (Domaine Mort)\n` + s.title;
-                        } else {
-                            s.title = `❌ HS (${err.message})\n` + s.title;
-                        }
-                    }
-                }
-            }));
-            
-            // Re-tri synchrone final post-scan
-            limitedStreams.sort((a, b) => b._score - a._score);
-        }
-
-        const finalStreams = limitedStreams.map((s) => {
+        let limitedStreams = allStreams.slice(0, 15).map((s) => {
             let streamObj = { ...s };
             delete streamObj._score; 
             return streamObj;
         });
         
         // SÉCURITÉ ANTI-VIDE : Ne met en cache QUE si on a trouvé des flux
-        if (finalStreams.length > 0) {
-            streamCache.set(cacheKey, finalStreams);
+        if (limitedStreams.length > 0) {
+            streamCache.set(cacheKey, limitedStreams);
             setTimeout(() => streamCache.delete(cacheKey), 45000); 
         }
 
-        res.json({ streams: finalStreams });
+        res.json({ streams: limitedStreams });
     } catch (err) { res.json({ streams: [] }); }
 });
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, async () => {
-    console.log(`[INFO] Server started on port ${PORT}`);
+    console.log(`[INFO] Server started on port ${PORT} (HybridTV v1.0.2 SECURED)`);
     updateEPG(); 
     setInterval(updateEPG, 3600000); 
 });
