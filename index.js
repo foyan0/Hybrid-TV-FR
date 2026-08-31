@@ -1416,7 +1416,7 @@ app.get('/:config/stream/tv/:id.json', async (req, res) => {
                     }
                 } catch (err) {
                     // IMMUNITÉ CLOUDFLARE ET ANTI-BOTS
-                    if (err.response && [403, 503, 520, 521, 522, 523, 524, 525].includes(err.response.status)) {
+                    if (err.response && [403, 458, 503, 520, 521, 522, 523, 524, 525].includes(err.response.status)) {
                         let status = err.response.status;
                         s.title = `🛡️ Protégé (HTTP ${status})\n` + s.title;
                     } else {
